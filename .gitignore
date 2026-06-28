@@ -1,0 +1,5 @@
+node_modules/
+briefs_queue.json
+tmp_briefs/
+.env
+*.log

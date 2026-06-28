@@ -1,0 +1,16 @@
+{
+  "name": "adstack-server",
+  "version": "5.45.0",
+  "description": "AdStack Factory Server — Production engine for Meta Ads creatives",
+  "main": "server_v5_45.js",
+  "scripts": {
+    "start": "node server_v5_45.js"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "google-trends-api": "^4.9.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
