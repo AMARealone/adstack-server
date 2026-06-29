@@ -298,6 +298,55 @@ async function callGeminiPro(systemPrompt, contentBlocks, maxOutputTokens) {
 
 const HTML_CONTENT = Buffer.from(HTML_B64, 'base64').toString('utf-8');
 
+// ══════════════════════════════════════════════════════════════════════════
+// CHARIOW INTEGRATION — Checkout + Pulses (webhooks)
+// ══════════════════════════════════════════════════════════════════════════
+
+const CHARIOW_KEY = process.env.CHARIOW_KEY || '';
+const SUPABASE_URL_INT = process.env.SUPABASE_URL || 'https://mifljhsusidgzelnswma.supabase.co';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
+
+const PLAN_MAP = {
+  'prd_ljowq8': { plan: 'starter', credits_per_week: 9 },
+  'prd_34w031': { plan: 'pro',     credits_per_week: 18 },
+  'prd_9fi79y': { plan: 'scale',   credits_per_week: 36 },
+};
+
+// Activer un abonnement dans Supabase (upsert)
+async function activateSubscription(userId, plan, creditsPerWeek) {
+  const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_SERVICE_KEY,
+      'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+      'Prefer': 'resolution=merge-duplicates,return=representation',
+    },
+    body: JSON.stringify({
+      user_id: userId,
+      plan: plan,
+      credits_per_week: creditsPerWeek,
+      active: true,
+      started_at: new Date().toISOString(),
+    })
+  });
+  const data = await r.json();
+  console.log(`[Chariow] ✅ Abonnement activé: ${userId} → ${plan}`);
+  return data;
+}
+
+// Trouver un user Supabase par email
+async function findUserByEmail(email) {
+  const r = await fetch(`${SUPABASE_URL_INT}/auth/v1/admin/users?email=${encodeURIComponent(email)}`, {
+    headers: {
+      'apikey': SUPABASE_SERVICE_KEY,
+      'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+    }
+  });
+  const data = await r.json();
+  return data?.users?.[0] || null;
+}
+
 // ── HTTP Server ────────────────────────────────
 const server = http.createServer(async (req, res) => {
   // CORS
@@ -1828,6 +1877,100 @@ EXEMPLES PARFAITS (modèle à suivre) :
     }
     return;
   }
+
+// POST /create-checkout — crée une session Chariow et retourne l'URL
+if (req.method === 'POST' && req.url === '/create-checkout') {
+  let body = '';
+  req.on('data', d => body += d);
+  req.on('end', async () => {
+    try {
+      const { product_id, email, user_id, plan } = JSON.parse(body);
+      if (!CHARIOW_KEY) { res.writeHead(500); res.end(JSON.stringify({error:'CHARIOW_KEY manquante'})); return; }
+      const r = await fetch('https://api.chariow.com/v1/checkout', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${CHARIOW_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_id,
+          email,
+          custom_metadata: { user_id, plan, source: 'adboard' }
+        })
+      });
+      const data = await r.json();
+      if (data?.data?.step === 'payment') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ checkout_url: data.data.payment.checkout_url }));
+      } else if (data?.data?.step === 'completed') {
+        // Produit déjà acheté ou gratuit → activer directement
+        if (user_id && plan) {
+          const planInfo = PLAN_MAP[product_id] || { plan, credits_per_week: 9 };
+          await activateSubscription(user_id, planInfo.plan, planInfo.credits_per_week);
+        }
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ checkout_url: null, already_active: true }));
+      } else {
+        console.error('[Checkout]', JSON.stringify(data));
+        res.writeHead(400); res.end(JSON.stringify({ error: data?.message || 'Erreur Chariow', raw: data }));
+      }
+    } catch(e) {
+      console.error('[Checkout]', e);
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+  return;
+}
+
+// POST /webhook/chariow — reçoit les Pulses Chariow (vente confirmée)
+if (req.method === 'POST' && req.url === '/webhook/chariow') {
+  let body = '';
+  req.on('data', d => body += d);
+  req.on('end', async () => {
+    res.writeHead(200, {'Content-Type':'application/json'});
+    res.end(JSON.stringify({ ok: true }));
+    try {
+      const pulse = JSON.parse(body);
+      console.log('[Pulse] Reçu:', JSON.stringify(pulse).slice(0, 300));
+      // Extraire les infos de la vente
+      const sale = pulse?.data?.sale || pulse?.sale || pulse;
+      const metadata = sale?.custom_metadata || sale?.metadata || {};
+      const userId = metadata?.user_id;
+      const productId = sale?.product_id || sale?.product?.id;
+      const email = sale?.customer?.email || sale?.email;
+      const planInfo = PLAN_MAP[productId];
+      if (!planInfo) { console.warn('[Pulse] Produit inconnu:', productId); return; }
+      // Si on a le user_id → activer directement
+      if (userId) {
+        await activateSubscription(userId, planInfo.plan, planInfo.credits_per_week);
+        return;
+      }
+      // Sinon chercher par email
+      if (email) {
+        const user = await findUserByEmail(email);
+        if (user) {
+          await activateSubscription(user.id, planInfo.plan, planInfo.credits_per_week);
+        } else {
+          console.warn(`[Pulse] User introuvable pour email: ${email} — abonnement en attente`);
+        }
+      }
+    } catch(e) { console.error('[Pulse] Erreur:', e); }
+  });
+  return;
+}
+
+// GET /check-subscription/:userId — vérifie si un user a un abonnement actif
+if (req.method === 'GET' && req.url.startsWith('/check-subscription/')) {
+  const userId = req.url.split('/')[2];
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?user_id=eq.${userId}&active=eq.true&limit=1`, {
+      headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+    });
+    const rows = await r.json();
+    res.writeHead(200, {'Content-Type':'application/json'});
+    res.end(JSON.stringify({ subscription: rows?.[0] || null }));
+  } catch(e) {
+    res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+  }
+  return;
+}
 
 // POST /commandes/:id/cancel — annulation depuis AdBoard
 if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/cancel$/)) {
