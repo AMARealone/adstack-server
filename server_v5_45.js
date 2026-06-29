@@ -2032,19 +2032,23 @@ PERSONNALITÉ : Chaleureuse, motivante, directe. Si le client est frustré → c
         { role: 'user', parts: [{ text: message }] }
       ];
 
-      const geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: SYSTEM }] },
-            contents,
-            generationConfig: { maxOutputTokens: 300, temperature: 0.85 }
-          })
-        }
-      );
-      const geminiData = await geminiRes.json();
+      const CHAT_MODEL = 'gemini-3.5-flash';
+
+      // Vertex AI (même auth que Factory)
+      let token;
+      try { token = await getToken(); }
+      catch(e) { throw new Error('Token Vertex AI impossible: ' + e.message); }
+
+      const vertexBody = {
+        systemInstruction: { parts: [{ text: SYSTEM }] },
+        contents,
+        generationConfig: { maxOutputTokens: 350, temperature: 0.85 }
+      };
+
+      const geminiData = await vertexRequestGlobal(token, CHAT_MODEL, vertexBody);
+      if (!geminiData?.candidates?.[0]) {
+        console.error('[Amina] Gemini error:', JSON.stringify(geminiData).slice(0,300));
+      }
       const reply = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "Désolée, je n'ai pas pu répondre. Réessaie dans un instant.";
 
       // Save to Supabase if service key available
