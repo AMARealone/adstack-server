@@ -1972,6 +1972,120 @@ if (req.method === 'GET' && req.url.startsWith('/check-subscription/')) {
   return;
 }
 
+
+// POST /chat — Amina AI Assistant
+if (req.method === 'POST' && req.url === '/chat') {
+  let body = '';
+  req.on('data', d => body += d);
+  req.on('end', async () => {
+    try {
+      const { message, history=[], context={}, session_id } = JSON.parse(body);
+      const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
+
+      // Build system prompt with user context
+      const { user, subscription, products=[], credits={}, section='', language='fr' } = context;
+      const userName = user?.name?.split(' ')[0] || '';
+      const planLabel = subscription?.plan ? `${subscription.plan.charAt(0).toUpperCase()+subscription.plan.slice(1)}` : 'aucun';
+      const prodList = products.slice(0,5).map(p => `- ${p.nom} (${p.pays}, ${p.pricing})`).join('\n') || 'Aucun produit créé';
+      const creditsInfo = subscription?.active ? `${credits.available||0} images disponibles cette semaine` : 'pas encore abonné';
+
+      const SYSTEM = `Tu es Amina, l'assistante IA ultra-intelligente d'AdStack — une agence de créatives Meta Ads pour les e-commerçants COD africains.
+
+RÈGLES ABSOLUES :
+- Réponds TOUJOURS en ${language === 'fr' ? 'français' : 'anglais'}
+- Réponses COURTES (2-4 phrases max), naturelles, jamais robotiques
+- Utilise le prénom "${userName || 'cher client'}" quand tu veux créer de la proximité
+- Tu VENDS sans agression — tu conseilles intelligemment
+- Tu n'inventes jamais de données — tu utilises seulement ce qui est ci-dessous
+
+CONTEXTE UTILISATEUR ACTUEL :
+- Statut : ${user ? `Connecté (${user.email})` : 'Non connecté'}
+- Forfait : ${planLabel} ${subscription?.active ? '(actif)' : '(inactif/aucun)'}
+- Crédits : ${creditsInfo}
+- Produits : ${prodList}
+- Section actuelle : ${section}
+
+OFFRES ADSTACK :
+- Conversion Starter : 39 900 FCFA/mois → 9 images/semaine, 1 produit
+- Conversion Pro : 79 900 FCFA/mois → 18 images/semaine, 1-2 produits (MEILLEUR)
+- Conversion Scale : 99 900 FCFA/mois → 36 images/semaine, 1-4 produits
+
+UPSELL INTELLIGENT :
+- Si pas abonné → présente les offres, gère les objections, pousse vers Starter
+- Si Starter → montre la valeur de Pro (2x plus d'images, +ROI)
+- Si Pro → Scale si il a plusieurs produits winners
+
+BOUTONS D'ACTION (utilise-les intelligemment) :
+Quand tu veux guider l'utilisateur, inclus UN bouton max à la fin de ta réponse dans ce format exact :
+[BTN:navigate:tarifs:Voir les offres]
+[BTN:navigate:produits:Mes produits]
+[BTN:navigate:suivi:Suivi de demandes]
+[BTN:openProductForm:Créer un produit]
+[BTN:login:Se connecter avec Google]
+[BTN:navigate:notifications:Mes notifications]
+
+PERSONNALITÉ : Chaleureuse, motivante, directe. Si le client est frustré → calme et solution. Si heureux → amplifie. Si perdu → guide pas à pas.`;
+
+      // Build Gemini conversation
+      const contents = [
+        ...history.slice(-10).map(m => ({ role: m.role, parts: [{ text: m.content }] })),
+        { role: 'user', parts: [{ text: message }] }
+      ];
+
+      const geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: SYSTEM }] },
+            contents,
+            generationConfig: { maxOutputTokens: 300, temperature: 0.85 }
+          })
+        }
+      );
+      const geminiData = await geminiRes.json();
+      const reply = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "Désolée, je n'ai pas pu répondre. Réessaie dans un instant.";
+
+      // Save to Supabase if service key available
+      if (SUPABASE_SERVICE_KEY && session_id) {
+        const saveMsg = async (role, content) => {
+          await fetch(`${SUPABASE_URL_INT}/rest/v1/chat_messages`, {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json', apikey:SUPABASE_SERVICE_KEY, Authorization:`Bearer ${SUPABASE_SERVICE_KEY}` },
+            body: JSON.stringify({ session_id, role, content })
+          });
+        };
+        saveMsg('user', message).catch(()=>{});
+        saveMsg('model', reply).catch(()=>{});
+      }
+
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ reply }));
+    } catch(e) {
+      console.error('[Chat]', e);
+      res.writeHead(500);
+      res.end(JSON.stringify({ reply: "Une erreur s'est produite. Réessaie dans un instant." }));
+    }
+  });
+  return;
+}
+
+// GET /chat/history/:sessionId — charger l'historique
+if (req.method === 'GET' && req.url.startsWith('/chat/history/')) {
+  const sessionId = req.url.split('/')[3];
+  if (!SUPABASE_SERVICE_KEY || !sessionId) { res.writeHead(200); res.end('[]'); return; }
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/chat_messages?session_id=eq.${sessionId}&order=created_at.asc&limit=30`, {
+      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+    });
+    const rows = await r.json();
+    res.writeHead(200, {'Content-Type':'application/json'});
+    res.end(JSON.stringify(rows||[]));
+  } catch(e) { res.writeHead(200); res.end('[]'); }
+  return;
+}
+
 // POST /commandes/:id/cancel — annulation depuis AdBoard
 if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/cancel$/)) {
   const id = req.url.split('/')[2];
