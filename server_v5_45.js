@@ -175,10 +175,19 @@ Rien n'est ajouté. Rien n'est modifié. Ce que tu vois = ce que tu génères.
   return FIXED_HEADER + text;
 }
 
-const SA = {
-  client_email: 'adstack-vertex@adstack-497020.iam.gserviceaccount.com',
-  private_key: '-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDom36DNTWSQXzb\ndn+/58AwKsrj5X/Z+4HnzfYSRuJ4kyS+IZq0+p+O/P9EkW62sYv7robAYEB8Lsv8\nsq4bvGO86V7eCEgQV91SY1OyOnQsv/gpAFOQWOVvz8c3wrVYe7yKLU7zD7OEZwxv\n0myPjax93hbZEnuQftzjtIKpMiGqzabDA3qG0+DYgjCcgpmEJjfrEmKSwRgjbWLD\n/0abX8wMPjgvgDNw9jKEwPi10hccmjK3M4BplPoFuZjZCMmqykYaAe5sWuLXFVfA\nY695ttS38z7naA3Ic/+FvuzFhEjhMetviYZu8LO0Jks20bMDTnT0qExfi4j0Fuum\nnNJdYBupAgMBAAECggEAFQ+IemfLGcV31m/EbFiW6aWOPj6C1Mv1Z0rE223Im+3d\nYfZX9B1MbMgScspk3Fd3WwqNJTDx1cHvnUnZAtDhX52VBdnOcJBhYnrKKAqBMftl\nruIFLujQSU87n0cFYBAVXOtySQakaeS3Vw6V3r+PR8w1Lw1XMRjoy23bdhIAbgme\n5rD0Q8JgF4hazOQOFQRGY7n/V2hFVaGiiUHZEpEaiVWhZMaJVqkj7I8rnEBjzzWZ\nH1+VjAEGKMLnBG7bTwN+pp0eKwuEDriVuo3zv8ypTkrLPdkDJzC//7LW0Y1qmehn\nK0DnH1xKWJ7EMpm5xZNrtlTH8f0Ya7BfWMO9WWF/SwKBgQD4YQS8nZdncXNniN7a\nOF0K9D9ZWgxZiy0zWtYSec8aJCUCJgXqPHQenJrMDPaJcoQc3Z2C6lRPY9VQ5jU7\nOlpVb3heWMweYYsvG28KxBojXW80Bo0fQfRISIMZ7b0kk2BG7eSKpm0w3Hfz/gYE\njLWCSetkbSaiD3Z+bVM94C38zwKBgQDvvpeY7cZHDy+lR4vVR/0APWGpdruZ1ZuW\n74pNkw7jqOM65QSlYKpRnQxnZsGX6AzLn+cZ95/GMCa3LxvnLKW9IpHP+koz1eKN\ndlNDYjUNjQuwIvIVtidlIlk7S56cLPVlrVZj+4Ev1x9cNA96Z/a/qz3VHFkxUrTR\nLcseEn8uBwKBgFRopDN1Wv7Mj2ugGBwRC42tc9npwEiuA65wMFAXFUrM/ca9JUV1\nRgEhN3og7afIQx2MMvtKp1xTkSrtESoPqqNePonRo4yvmZ1otVPzUO6z0hbcIxl8\nUIhAHE2zfZPwgceZERINfQ4d3qYMrf7d0tF0TYrTjU2F878DaEae6QIBAoGABCqo\n0dSYFJYT+uhiasOEhyOJ9fsFSagnuxjQq4Z5xMUjpdtjGEi0zRRQqd9kT/KNfmB6\nEL53/WbK1XYxIvRosP/PzvCHp5z5AgJjchFb4K9p25bP5Ea1KpHNQTWQPSCe5zR7\nAuPVG/K+LckN18/EvxIH0hNbDXtlfxkvpYcmxLMCgYEAw+mZiczX7DOen3xuCfz7\n5uhBnv+rAYJiVOl1epPT6Eya9xkZ9lxRCx0oPN00FUS6oC7WRe1O8QNkNamTSL7t\nEGM1U3dFFyATKX/lc7mqsgJBD3redu4OgS2tEhEw5ULret7FbF/SV+EH5ZWc1nqP\nlX8YxwRBImRMV9se7rZnZfM=\n-----END PRIVATE KEY-----\n'
-};
+const SA = (() => {
+  const raw = process.env.GOOGLE_CREDENTIALS;
+  if (!raw) return { client_email: '', private_key: '' };
+  try {
+    const creds = JSON.parse(raw);
+    if (creds.private_key) creds.private_key = creds.private_key.replace(/\\n/g, '\n');
+    return creds;
+  } catch(e) {
+    console.error('[SA] Erreur GOOGLE_CREDENTIALS:', e.message);
+    return { client_email: '', private_key: '' };
+  }
+})();
+
 
 // ── JWT Generation ─────────────────────────────
 function b64url(str) {
