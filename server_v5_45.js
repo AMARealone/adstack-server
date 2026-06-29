@@ -2032,20 +2032,19 @@ PERSONNALITÉ : Chaleureuse, motivante, directe. Si le client est frustré → c
         { role: 'user', parts: [{ text: message }] }
       ];
 
-      const CHAT_MODEL = 'gemini-3.5-flash';
+      const CHAT_MODEL = 'gemini-2.5-flash';
 
-      // Vertex AI (même auth que Factory)
       let token;
       try { token = await getToken(); }
       catch(e) { throw new Error('Token Vertex AI impossible: ' + e.message); }
 
       const vertexBody = {
-        systemInstruction: { parts: [{ text: SYSTEM }] },
+        system_instruction: { parts: [{ text: SYSTEM }] },
         contents,
-        generationConfig: { maxOutputTokens: 350, temperature: 0.85 }
+        generation_config: { max_output_tokens: 350, temperature: 0.85 }
       };
 
-      const geminiData = await vertexRequestGlobal(token, CHAT_MODEL, vertexBody);
+      const geminiData = await vertexRequest(token, CHAT_MODEL, vertexBody);
       if (!geminiData?.candidates?.[0]) {
         console.error('[Amina] Gemini error:', JSON.stringify(geminiData).slice(0,300));
       }
