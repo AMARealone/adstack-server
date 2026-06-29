@@ -1829,6 +1829,34 @@ EXEMPLES PARFAITS (modèle à suivre) :
     return;
   }
 
+// POST /commandes/:id/cancel — annulation depuis AdBoard
+if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/cancel$/)) {
+  const id = req.url.split('/')[2];
+  const briefs = loadBriefs();
+  const idx = briefs.findIndex(b => b.id === id);
+  if (idx >= 0) {
+    briefs[idx].status = 'cancelled';
+    briefs[idx].cancelled_at = new Date().toISOString();
+    saveBriefs(briefs);
+    res.writeHead(200, {'Content-Type':'application/json'});
+    res.end(JSON.stringify({ ok: true }));
+  } else {
+    res.writeHead(404); res.end(JSON.stringify({ error: 'Brief not found' }));
+  }
+  return;
+}
+
+// POST /commandes/:id/delete — suppression depuis Factory
+if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/delete$/)) {
+  const id = req.url.split('/')[2];
+  const briefs = loadBriefs();
+  const filtered = briefs.filter(b => b.id !== id);
+  saveBriefs(filtered);
+  res.writeHead(200, {'Content-Type':'application/json'});
+  res.end(JSON.stringify({ ok: true }));
+  return;
+}
+
 // POST /commandes/:id/done — marquer livré
   if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/done$/)) {
 
