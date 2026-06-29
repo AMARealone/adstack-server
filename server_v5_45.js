@@ -2044,7 +2044,9 @@ PERSONNALITÉ : Chaleureuse, motivante, directe. Si le client est frustré → c
         generation_config: { max_output_tokens: 350, temperature: 0.85 }
       };
 
+      console.log('[Amina] Appel Vertex AI model=gemini-2.5-flash contents.length=', contents.length);
       const geminiData = await vertexRequest(token, CHAT_MODEL, vertexBody);
+      console.log('[Amina] Réponse Vertex AI:', JSON.stringify(geminiData).slice(0, 400));
       if (!geminiData?.candidates?.[0]) {
         console.error('[Amina] Gemini error:', JSON.stringify(geminiData).slice(0,300));
       }
@@ -2066,9 +2068,9 @@ PERSONNALITÉ : Chaleureuse, motivante, directe. Si le client est frustré → c
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ reply }));
     } catch(e) {
-      console.error('[Chat]', e);
+      console.error('[Amina] ERREUR COMPLÈTE:', e.message, e.stack?.slice(0,300));
       res.writeHead(500);
-      res.end(JSON.stringify({ reply: "Une erreur s'est produite. Réessaie dans un instant." }));
+      res.end(JSON.stringify({ reply: "Une erreur s'est produite. Réessaie dans un instant.", error: e.message }));
     }
   });
   return;
