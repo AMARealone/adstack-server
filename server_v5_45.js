@@ -2050,7 +2050,7 @@ PERSONNALITÉ : Chaleureuse, motivante, directe. Si le client est frustré → c
       const vertexBody = {
         system_instruction: { parts: [{ text: SYSTEM }] },
         contents,
-        generationConfig: { maxOutputTokens: 512, temperature: 0.85 }
+        generationConfig: { maxOutputTokens: 512, temperature: 0.85, thinkingConfig: { thinkingBudget: 0 } }
       };
 
       console.log('[Amina] Appel Vertex AI model=gemini-2.5-flash contents.length=', contents.length);
