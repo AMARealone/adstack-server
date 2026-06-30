@@ -2081,8 +2081,11 @@ Langue de réponse : ${language === 'fr' ? 'français uniquement' : 'English onl
         tools: [{ googleSearch: {} }]
       };
 
-
-      // Build Gemini conversation (sans historique chargé — session courte)
+      const CHAT_MODEL = 'gemini-2.5-flash';
+      let token;
+      try { token = await getToken(); }
+      catch(e) { throw new Error('Token Vertex AI impossible: ' + e.message); }
+      console.log('[Amina] Appel Vertex AI model=gemini-2.5-flash contents.length=', contents.length);
       const geminiData = await vertexRequest(token, CHAT_MODEL, vertexBody);
       console.log('[Amina] Réponse Vertex AI:', JSON.stringify(geminiData).slice(0, 400));
       if (!geminiData?.candidates?.[0]) {
