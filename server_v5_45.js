@@ -263,13 +263,15 @@ function vertexRequest(token, model, body) {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(bodyStr)
-      }
+      },
+      timeout: 25000
     }, res => {
       let d = '';
       res.on('data', c => d += c);
-      res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(e); } });
+      res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(new Error('Réponse Vertex invalide: ' + d.slice(0,200))); } });
     });
     req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout Vertex AI (25s)')); });
     req.write(bodyStr); req.end();
   });
 }
@@ -2067,8 +2069,7 @@ Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`
       const vertexBody = {
         system_instruction: { parts: [{ text: SYSTEM }] },
         contents,
-        generationConfig: { maxOutputTokens: 220, temperature: 0.4, thinkingConfig: { thinkingBudget: 0 } },
-        tools: [{ googleSearch: {} }]
+        generationConfig: { maxOutputTokens: 220, temperature: 0.4, thinkingConfig: { thinkingBudget: 0 } }
       };
 
       const CHAT_MODEL = 'gemini-2.5-flash';
