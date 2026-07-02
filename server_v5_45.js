@@ -449,6 +449,62 @@ async function sendPaymentConfirmationEmail({ email, name, plan, priceFcfa, paym
   }
 }
 
+// Email de bienvenue — ton personnel, du fondateur, envoyé à la toute première connexion
+async function sendWelcomeEmail({ email, name }) {
+  const RESEND_KEY = process.env.RESEND_API_KEY;
+  if (!RESEND_KEY) { console.warn('[Email] RESEND_API_KEY manquante — welcome email non envoyé'); return; }
+
+  const firstName = name ? name.split(' ')[0] : '';
+
+  const html = `
+    <div style="font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#222;font-size:15px;line-height:1.65;">
+      <p>Salut${firstName ? ' ' + firstName : ''},</p>
+
+      <p>Moi c'est Amar, fondateur d'AdStack.</p>
+
+      <p>J'ai lancé AdStack parce que je voyais des vendeurs comme toi perdre des heures chaque semaine sur Canva ou ChatGPT à essayer de sortir des images publicitaires potables — pendant que leurs concurrents scalent tranquillement avec des visuels qui convertissent.</p>
+
+      <p>L'idée est simple : tu nous donnes ton produit, on t'envoie des images prêtes à lancer chaque semaine. Toi tu te concentres sur les ventes.</p>
+
+      <p>3 trucs pour bien démarrer :</p>
+
+      <p>
+        1. <a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Crée ton premier produit</a><br>
+        2. <a href="https://adstackofficial.com/adboard/demo" style="color:#2D7FF9;">Regarde un exemple de ce qu'on livre</a><br>
+        3. <a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Découvre les offres</a>
+      </p>
+
+      <p style="margin-top:28px;color:#555;">P.S. : Pourquoi tu t'es inscrit sur AdBoard ? C'est quoi ton plus gros problème en ce moment avec tes pubs ?<br>
+      Réponds direct à cet email, je lis et je réponds à tout le monde.</p>
+
+      <p style="margin-top:24px;">Amar<br>
+      <span style="color:#888;">Fondateur, AdStack</span></p>
+    </div>
+  `;
+
+  try {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'Amar - AdStack <amar@adstackofficial.com>',
+        to: [email],
+        reply_to: 'amarbiranediaw@gmail.com',
+        subject: 'Bienvenue sur AdBoard — j\'ai une question pour toi',
+        html,
+      })
+    });
+    if (!r.ok) {
+      const errText = await r.text();
+      console.error('[Email] Échec welcome email:', r.status, errText.slice(0,200));
+    } else {
+      console.log(`[Email] ✅ Welcome email envoyé à ${email}`);
+    }
+  } catch(e) {
+    console.error('[Email] Erreur welcome email:', e.message);
+  }
+}
+
 // Activer un abonnement dans Supabase (upsert)
 async function activateSubscription(userId, plan, creditsPerWeek, priceFcfa, email, name) {
   const now = new Date();
@@ -2105,6 +2161,21 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
 }
 
 // GET /check-subscription/:userId — vérifie si un user a un abonnement actif
+// POST /send-welcome-email — envoie l'email de bienvenue (appelé côté client à la 1ère connexion)
+if (req.method === 'POST' && req.url === '/send-welcome-email') {
+  let body = '';
+  req.on('data', d => body += d);
+  req.on('end', () => {
+    res.writeHead(200, {'Content-Type':'application/json'});
+    res.end(JSON.stringify({ ok: true }));
+    try {
+      const { email, name } = JSON.parse(body);
+      if (email) sendWelcomeEmail({ email, name }).catch(e => console.error('[Email] Welcome non bloquant:', e.message));
+    } catch(e) { console.error('[Welcome] Erreur parsing:', e.message); }
+  });
+  return;
+}
+
 if (req.method === 'GET' && req.url.startsWith('/check-subscription/')) {
   const userId = req.url.split('/')[2];
   try {
