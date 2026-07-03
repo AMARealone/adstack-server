@@ -388,6 +388,36 @@ function renderSequenceEmail(key, { firstName='', productName='' }) {
         <p style="margin-top:24px;">AdStack</p>
       `)
     },
+    'monthly_social_proof': {
+      subject: 'Ce qu\'un vendeur COD a fait avec ses images cette semaine',
+      html: wrap(`
+        <p>Salut${firstName ? ' ' + firstName : ''},</p>
+        <p>Un de nos clients vend un produit santé avec plusieurs bénéfices différents — difficile de savoir quel argument allait vraiment convaincre.</p>
+        <p>On lui a livré plusieurs angles marketing distincts la même semaine. Il a pu tester lequel résonnait le plus avec sa cible, au lieu de deviner.</p>
+        <p>C'est exactement ce que Starter permet de faire, chaque semaine.</p>
+        <p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Revoir les offres →</a></p>
+        <p style="margin-top:24px;">AdStack</p>
+      `)
+    },
+    'monthly_novelty': {
+      subject: 'Ce qui a changé sur AdBoard depuis ta dernière visite',
+      html: wrap(`
+        <p>Salut${firstName ? ' ' + firstName : ''},</p>
+        <p>AdBoard continue d'évoluer — nouvelles fonctionnalités, suivi de tes demandes en temps réel, assistant intégré pour répondre à tes questions direct dans la plateforme.</p>
+        <p>Si tu avais mis ton inscription de côté, c'est peut-être le bon moment d'y rejeter un œil.</p>
+        <p><a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Retourner sur AdBoard →</a></p>
+        <p style="margin-top:24px;">AdStack</p>
+      `)
+    },
+    'monthly_checkin': {
+      subject: 'On est toujours là',
+      html: wrap(`
+        <p>Salut${firstName ? ' ' + firstName : ''},</p>
+        <p>Pas de pitch aujourd'hui — juste un mot pour savoir où tu en es.</p>
+        <p>Si tu as des questions sur AdStack, ou juste besoin d'un conseil sur tes visuels publicitaires, réponds à cet email. Zéro obligation d'acheter quoi que ce soit.</p>
+        <p style="margin-top:24px;">AdStack</p>
+      `)
+    },
   };
   return templates[key];
 }
@@ -2336,6 +2366,23 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
           if (!alreadySent) {
             const ok = await sendSequenceEmail(user.email, step.key, { firstName });
             if (ok) { await markSequenceSent(user.id, step.key); sentCount++; }
+          }
+        }
+      }
+
+      // Relance mensuelle après J21 — rotation social proof / nouveauté / check-in, coupure à 180 jours
+      if (ageDays >= 51 && ageDays < 180) {
+        const monthNumber = Math.floor((ageDays - 21) / 30); // 1, 2, 3, 4...
+        const monthlyKey = `monthly_${monthNumber}`;
+        const ROTATION = ['monthly_social_proof', 'monthly_novelty', 'monthly_checkin'];
+        const templateKey = ROTATION[(monthNumber - 1) % ROTATION.length];
+        // Fenêtre ±1 jour autour du jalon mensuel (21 + 30*n)
+        const targetDay = 21 + 30 * monthNumber;
+        if (ageDays >= targetDay - 1 && ageDays < targetDay + 1) {
+          const alreadySent = await wasSequenceSent(user.id, monthlyKey);
+          if (!alreadySent) {
+            const ok = await sendSequenceEmail(user.email, templateKey, { firstName });
+            if (ok) { await markSequenceSent(user.id, monthlyKey); sentCount++; }
           }
         }
       }
