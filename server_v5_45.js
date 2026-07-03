@@ -2455,7 +2455,7 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
     res.end(JSON.stringify({ ok: true }));
     try {
       const pulse = JSON.parse(body);
-      console.log('[Pulse] Reçu:', JSON.stringify(pulse).slice(0, 300));
+      console.log('[Pulse] Reçu (payload complet):', JSON.stringify(pulse));
       // Extraire les infos de la vente
       const sale = pulse?.data?.sale || pulse?.sale || pulse;
       const metadata = sale?.custom_metadata || sale?.metadata || {};
