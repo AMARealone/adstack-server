@@ -326,6 +326,118 @@ const PLAN_MAP = {
 
 const PLAN_LABELS = { starter: 'Conversion Starter', pro: 'Conversion Pro', scale: 'Conversion Scale' };
 
+// ── Séquence email de conversion J1/J5/J12/J21 ─────────────────────────────
+const SEQUENCE_PRICES = { starter: { price: 39900, perImg: 4433 } }; // Starter = 9 images/sem, référence pour {prix_par_image}
+
+function renderSequenceEmail(key, { firstName='', productName='' }) {
+  const prixLocal = SEQUENCE_PRICES.starter.price.toLocaleString('fr-FR') + ' FCFA';
+  const prixParImage = SEQUENCE_PRICES.starter.perImg.toLocaleString('fr-FR') + ' FCFA';
+  const wrap = (body) => `<div style="font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#222;font-size:15px;line-height:1.65;">${body}</div>`;
+
+  const templates = {
+    'j1_no_product': {
+      subject: 'Ton catalogue est vide — 2 minutes pour changer ça',
+      html: wrap(`
+        <p>Salut${firstName ? ' ' + firstName : ''},</p>
+        <p>Tu t'es inscrit sur AdBoard, mais ton catalogue est encore vide.</p>
+        <p>On sait que beaucoup de vendeurs bricolent leurs visuels eux-mêmes avec ChatGPT ou Canva pour aller plus vite — sauf que "plus vite" prend souvent des heures, et le résultat ne convertit pas toujours.</p>
+        <p>Ajoute ton produit, on s'occupe du reste.</p>
+        <p><a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Ajouter mon produit →</a></p>
+        <p style="margin-top:24px;">AdStack</p>
+      `)
+    },
+    'j1_has_product': {
+      subject: `${firstName || 'Ton produit'} est prêt — pas tes visuels`,
+      html: wrap(`
+        <p>Salut${firstName ? ' ' + firstName : ''},</p>
+        <p>Tu as créé ${productName || 'ton produit'}. Il est là, prêt.</p>
+        <p>Sauf qu'un produit sans images publicitaires, c'est un produit qui ne vend pas encore à son potentiel.</p>
+        <p><a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Demander mes visuels →</a></p>
+        <p style="margin-top:24px;">AdStack</p>
+      `)
+    },
+    'j5_vision': {
+      subject: 'La méthode qui a fait la différence pour un de nos clients',
+      html: wrap(`
+        <p>Salut${firstName ? ' ' + firstName : ''},</p>
+        <p><strong>AVANT :</strong> tu bricoles tes visuels toi-même avec l'IA, tu lances, tu croises les doigts. Si ça marche pas, tu recommences de zéro.</p>
+        <p><strong>APRÈS :</strong> chaque semaine, tu reçois plusieurs angles marketing différents pour ton produit — pas une seule image, plusieurs approches à tester en même temps. Tu identifies rapidement ce qui résonne avec ta cible, tu trouves ton winner plus vite.</p>
+        <p>C'est exactement ce qui a convaincu un de nos clients qui vend un produit santé complexe en Afrique francophone : les angles distincts lui ont permis de tester ce qui marchait vraiment, au lieu de deviner.</p>
+        <p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Découvrir Starter — ${prixLocal} →</a></p>
+        <p style="margin-top:24px;">AdStack</p>
+      `)
+    },
+    'j12_offer': {
+      subject: '"C\'est cher" — parlons-en',
+      html: wrap(`
+        <p>Salut${firstName ? ' ' + firstName : ''},</p>
+        <p>Tu regardes peut-être le prix de Starter (${prixLocal}/mois) et tu te dis que c'est cher.</p>
+        <p>Fais le calcul : ça revient à environ ${prixParImage} par image. Un freelance basique facture souvent plus cher pour une seule image, sans données marché, sans plusieurs angles à tester.</p>
+        <p>Le vrai coût, c'est pas Starter. C'est chaque jour sans bonnes images pendant que tes concurrents testent et toi non.</p>
+        <p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Je démarre avec Starter →</a></p>
+        <p style="margin-top:24px;">AdStack</p>
+      `)
+    },
+    'j21_breakup': {
+      subject: 'Je vais arrêter de t\'écrire',
+      html: wrap(`
+        <p>Salut${firstName ? ' ' + firstName : ''},</p>
+        <p>Ça fait 3 semaines que je t'envoie des emails, sans retour de ta part. Je vais arrêter de te solliciter pour pas être lourd.</p>
+        <p>Si c'est juste pas le bon moment, aucun souci, zéro pression.</p>
+        <p>Si t'as une question ou un truc qui bloque, réponds à cet email — je lis tout, je réponds à tout.</p>
+        <p style="margin-top:24px;">AdStack</p>
+      `)
+    },
+  };
+  return templates[key];
+}
+
+async function sendSequenceEmail(email, key, ctx) {
+  const RESEND_KEY = process.env.RESEND_API_KEY;
+  if (!RESEND_KEY) return false;
+  const tpl = renderSequenceEmail(key, ctx);
+  if (!tpl) return false;
+  try {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'AdStack <amar@adstackofficial.com>',
+        to: [email],
+        reply_to: 'amarbiranediaw@gmail.com',
+        subject: tpl.subject,
+        html: tpl.html,
+      })
+    });
+    return r.ok;
+  } catch(e) {
+    console.error('[Sequence] Erreur envoi:', e.message);
+    return false;
+  }
+}
+
+async function markSequenceSent(userId, emailKey) {
+  await fetch(`${SUPABASE_URL_INT}/rest/v1/email_sequence_log`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_SERVICE_KEY,
+      'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+      'Prefer': 'resolution=ignore-duplicates',
+    },
+    body: JSON.stringify({ user_id: userId, email_key: emailKey })
+  });
+}
+
+async function wasSequenceSent(userId, emailKey) {
+  const r = await fetch(
+    `${SUPABASE_URL_INT}/rest/v1/email_sequence_log?user_id=eq.${userId}&email_key=eq.${emailKey}&limit=1`,
+    { headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` } }
+  );
+  const rows = await r.json();
+  return Array.isArray(rows) && rows.length > 0;
+}
+
 // Génère une facture PDF en mémoire (Buffer)
 function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, priceFcfa, paymentDate, expiresAt }) {
   return new Promise((resolve, reject) => {
@@ -2157,6 +2269,81 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
       }
     } catch(e) { console.error('[Pulse] Erreur:', e); }
   });
+  return;
+}
+
+// GET /cron/email-sequence — déclenché 1x/jour par un cron externe (cron-job.org)
+if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
+  const urlObj = new URL(req.url, `http://${req.headers.host}`);
+  const key = urlObj.searchParams.get('key');
+  if (key !== process.env.SEQUENCE_CRON_SECRET) {
+    res.writeHead(403); res.end(JSON.stringify({ error: 'Clé invalide' })); return;
+  }
+  res.writeHead(200, {'Content-Type':'application/json'});
+  res.end(JSON.stringify({ ok: true, message: 'Séquence en cours de traitement' }));
+
+  try {
+    // 1. Récupérer tous les users (Supabase Admin API)
+    const usersRes = await fetch(`${SUPABASE_URL_INT}/auth/v1/admin/users?per_page=1000`, {
+      headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+    });
+    const usersData = await usersRes.json();
+    const users = usersData?.users || [];
+
+    // 2. Récupérer tous les abonnements actifs pour exclure les convertis
+    const subsRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?select=user_id,active`, {
+      headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+    });
+    const subs = await subsRes.json();
+    const convertedUserIds = new Set((subs || []).filter(s => s.active).map(s => s.user_id));
+
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const SEQUENCE_STEPS = [
+      { day: 1,  key: null }, // spécial : dépend du nb de produits (géré séparément)
+      { day: 5,  key: 'j5_vision' },
+      { day: 12, key: 'j12_offer' },
+      { day: 21, key: 'j21_breakup' },
+    ];
+
+    let sentCount = 0;
+
+    for (const user of users) {
+      if (!user.email || convertedUserIds.has(user.id)) continue; // déjà converti → on arrête tout
+      const ageMs = Date.now() - new Date(user.created_at).getTime();
+      const ageDays = ageMs / DAY_MS;
+      const firstName = user.user_metadata?.full_name?.split(' ')[0] || '';
+
+      // J1 — variante selon présence de produit (fenêtre 0.5 à 2 jours pour tolérance du cron quotidien)
+      if (ageDays >= 0.5 && ageDays < 2) {
+        const alreadySent = await wasSequenceSent(user.id, 'j1_no_product') || await wasSequenceSent(user.id, 'j1_has_product');
+        if (!alreadySent) {
+          const prodRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?user_id=eq.${user.id}&select=nom&limit=1`, {
+            headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+          });
+          const prods = await prodRes.json();
+          const hasProduct = Array.isArray(prods) && prods.length > 0;
+          const emailKey = hasProduct ? 'j1_has_product' : 'j1_no_product';
+          const ok = await sendSequenceEmail(user.email, emailKey, { firstName, productName: hasProduct ? prods[0].nom : '' });
+          if (ok) { await markSequenceSent(user.id, emailKey); sentCount++; }
+        }
+      }
+
+      // J5, J12, J21 — fenêtre ±0.5 jour autour du jour cible
+      for (const step of SEQUENCE_STEPS) {
+        if (!step.key) continue;
+        if (ageDays >= step.day - 0.5 && ageDays < step.day + 0.5) {
+          const alreadySent = await wasSequenceSent(user.id, step.key);
+          if (!alreadySent) {
+            const ok = await sendSequenceEmail(user.email, step.key, { firstName });
+            if (ok) { await markSequenceSent(user.id, step.key); sentCount++; }
+          }
+        }
+      }
+    }
+    console.log(`[Sequence] ✅ Traitement quotidien terminé — ${sentCount} email(s) envoyé(s)`);
+  } catch(e) {
+    console.error('[Sequence] Erreur cron:', e.message);
+  }
   return;
 }
 

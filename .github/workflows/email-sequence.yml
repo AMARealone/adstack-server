@@ -1,0 +1,17 @@
+name: Séquence email quotidienne
+
+on:
+  schedule:
+    # Tous les jours à 09h00 UTC (≈ 09h00 à Dakar, GMT)
+    - cron: '0 9 * * *'
+  workflow_dispatch: {} # permet de le lancer manuellement depuis l'onglet Actions pour tester
+
+jobs:
+  trigger-sequence:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Appeler le endpoint de séquence email
+        run: |
+          curl -sf "https://adstack-server.onrender.com/cron/email-sequence?key=${{ secrets.SEQUENCE_CRON_SECRET }}" \
+            || (echo "❌ Échec de l'appel au serveur" && exit 1)
+          echo "✅ Séquence déclenchée avec succès"
