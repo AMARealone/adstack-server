@@ -3,6 +3,7 @@ const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
 const PDFDocument = require('pdfkit');
+const webpush = require('web-push');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
@@ -468,6 +469,48 @@ async function wasSequenceSent(userId, emailKey) {
   return Array.isArray(rows) && rows.length > 0;
 }
 
+// ── Web Push (notifications navigateur) ────────────────────────────────────
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(
+    'mailto:contact@adstackofficial.com',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+}
+
+// Envoie une notification push à TOUTES les subscriptions d'un utilisateur
+async function sendPushToUser(userId, { title, body, url = '/adboard' }) {
+  if (!process.env.VAPID_PRIVATE_KEY) { console.warn('[Push] VAPID non configuré'); return; }
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/push_subscriptions?user_id=eq.${userId}`, {
+      headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+    });
+    const subs = await r.json();
+    if (!Array.isArray(subs) || subs.length === 0) return;
+
+    const payload = JSON.stringify({ title, body, url });
+    await Promise.all(subs.map(async (sub) => {
+      try {
+        await webpush.sendNotification(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+          payload
+        );
+      } catch(e) {
+        if (e.statusCode === 404 || e.statusCode === 410) {
+          fetch(`${SUPABASE_URL_INT}/rest/v1/push_subscriptions?id=eq.${sub.id}`, {
+            method: 'DELETE',
+            headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+          }).catch(()=>{});
+        } else {
+          console.error('[Push] Erreur envoi:', e.message);
+        }
+      }
+    }));
+  } catch(e) {
+    console.error('[Push] Erreur sendPushToUser:', e.message);
+  }
+}
+
 // Génère une facture PDF en mémoire (Buffer)
 function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, priceFcfa, paymentDate, expiresAt }) {
   return new Promise((resolve, reject) => {
@@ -677,6 +720,12 @@ async function activateSubscription(userId, plan, creditsPerWeek, priceFcfa, ema
       console.error('[Email] Échec non bloquant:', e.message);
     });
   }
+  // Notification push — confirmation abonnement
+  sendPushToUser(userId, {
+    title: '✅ Abonnement confirmé',
+    body: `Ton plan ${PLAN_LABELS[plan] || plan} est actif. Tu peux demander tes visuels dès maintenant.`,
+    url: '/adboard/products'
+  }).catch(()=>{});
 
   return data;
 }
@@ -2141,6 +2190,45 @@ EXEMPLES PARFAITS (modèle à suivre) :
     return;
   }
 
+// GET /push-vapid-key — donne la clé publique VAPID au client
+  if (req.method === 'GET' && req.url === '/push-vapid-key') {
+    res.writeHead(200, {'Content-Type':'application/json'});
+    res.end(JSON.stringify({ key: process.env.VAPID_PUBLIC_KEY || '' }));
+    return;
+  }
+
+// POST /push-subscribe — enregistre une souscription push pour un utilisateur
+  if (req.method === 'POST' && req.url === '/push-subscribe') {
+    let body = '';
+    req.on('data', d => body += d);
+    req.on('end', async () => {
+      try {
+        const { user_id, subscription } = JSON.parse(body);
+        if (!user_id || !subscription?.endpoint) { res.writeHead(400); res.end('{}'); return; }
+        await fetch(`${SUPABASE_URL_INT}/rest/v1/push_subscriptions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_SERVICE_KEY,
+            'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+            'Prefer': 'resolution=merge-duplicates',
+          },
+          body: JSON.stringify({
+            user_id,
+            endpoint: subscription.endpoint,
+            p256dh: subscription.keys?.p256dh,
+            auth: subscription.keys?.auth,
+          })
+        });
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ ok: true }));
+      } catch(e) {
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
 // POST /webhook/brief — reçoit un ticket de commande depuis AdBoard
   if (req.method === 'POST' && req.url === '/webhook/brief') {
 
@@ -2179,6 +2267,14 @@ EXEMPLES PARFAITS (modèle à suivre) :
         console.log(`[Brief] ✅ Reçu: ${brief.id} — ${brief.product.nom} (${brief.quantity} images)`);
         res.writeHead(200, {'Content-Type':'application/json'});
         res.end(JSON.stringify({ ok: true, id: brief.id }));
+        // Notification push — confirmation de la demande
+        if (brief.client.user_id) {
+          sendPushToUser(brief.client.user_id, {
+            title: '📦 Demande reçue',
+            body: `Tes ${brief.quantity} visuels pour ${brief.product.nom} sont en cours — livraison sous 48h.`,
+            url: '/adboard/tracking'
+          }).catch(()=>{});
+        }
         // Background removal en arrière-plan
         if (brief.product.photo_base64) {
           processProductPhoto(brief.product.photo_base64, brief.id).then(nobg => {
@@ -2321,11 +2417,29 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
     const users = usersData?.users || [];
 
     // 2. Récupérer tous les abonnements actifs pour exclure les convertis
-    const subsRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?select=user_id,active`, {
+    const subsRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?select=user_id,active,plan,expires_at`, {
       headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
     });
     const subs = await subsRes.json();
     const convertedUserIds = new Set((subs || []).filter(s => s.active).map(s => s.user_id));
+
+    // Rappel de renouvellement — 3 jours avant expiration, 1x max par cycle
+    for (const sub of (subs || [])) {
+      if (!sub.active || !sub.expires_at) continue;
+      const daysLeft = (new Date(sub.expires_at).getTime() - Date.now()) / (24*60*60*1000);
+      if (daysLeft > 0 && daysLeft <= 3) {
+        const reminderKey = `renewal_${sub.expires_at.slice(0,10)}`;
+        const already = await wasSequenceSent(sub.user_id, reminderKey);
+        if (!already) {
+          await sendPushToUser(sub.user_id, {
+            title: '⏳ Ton abonnement expire bientôt',
+            body: `Ton plan ${PLAN_LABELS[sub.plan] || sub.plan} expire dans ${Math.ceil(daysLeft)} jour(s). Renouvelle pour ne pas perdre tes livraisons.`,
+            url: '/adboard/offers'
+          });
+          await markSequenceSent(sub.user_id, reminderKey);
+        }
+      }
+    }
 
     const DAY_MS = 24 * 60 * 60 * 1000;
     const SEQUENCE_STEPS = [
@@ -2605,6 +2719,15 @@ if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/delete$/)) {
       saveBriefs(briefs);
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true }));
+      // Notification push — livrables prêts
+      const userId = briefs[idx].client?.user_id;
+      if (userId) {
+        sendPushToUser(userId, {
+          title: '🎉 Tes visuels sont prêts',
+          body: `Les images pour ${briefs[idx].product?.nom || 'ton produit'} sont livrées — va les récupérer sur AdBoard.`,
+          url: '/adboard/gallery'
+        }).catch(()=>{});
+      }
     } else {
       res.writeHead(404); res.end(JSON.stringify({ error: 'Brief not found' }));
     }
