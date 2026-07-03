@@ -402,7 +402,7 @@ async function sendSequenceEmail(email, key, ctx) {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'AdStack <amar@adstackofficial.com>',
+        from: 'AdStack <contact@adstackofficial.com>',
         to: [email],
         reply_to: 'amarbiranediaw@gmail.com',
         subject: tpl.subject,
@@ -599,7 +599,7 @@ async function sendWelcomeEmail({ email, name }) {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'Amar - AdStack <amar@adstackofficial.com>',
+        from: 'AdStack <contact@adstackofficial.com>',
         to: [email],
         reply_to: 'amarbiranediaw@gmail.com',
         subject: 'Bienvenue sur AdBoard — j\'ai une question pour toi',
