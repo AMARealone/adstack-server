@@ -2456,24 +2456,28 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
     try {
       const pulse = JSON.parse(body);
       console.log('[Pulse] Reçu (payload complet):', JSON.stringify(pulse));
-      // Extraire les infos de la vente
-      const sale = pulse?.data?.sale || pulse?.sale || pulse;
-      const metadata = sale?.custom_metadata || sale?.metadata || {};
-      const userId = metadata?.user_id;
-      const productId = sale?.product_id || sale?.product?.id;
-      const email = sale?.customer?.email || sale?.email;
+      // Structure réelle Chariow : product/customer/store au même niveau que sale, pas imbriqués dedans
+      const sale = pulse?.sale || {};
+      const product = pulse?.product || {};
+      const customer = pulse?.customer || {};
+      // custom_fields est un tableau [{name, value}], pas un objet plat
+      const customFields = {};
+      (sale?.custom_fields || []).forEach(f => { if (f?.name) customFields[f.name] = f.value; });
+      const userId = customFields.user_id;
+      const productId = product?.id;
+      const email = customer?.email;
       const planInfo = PLAN_MAP[productId];
       if (!planInfo) { console.warn('[Pulse] Produit inconnu:', productId); return; }
       // Si on a le user_id → activer directement
       if (userId) {
-        await activateSubscription(userId, planInfo.plan, planInfo.credits_per_week, planInfo.price_fcfa, email, sale?.customer?.name);
+        await activateSubscription(userId, planInfo.plan, planInfo.credits_per_week, planInfo.price_fcfa, email, customer?.name);
         return;
       }
       // Sinon chercher par email
       if (email) {
         const user = await findUserByEmail(email);
         if (user) {
-          await activateSubscription(user.id, planInfo.plan, planInfo.credits_per_week, planInfo.price_fcfa, email, user.user_metadata?.full_name || sale?.customer?.name);
+          await activateSubscription(user.id, planInfo.plan, planInfo.credits_per_week, planInfo.price_fcfa, email, user.user_metadata?.full_name || customer?.name);
         } else {
           console.warn(`[Pulse] User introuvable pour email: ${email} — abonnement en attente`);
         }
