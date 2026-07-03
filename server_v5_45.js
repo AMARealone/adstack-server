@@ -486,7 +486,11 @@ async function sendPushToUser(userId, { title, body, url = '/adboard' }) {
       headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
     });
     const subs = await r.json();
-    if (!Array.isArray(subs) || subs.length === 0) return;
+    if (!Array.isArray(subs) || subs.length === 0) {
+      console.warn(`[Push] Aucune souscription trouvée pour user ${userId} — rien envoyé`);
+      return;
+    }
+    console.log(`[Push] ${subs.length} souscription(s) trouvée(s) pour user ${userId}, envoi en cours...`);
 
     const payload = JSON.stringify({ title, body, url });
     await Promise.all(subs.map(async (sub) => {
@@ -495,14 +499,16 @@ async function sendPushToUser(userId, { title, body, url = '/adboard' }) {
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
           payload
         );
+        console.log(`[Push] ✅ Envoyé avec succès à l'endpoint ...${sub.endpoint.slice(-20)}`);
       } catch(e) {
         if (e.statusCode === 404 || e.statusCode === 410) {
+          console.warn(`[Push] Souscription expirée (${e.statusCode}), suppression...`);
           fetch(`${SUPABASE_URL_INT}/rest/v1/push_subscriptions?id=eq.${sub.id}`, {
             method: 'DELETE',
             headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
           }).catch(()=>{});
         } else {
-          console.error('[Push] Erreur envoi:', e.message);
+          console.error('[Push] Erreur envoi:', e.statusCode, e.message);
         }
       }
     }));
@@ -2228,8 +2234,11 @@ EXEMPLES PARFAITS (modèle à suivre) :
     req.on('end', async () => {
       try {
         const { user_id, subscription } = JSON.parse(body);
-        if (!user_id || !subscription?.endpoint) { res.writeHead(400); res.end('{}'); return; }
-        await fetch(`${SUPABASE_URL_INT}/rest/v1/push_subscriptions`, {
+        if (!user_id || !subscription?.endpoint) {
+          console.warn('[Push] /push-subscribe: payload invalide', { user_id, hasEndpoint: !!subscription?.endpoint });
+          res.writeHead(400); res.end('{}'); return;
+        }
+        const insertRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/push_subscriptions`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -2244,9 +2253,17 @@ EXEMPLES PARFAITS (modèle à suivre) :
             auth: subscription.keys?.auth,
           })
         });
+        if (!insertRes.ok) {
+          const errText = await insertRes.text();
+          console.error(`[Push] /push-subscribe: échec insertion Supabase (${insertRes.status}):`, errText.slice(0,300));
+          res.writeHead(500); res.end(JSON.stringify({ error: 'insert_failed' }));
+          return;
+        }
+        console.log(`[Push] ✅ Souscription enregistrée pour user ${user_id}`);
         res.writeHead(200, {'Content-Type':'application/json'});
         res.end(JSON.stringify({ ok: true }));
       } catch(e) {
+        console.error('[Push] /push-subscribe: exception', e.message);
         res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
       }
     });
