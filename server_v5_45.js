@@ -511,6 +511,29 @@ async function sendPushToUser(userId, { title, body, url = '/adboard' }) {
   }
 }
 
+// Écrit une entrée persistante dans la section Notifications d'AdBoard (indépendant du push)
+async function writeInAppNotification(userId, message, type = 'info') {
+  try {
+    await fetch(`${SUPABASE_URL_INT}/rest/v1/notifications`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+      },
+      body: JSON.stringify({ user_id: userId, message, type, read: false })
+    });
+  } catch(e) { console.error('[InAppNotif] Erreur:', e.message); }
+}
+
+// Combine push + trace persistante — à utiliser pour tout évènement asynchrone/externe important
+async function notifyUserBoth(userId, { title, body, url = '/adboard', type = 'info' }) {
+  await Promise.all([
+    sendPushToUser(userId, { title, body, url }),
+    writeInAppNotification(userId, `${title} — ${body}`, type),
+  ]);
+}
+
 // Génère une facture PDF en mémoire (Buffer)
 function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, priceFcfa, paymentDate, expiresAt }) {
   return new Promise((resolve, reject) => {
@@ -720,11 +743,12 @@ async function activateSubscription(userId, plan, creditsPerWeek, priceFcfa, ema
       console.error('[Email] Échec non bloquant:', e.message);
     });
   }
-  // Notification push — confirmation abonnement
-  sendPushToUser(userId, {
+  // Notification push + trace persistante — confirmation abonnement
+  notifyUserBoth(userId, {
     title: '✅ Abonnement confirmé',
     body: `Ton plan ${PLAN_LABELS[plan] || plan} est actif. Tu peux demander tes visuels dès maintenant.`,
-    url: '/adboard/products'
+    url: '/adboard/products',
+    type: 'payment',
   }).catch(()=>{});
 
   return data;
@@ -2229,6 +2253,26 @@ EXEMPLES PARFAITS (modèle à suivre) :
     return;
   }
 
+// POST /push-test — envoie une notification de test à l'utilisateur qui clique "Tester"
+  if (req.method === 'POST' && req.url === '/push-test') {
+    let body = '';
+    req.on('data', d => body += d);
+    req.on('end', async () => {
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok: true }));
+      try {
+        const { user_id } = JSON.parse(body);
+        if (!user_id) return;
+        await sendPushToUser(user_id, {
+          title: '🔔 Ça marche !',
+          body: 'Tes notifications AdBoard sont bien activées.',
+          url: '/adboard/notifications'
+        });
+      } catch(e) { console.error('[Push] Erreur test:', e.message); }
+    });
+    return;
+  }
+
 // POST /track-event — tracking léger pour déclencheurs contextuels (ex: vu la page Tarifs)
   if (req.method === 'POST' && req.url === '/track-event') {
     let body = '';
@@ -2455,10 +2499,11 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
         const reminderKey = `renewal_${sub.expires_at.slice(0,10)}`;
         const already = await wasSequenceSent(sub.user_id, reminderKey);
         if (!already) {
-          await sendPushToUser(sub.user_id, {
+          await notifyUserBoth(sub.user_id, {
             title: '⏳ Ton abonnement expire bientôt',
             body: `Ton plan ${PLAN_LABELS[sub.plan] || sub.plan} expire dans ${Math.ceil(daysLeft)} jour(s). Renouvelle pour ne pas perdre tes livraisons.`,
-            url: '/adboard/offers'
+            url: '/adboard/offers',
+            type: 'warning',
           });
           await markSequenceSent(sub.user_id, reminderKey);
         }
@@ -2804,13 +2849,14 @@ if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/delete$/)) {
       saveBriefs(briefs);
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true }));
-      // Notification push — livrables prêts
+      // Notification push + trace persistante — livrables prêts
       const userId = briefs[idx].client?.user_id;
       if (userId) {
-        sendPushToUser(userId, {
+        notifyUserBoth(userId, {
           title: '🎉 Tes visuels sont prêts',
           body: `Les images pour ${briefs[idx].product?.nom || 'ton produit'} sont livrées — va les récupérer sur AdBoard.`,
-          url: '/adboard/gallery'
+          url: '/adboard/gallery',
+          type: 'brief',
         }).catch(()=>{});
       }
     } else {
