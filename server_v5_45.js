@@ -2229,6 +2229,30 @@ EXEMPLES PARFAITS (modèle à suivre) :
     return;
   }
 
+// POST /track-event — tracking léger pour déclencheurs contextuels (ex: vu la page Tarifs)
+  if (req.method === 'POST' && req.url === '/track-event') {
+    let body = '';
+    req.on('data', d => body += d);
+    req.on('end', async () => {
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok: true }));
+      try {
+        const { user_id, event_key } = JSON.parse(body);
+        if (!user_id || !event_key) return;
+        await fetch(`${SUPABASE_URL_INT}/rest/v1/user_events`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_SERVICE_KEY,
+            'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+          },
+          body: JSON.stringify({ user_id, event_key })
+        });
+      } catch(e) { console.error('[Track] Erreur:', e.message); }
+    });
+    return;
+  }
+
 // POST /webhook/brief — reçoit un ticket de commande depuis AdBoard
   if (req.method === 'POST' && req.url === '/webhook/brief') {
 
@@ -2480,6 +2504,67 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
           if (!alreadySent) {
             const ok = await sendSequenceEmail(user.email, step.key, { firstName });
             if (ok) { await markSequenceSent(user.id, step.key); sentCount++; }
+          }
+        }
+      }
+
+      // ── Nudges push contextuels (vague 2) — chacun envoyé au maximum 1 fois, jamais répété ──
+      if (ageDays >= 2) {
+        const pushNoProduct = await wasSequenceSent(user.id, 'push_no_product');
+        const pushNoBrief = await wasSequenceSent(user.id, 'push_no_brief');
+
+        if (!pushNoProduct || !pushNoBrief) {
+          const prodRes2 = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?user_id=eq.${user.id}&select=id,nom`, {
+            headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+          });
+          const userProducts = await prodRes2.json();
+          const hasAnyProduct = Array.isArray(userProducts) && userProducts.length > 0;
+
+          if (!hasAnyProduct && !pushNoProduct) {
+            await sendPushToUser(user.id, {
+              title: '👋 Ton catalogue est vide',
+              body: 'Ajoute ton premier produit — ça prend 2 minutes.',
+              url: '/adboard/products'
+            });
+            await markSequenceSent(user.id, 'push_no_product');
+            sentCount++;
+          } else if (hasAnyProduct && !pushNoBrief) {
+            const productIds = userProducts.map(p => p.id).join(',');
+            const briefRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?product_id=in.(${productIds})&select=id&limit=1`, {
+              headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+            });
+            const briefs = await briefRes.json();
+            const hasAnyBrief = Array.isArray(briefs) && briefs.length > 0;
+            if (!hasAnyBrief) {
+              await sendPushToUser(user.id, {
+                title: '📸 Prêt pour tes premiers visuels ?',
+                body: `${userProducts[0].nom} est dans ton catalogue — demande tes images maintenant.`,
+                url: '/adboard/products'
+              });
+              await markSequenceSent(user.id, 'push_no_brief');
+              sentCount++;
+            }
+          }
+        }
+
+        // Vu Tarifs sans payer — au moins 20h après la visite, 1 seule fois
+        const pushSawPricing = await wasSequenceSent(user.id, 'push_saw_pricing');
+        if (!pushSawPricing) {
+          const evRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/user_events?user_id=eq.${user.id}&event_key=eq.viewed_pricing&order=created_at.asc&limit=1`, {
+            headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+          });
+          const events = await evRes.json();
+          if (Array.isArray(events) && events.length > 0) {
+            const hoursSinceView = (Date.now() - new Date(events[0].created_at).getTime()) / (60*60*1000);
+            if (hoursSinceView >= 20) {
+              await sendPushToUser(user.id, {
+                title: '💬 Des questions sur nos offres ?',
+                body: 'Amina peut y répondre directement sur AdBoard, ou lance-toi avec Starter.',
+                url: '/adboard/offers'
+              });
+              await markSequenceSent(user.id, 'push_saw_pricing');
+              sentCount++;
+            }
           }
         }
       }
