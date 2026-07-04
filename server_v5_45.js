@@ -762,14 +762,20 @@ async function activateSubscription(userId, plan, creditsPerWeek, priceFcfa, ema
 
 // Trouver un user Supabase par email
 async function findUserByEmail(email) {
-  const r = await fetch(`${SUPABASE_URL_INT}/auth/v1/admin/users?email=${encodeURIComponent(email)}`, {
+  if (!email) return null;
+  // ⚠️ L'API Admin Supabase ignore silencieusement ?email=... et renvoie TOUS les utilisateurs.
+  // On doit donc filtrer nous-mêmes, sinon on récupère un utilisateur au hasard (bug confirmé, cf. supabase/supabase#29832).
+  const r = await fetch(`${SUPABASE_URL_INT}/auth/v1/admin/users?per_page=1000`, {
     headers: {
       'apikey': SUPABASE_SERVICE_KEY,
       'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
     }
   });
   const data = await r.json();
-  return data?.users?.[0] || null;
+  const users = data?.users || [];
+  const normalizedTarget = email.trim().toLowerCase();
+  const match = users.find(u => u.email?.trim().toLowerCase() === normalizedTarget);
+  return match || null;
 }
 
 // ── HTTP Server ────────────────────────────────
@@ -2470,13 +2476,16 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
       if (!planInfo) { console.warn('[Pulse] Produit inconnu:', productId); return; }
       // Si on a le user_id → activer directement
       if (userId) {
+        console.log(`[Pulse] user_id trouvé directement dans custom_fields: ${userId}`);
         await activateSubscription(userId, planInfo.plan, planInfo.credits_per_week, planInfo.price_fcfa, email, customer?.name);
         return;
       }
-      // Sinon chercher par email
+      // Sinon chercher par email — chemin de secours, ne devrait quasi jamais arriver pour un achat AdBoard normal
+      console.warn(`[Pulse] ⚠️ Aucun user_id dans custom_fields — fallback recherche par email: "${email}"`);
       if (email) {
         const user = await findUserByEmail(email);
         if (user) {
+          console.log(`[Pulse] Fallback email: match trouvé → user_id=${user.id} pour email="${email}"`);
           await activateSubscription(user.id, planInfo.plan, planInfo.credits_per_week, planInfo.price_fcfa, email, user.user_metadata?.full_name || customer?.name);
         } else {
           console.warn(`[Pulse] User introuvable pour email: ${email} — abonnement en attente`);
