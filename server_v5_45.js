@@ -255,7 +255,7 @@ function vertexRequestGlobal(token, model, body) {
 }
 
 // ── Vertex AI Request ──────────────────────────
-function vertexRequest(token, model, body) {
+function vertexRequest(token, model, body, timeoutMs = 90000) {
   return new Promise((resolve, reject) => {
     const bodyStr = JSON.stringify(body);
     const path = `/v1/projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${model}:generateContent`;
@@ -266,14 +266,14 @@ function vertexRequest(token, model, body) {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(bodyStr)
       },
-      timeout: 25000
+      timeout: timeoutMs
     }, res => {
       let d = '';
       res.on('data', c => d += c);
       res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(new Error('Réponse Vertex invalide: ' + d.slice(0,200))); } });
     });
     req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout Vertex AI (25s)')); });
+    req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout Vertex AI (${timeoutMs/1000}s)`)); });
     req.write(bodyStr); req.end();
   });
 }
@@ -2793,7 +2793,7 @@ Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`
       try { token = await getToken(); }
       catch(e) { throw new Error('Token Vertex AI impossible: ' + e.message); }
       console.log('[Amina] Appel Vertex AI model=gemini-2.5-flash contents.length=', contents.length);
-      const geminiData = await vertexRequest(token, CHAT_MODEL, vertexBody);
+      const geminiData = await vertexRequest(token, CHAT_MODEL, vertexBody, 25000);
       console.log('[Amina] Réponse Vertex AI:', JSON.stringify(geminiData).slice(0, 400));
       if (!geminiData?.candidates?.[0]) {
         console.error('[Amina] Gemini error:', JSON.stringify(geminiData).slice(0,300));
