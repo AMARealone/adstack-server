@@ -75,36 +75,28 @@ function randomId(len = 8) {
 // (Le mode PRODUCTION utilise Gemini 2.5 Pro également, voir endpoint /creative-prod — Sonnet 4.6 n'est pas connecté actuellement)
 async function callGeminiForCreativePrompt(token, systemPrompt, ctBase64, ctMime, productBase64, productMime, synthesis) {
 
-  // Trim synthesis aggressively to keep prompt focused.
-  // Keep only: S0 (produit + palette), S1 (portrait + ville + teinte), S2 (angle), S5 (verbatim), S7 (codes visuels)
-  // Max ~3000 chars total
+  // Filtre la synthèse : ne garde que les sections utilisées par la compétence (S0, S1, S2, S5, S7).
+  // Vague 5 : suppression du plafond de 20 lignes/section qui amputait le contenu même des sections gardées.
   function trimSynthesis(text) {
     if (!text || text.length < 800) return text;
     const keep = ['S0', 'S1', 'S2', 'S5', 'S7'];
     const lines = text.split('\n');
     let result = [];
     let capturing = false;
-    let currentSection = null;
-    let sectionLines = 0;
     for (const line of lines) {
       const sMatch = line.match(/^S(\d)\s*[—–-]/);
       if (sMatch) {
-        currentSection = 'S' + sMatch[1];
+        const currentSection = 'S' + sMatch[1];
         capturing = keep.includes(currentSection);
-        sectionLines = 0;
       }
       if (capturing) {
-        // Cap each section at 20 lines to avoid very long sections
-        if (sectionLines < 20) {
-          result.push(line);
-          sectionLines++;
-        }
+        result.push(line);
       }
     }
     const trimmed = result.join('\n').trim();
     const ratio = Math.round((1 - trimmed.length / text.length) * 100);
     if (trimmed.length > 400) {
-      console.log(`→ Synthèse triée : ${text.length} → ${trimmed.length} chars (−${ratio}%)`);
+      console.log(`   [Creative Démo] Synthèse filtrée (S0/S1/S2/S5/S7) : ${text.length} → ${trimmed.length} chars (−${ratio}%)`);
       return trimmed;
     }
     return text;
@@ -112,24 +104,10 @@ async function callGeminiForCreativePrompt(token, systemPrompt, ctBase64, ctMime
 
   const trimmedSynthesis = trimSynthesis(synthesis);
 
+  // Vague 5 : vocabulaire "le CT" / "le PRODUIT FOURNI" — plus de IMAGE 1/IMAGE 2 (cause de confusion identifiée).
+  // Les règles (hiérarchie produit, palette hard-lock, etc.) vivent désormais uniquement dans la compétence (systemPrompt) — plus de duplication ici.
   const userText = [
-    'IMAGE 1 (que TU analyses) = CT RÉFÉRENCE PUBLICITAIRE — structure uniquement.',
-    'IMAGE 2 (que TU analyses) = PRODUIT CLIENT — vérité absolue du packaging.',
-    '',
-    '⚠️ RÉALITÉ CRITIQUE — CE QUE VOIT GEMINI IMAGE (Step 2) :',
-    'Step 2 reçoit UNIQUEMENT : image du produit + ton prompt texte. Il NE VOIT PAS le CT.',
-    '→ Décris chaque zone du CT avec une précision absolue en TEXTE (%, positions, proportions, style, invariants).',
-    '→ Le produit est "(IMAGE FOURNIE — fidélité photographique absolue, même packaging exact)" dans le prompt.',
-    '→ Aucune référence à "IMAGE 1"/"IMAGE 2" dans le prompt final.',
-    '→ Le prompt commence par : "⚠️ IMAGE FOURNIE — PRODUIT" puis le bloc fidélité, puis FORMAT :',
-    '',
-    '⚠️ RÈGLE HIÉRARCHIQUE — PRODUIT RÉEL > PRÉSENTATION SPÉCIFIQUE DU CT :',
-    'Si CT montre une gélule + produit réel = FLACON → décris le FLACON. Jamais la gélule.',
-    'JAMAIS inventer un objet absent d\'IMAGE 2 (produit).',
-    '',
-    '⚠️ PALETTE COULEURS — HARD LOCK :',
-    'Couleurs finales = EXCLUSIVEMENT palette S0 (codes HEX). JAMAIS les couleurs du CT.',
-    'Spécifie HEX dans chaque zone. Répète dans INSTRUCTIONS GEMINI.',
+    'Les deux images ci-jointes, dans cet ordre : le CT (inspiration à décoder — structure et intention uniquement) puis le PRODUIT FOURNI (produit réel du client — vérité absolue du packaging).',
     '',
     'SYNTHÈSE MARCHÉ :',
     trimmedSynthesis
@@ -156,22 +134,32 @@ Rien n'est ajouté. Rien n'est modifié. Ce que tu vois = ce que tu génères.
       ]
     }],
     generationConfig: {
-      temperature: 0.8,
-      maxOutputTokens: 10000
+      temperature: 0.4,
+      maxOutputTokens: 10000,
+      thinkingConfig: { thinkingBudget: 24576 }
     }
   };
 
   const data = await vertexRequest(token, 'gemini-2.5-pro', vertexBody);
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
-  let text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const cand = data.candidates?.[0];
+  let text = cand?.content?.parts?.[0]?.text || '';
   if (!text) throw new Error('Pas de texte dans la réponse Gemini 2.5 Pro.');
 
-  // Extract from FORMAT: onwards — strips any analysis written before
+  // Log diagnostic (même format que Vague 1 côté PROD) — visibilité sur le raisonnement réel de Gemini, absente jusqu'ici côté démo.
+  const finishReason = cand?.finishReason || 'inconnu';
+  const usage = data.usageMetadata || {};
+  console.log(`   [Creative Démo] finishReason=${finishReason} · tokens prompt=${usage.promptTokenCount ?? '?'} thinking=${usage.thoughtsTokenCount ?? 0} output=${usage.candidatesTokenCount ?? '?'} total=${usage.totalTokenCount ?? '?'}`);
+  if (finishReason === 'MAX_TOKENS') {
+    console.log(`   ⚠️  [Creative Démo] Réponse tronquée par maxOutputTokens (10000) — le prompt final est probablement incomplet`);
+  }
+
+  // Extrait à partir de FORMAT: — retire toute analyse écrite avant (garde-fou de sécurité)
   const formatIdx = text.indexOf('FORMAT :');
   if (formatIdx > 0) {
     text = text.slice(formatIdx);
-    console.log(`→ Extraction depuis FORMAT: (retiré ${formatIdx} chars d'analyse)`);
+    console.log(`   [Creative Démo] Extraction depuis FORMAT: (retiré ${formatIdx} chars d'analyse résiduelle)`);
   }
 
   return FIXED_HEADER + text;
