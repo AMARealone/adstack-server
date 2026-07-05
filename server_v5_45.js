@@ -974,21 +974,6 @@ const server = http.createServer(async (req, res) => {
 
         fs.writeFileSync(filepath, finalHtml, 'utf-8');
 
-        // ── Copie dans adboard/public/demo/ pour que Vercel serve les OG tags ──
-        try {
-          const adboardDemoDir = path.join(__dirname, 'adboard', 'public', 'demo');
-          if (!fs.existsSync(adboardDemoDir)) fs.mkdirSync(adboardDemoDir, { recursive: true });
-          fs.writeFileSync(path.join(adboardDemoDir, `${filename}.html`), finalHtml, 'utf-8');
-          console.log(`   → Copié dans adboard/public/demo/${filename}.html`);
-          // Auto git push pour déployer sur Vercel
-          const { exec } = require('child_process');
-          const adboardDir = path.join(__dirname, 'adboard');
-          exec(`cd "${adboardDir}" && git add public/demo/${filename}.html && git commit -m "demo: ${filename}" && git push`, (err, stdout, stderr) => {
-            if (err) console.log(`   ⚠️  Git push échoué : ${err.message}`);
-            else console.log(`   → Git push OK : ${filename}.html déployé sur Vercel`);
-          });
-        } catch(e) { console.log(`   ⚠️  Copie adboard échouée : ${e.message}`); }
-
         console.log(`✓ Mindmap saved: ${filename}.html (${(finalHtml.length/1024).toFixed(1)}KB)`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ url, slug: filename }));
