@@ -2239,7 +2239,7 @@ EXEMPLES PARFAITS (modèle à suivre) :
           const token = await getToken();
           const nicheData = await vertexRequest(token, 'gemini-2.5-flash', {
             contents: [{ role:'user', parts:[{ text: `Grande catégorie marketing 1-2 mots max pour: "${produit || slug}". Exemples: cosmétiques, santé, mode, beauté, nutrition. UNIQUEMENT la catégorie, rien d'autre.` }] }],
-            generationConfig: { maxOutputTokens: 15, temperature: 0 }
+            generationConfig: { maxOutputTokens: 50, temperature: 0, thinkingConfig: { thinkingBudget: 0 } }
           });
           niche = (nicheData.candidates?.[0]?.content?.parts?.[0]?.text || '').trim().split('\n')[0].replace(/['"«».,]/g,'');
         } catch(e) { niche = produit.split(' ')[0] || ''; }
@@ -2273,7 +2273,7 @@ EXEMPLES PARFAITS (modèle à suivre) :
       const token = await getToken();
       const data = await vertexRequest(token, 'gemini-2.5-flash', {
         contents: [{ role:'user', parts:[{ text:'Grande catégorie marketing en 1-2 mots pour ce produit: "'+produit+'". Exemples: "cosmétiques", "santé", "mode", "nutrition", "bien-être". La catégorie la plus large possible. Réponds UNIQUEMENT avec la catégorie.' }] }],
-        generationConfig: { maxOutputTokens: 20, temperature: 0 }
+        generationConfig: { maxOutputTokens: 50, temperature: 0, thinkingConfig: { thinkingBudget: 0 } }
       });
       const niche = (data.candidates?.[0]?.content?.parts?.[0]?.text || produit).trim().replace(/['"«»]/g,'').split('\n')[0].substring(0,30);
       console.log(`→ /niche "${produit}" → "${niche}"`);
