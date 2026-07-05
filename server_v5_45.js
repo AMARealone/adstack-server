@@ -974,6 +974,48 @@ const server = http.createServer(async (req, res) => {
 
         fs.writeFileSync(filepath, finalHtml, 'utf-8');
 
+        // ── Upload HTML vers Supabase Storage — survit aux redéploiements du serveur (disque Render éphémère) ──
+        try {
+          const SB_URL = 'https://mifljhsusidgzelnswma.supabase.co';
+          const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pZmxqaHN1c2lkZ3plbG5zd21hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MjI2MzQsImV4cCI6MjA5MzQ5ODYzNH0.AX4Xu0sP2tgjLhZSbCKhtw4Q3sd7GRMJ2aMKK3GfzUc';
+          const sbHeaders = { 'Authorization': `Bearer ${SB_KEY}`, 'apikey': SB_KEY };
+          const htmlBuffer = Buffer.from(finalHtml, 'utf-8');
+
+          // Créer le bucket s'il n'existe pas (idempotent, indépendant du bloc image OG plus haut)
+          await new Promise((res) => {
+            const bBody = JSON.stringify({ id: 'demos', name: 'demos', public: true });
+            const r = https.request({
+              hostname: 'mifljhsusidgzelnswma.supabase.co',
+              path: '/storage/v1/bucket',
+              method: 'POST',
+              headers: { ...sbHeaders, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bBody) }
+            }, resp => { resp.on('data', ()=>{}); resp.on('end', res); });
+            r.on('error', res); r.write(bBody); r.end();
+          });
+
+          const uploadRes = await new Promise((resolve, reject) => {
+            const r = https.request({
+              hostname: 'mifljhsusidgzelnswma.supabase.co',
+              path: `/storage/v1/object/demos/${filename}.html`,
+              method: 'POST',
+              headers: { ...sbHeaders, 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': htmlBuffer.length, 'x-upsert': 'true' }
+            }, resp => {
+              let d = '';
+              resp.on('data', c => d += c);
+              resp.on('end', () => resolve({ status: resp.statusCode, body: d }));
+            });
+            r.on('error', reject); r.write(htmlBuffer); r.end();
+          });
+
+          if (uploadRes.status === 200 || uploadRes.status === 201) {
+            console.log(`   → HTML sauvegardé sur Supabase (survit aux redéploiements) : ${filename}.html`);
+          } else {
+            console.log(`   ⚠️  Upload HTML Supabase échoué (${uploadRes.status}) : ${uploadRes.body.substring(0,100)}`);
+          }
+        } catch(sbErr) {
+          console.log(`   ⚠️  Upload HTML Supabase erreur : ${sbErr.message}`);
+        }
+
         console.log(`✓ Mindmap saved: ${filename}.html (${(finalHtml.length/1024).toFixed(1)}KB)`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ url, slug: filename }));
@@ -1013,10 +1055,31 @@ const server = http.createServer(async (req, res) => {
         'Cache-Control': 'public, max-age=3600'
       });
       res.end(fs.readFileSync(filepath));
-    } else {
-      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end('<h1 style="font-family:sans-serif;color:#999;text-align:center;padding:80px;">Mindmap introuvable ou expirée</h1>');
+      return;
     }
+
+    // ── Fallback Supabase — le fichier local a disparu (redéploiement du serveur = disque effacé) ──
+    const notFoundHtml = '<h1 style="font-family:sans-serif;color:#999;text-align:center;padding:80px;">Mindmap introuvable ou expirée</h1>';
+    const supabaseHtmlUrl = `https://mifljhsusidgzelnswma.supabase.co/storage/v1/object/public/demos/${slug}.html`;
+    https.get(supabaseHtmlUrl, sbRes => {
+      if (sbRes.statusCode === 200) {
+        let chunks = [];
+        sbRes.on('data', c => chunks.push(c));
+        sbRes.on('end', () => {
+          res.writeHead(200, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'public, max-age=3600'
+          });
+          res.end(Buffer.concat(chunks));
+        });
+      } else {
+        res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(notFoundHtml);
+      }
+    }).on('error', () => {
+      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(notFoundHtml);
+    });
     return;
   }
 
