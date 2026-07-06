@@ -1088,6 +1088,7 @@ const server = http.createServer(async (req, res) => {
   const PROSPECTOR_KEY = 'adstack2024xProspectionKey99';
 
   function relayToProspector(path, method, res) {
+    console.log(`[Prospector Relay] ${method} ${path} → ${PROSPECTOR_URL}${path}`);
     const target = new URL(PROSPECTOR_URL + path);
     const options = {
       hostname: target.hostname,
@@ -1099,15 +1100,20 @@ const server = http.createServer(async (req, res) => {
       let body = '';
       pRes.on('data', c => body += c);
       pRes.on('end', () => {
+        console.log(`[Prospector Relay] Réponse ${pRes.statusCode} : ${body.slice(0, 150)}`);
         res.writeHead(pRes.statusCode || 200, { 'Content-Type': 'application/json' });
         res.end(body || '{}');
       });
     });
     r.on('error', (e) => {
+      console.log(`[Prospector Relay] ⚠️  Erreur réseau : ${e.message}`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ running: false, error: 'PC hors ligne ou tunnel arrêté : ' + e.message }));
     });
-    r.setTimeout(15000, () => { r.destroy(new Error('Timeout — PC probablement hors ligne')); });
+    r.setTimeout(15000, () => {
+      console.log('[Prospector Relay] ⚠️  Timeout — PC probablement hors ligne');
+      r.destroy(new Error('Timeout — PC probablement hors ligne'));
+    });
     r.end();
   }
 
