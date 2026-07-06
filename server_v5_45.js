@@ -1083,6 +1083,47 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── Prospection auto — relais vers le wrapper local (PC via tunnel Cloudflare) ──
+  const PROSPECTOR_URL = 'https://prospector.adstackofficial.com';
+  const PROSPECTOR_KEY = 'adstack2024xProspectionKey99';
+
+  function relayToProspector(path, method, res) {
+    const target = new URL(PROSPECTOR_URL + path);
+    const options = {
+      hostname: target.hostname,
+      path: target.pathname,
+      method,
+      headers: { 'X-Api-Key': PROSPECTOR_KEY }
+    };
+    const r = https.request(options, pRes => {
+      let body = '';
+      pRes.on('data', c => body += c);
+      pRes.on('end', () => {
+        res.writeHead(pRes.statusCode || 200, { 'Content-Type': 'application/json' });
+        res.end(body || '{}');
+      });
+    });
+    r.on('error', (e) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ running: false, error: 'PC hors ligne ou tunnel arrêté : ' + e.message }));
+    });
+    r.setTimeout(15000, () => { r.destroy(new Error('Timeout — PC probablement hors ligne')); });
+    r.end();
+  }
+
+  if (req.method === 'POST' && req.url === '/prospector/start') {
+    relayToProspector('/prospector/start', 'POST', res);
+    return;
+  }
+  if (req.method === 'POST' && req.url === '/prospector/stop') {
+    relayToProspector('/prospector/stop', 'POST', res);
+    return;
+  }
+  if (req.method === 'GET' && req.url === '/prospector/status') {
+    relayToProspector('/prospector/status', 'GET', res);
+    return;
+  }
+
   // Generate endpoint
   if (req.method === 'POST' && req.url === '/generate') {
     let body = '';
