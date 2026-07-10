@@ -331,9 +331,12 @@ const SUPABASE_URL_INT = process.env.SUPABASE_URL || 'https://mifljhsusidgzelnsw
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 
 const PLAN_MAP = {
-  'prd_ljowq8': { plan: 'starter', credits_per_week: 9,  price_fcfa: 39900 },
-  'prd_34w031': { plan: 'pro',     credits_per_week: 18, price_fcfa: 79900 },
-  'prd_9fi79y': { plan: 'scale',   credits_per_week: 36, price_fcfa: 99900 },
+  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly', credits_per_week: 9,  price_fcfa: 39900,  prix_img: 1108 },
+  'prd_wdya3v9h': { plan: 'starter', cycle: 'annual',  credits_per_week: 9,  price_fcfa: 29900,  prix_img: 830 },
+  'prd_34w031':   { plan: 'pro',     cycle: 'monthly', credits_per_week: 18, price_fcfa: 69900,  prix_img: 970 },
+  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'annual',  credits_per_week: 18, price_fcfa: 54900,  prix_img: 762 },
+  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly', credits_per_week: 36, price_fcfa: 109900, prix_img: 763 },
+  'prd_dn4fb72l': { plan: 'scale',   cycle: 'annual',  credits_per_week: 36, price_fcfa: 79900,  prix_img: 554 },
 };
 
 const PLAN_LABELS = { starter: 'Conversion Starter', pro: 'Conversion Pro', scale: 'Conversion Scale' };
@@ -552,7 +555,7 @@ async function notifyUserBoth(userId, { title, body, url = '/adboard', type = 'i
 }
 
 // Génère une facture PDF en mémoire (Buffer)
-function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, priceFcfa, paymentDate, expiresAt }) {
+function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, cycle, creditsPerWeek, prixImg, priceFcfa, paymentDate, expiresAt }) {
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({ size: 'A4', margin: 50 });
@@ -561,8 +564,12 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
+      const cycleLabel = cycle === 'annual' ? 'Abonnement annuel' : 'Abonnement mensuel';
+      const weeksInPeriod = Math.round((expiresAt.getTime() - paymentDate.getTime()) / (7*24*60*60*1000));
+      const totalImages = weeksInPeriod * (creditsPerWeek || 0);
+
       // Header
-      doc.fontSize(22).fillColor('#2D7FF9').font('Helvetica-Bold').text('AdStack', 50, 50);
+      doc.fontSize(22).fillColor('#5B8DEF').font('Helvetica-Bold').text('AdStack', 50, 50);
       doc.fontSize(10).fillColor('#666666').font('Helvetica').text('Agence de créatives Meta Ads', 50, 78);
 
       doc.fontSize(18).fillColor('#111111').font('Helvetica-Bold').text('FACTURE', 400, 50, { align: 'right' });
@@ -577,7 +584,7 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
       doc.text(customerEmail, 50, 173);
 
       // Table header
-      const tableTop = 230;
+      const tableTop = 210;
       doc.fontSize(10).fillColor('#666666').font('Helvetica-Bold');
       doc.text('Description', 50, tableTop);
       doc.text('Période', 320, tableTop);
@@ -587,7 +594,7 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
       // Table row
       const rowY = tableTop + 32;
       doc.fontSize(11).fillColor('#111111').font('Helvetica-Bold').text(PLAN_LABELS[plan] || plan, 50, rowY);
-      doc.fontSize(9).fillColor('#888888').font('Helvetica').text('Abonnement mensuel — livraisons hebdomadaires', 50, rowY + 15);
+      doc.fontSize(9).fillColor('#888888').font('Helvetica').text(`${cycleLabel} — livraisons hebdomadaires`, 50, rowY + 15);
       doc.fontSize(10).fillColor('#333333').text(
         `${paymentDate.toLocaleDateString('fr-FR')} → ${expiresAt.toLocaleDateString('fr-FR')}`, 320, rowY
       );
@@ -595,11 +602,27 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
         `${priceFcfa.toLocaleString('fr-FR')} FCFA`, 470, rowY, { align: 'right' }
       );
 
-      doc.moveTo(50, rowY + 50).lineTo(545, rowY + 50).strokeColor('#E5E5E5').stroke();
+      // Détail : ce que couvre cet abonnement
+      const detailTop = rowY + 45;
+      doc.moveTo(50, detailTop - 8).lineTo(545, detailTop - 8).strokeColor('#F0F0F0').stroke();
+      doc.fontSize(9).fillColor('#666666').font('Helvetica-Bold').text('Ce que couvre cet abonnement :', 50, detailTop);
+      const detailLines = [
+        `${creditsPerWeek || 0} images publicitaires livrées chaque semaine`,
+        `Soit environ ${weeksInPeriod} semaine${weeksInPeriod>1?'s':''} sur cette période — ${totalImages} images au total`,
+        prixImg ? `Prix moyen par image : ${prixImg.toLocaleString('fr-FR')} FCFA` : null,
+        'Données marché hebdomadaires (cibles, concurrents, tendances)',
+      ].filter(Boolean);
+      doc.fontSize(9).fillColor('#444444').font('Helvetica');
+      detailLines.forEach((line, i) => {
+        doc.text(`•  ${line}`, 50, detailTop + 16 + (i * 14));
+      });
+
+      const afterDetailY = detailTop + 16 + (detailLines.length * 14) + 12;
+      doc.moveTo(50, afterDetailY).lineTo(545, afterDetailY).strokeColor('#E5E5E5').stroke();
 
       // Total
-      doc.fontSize(13).fillColor('#2D7FF9').font('Helvetica-Bold').text(
-        `Total payé : ${priceFcfa.toLocaleString('fr-FR')} FCFA`, 320, rowY + 65, { align: 'right', width: 225 }
+      doc.fontSize(13).fillColor('#5B8DEF').font('Helvetica-Bold').text(
+        `Total payé : ${priceFcfa.toLocaleString('fr-FR')} FCFA`, 320, afterDetailY + 15, { align: 'right', width: 225 }
       );
 
       // Footer
@@ -615,7 +638,7 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
 }
 
 // Envoie un email via Resend avec la facture en pièce jointe
-async function sendPaymentConfirmationEmail({ email, name, plan, priceFcfa, paymentDate, expiresAt }) {
+async function sendPaymentConfirmationEmail({ email, name, plan, cycle, creditsPerWeek, prixImg, priceFcfa, paymentDate, expiresAt }) {
   const RESEND_KEY = process.env.RESEND_API_KEY;
   if (!RESEND_KEY) { console.warn('[Email] RESEND_API_KEY manquante — email non envoyé'); return; }
 
@@ -623,23 +646,25 @@ async function sendPaymentConfirmationEmail({ email, name, plan, priceFcfa, paym
 
   let pdfBuffer;
   try {
-    pdfBuffer = await generateInvoicePDF({ invoiceNumber, customerEmail: email, customerName: name, plan, priceFcfa, paymentDate, expiresAt });
+    pdfBuffer = await generateInvoicePDF({ invoiceNumber, customerEmail: email, customerName: name, plan, cycle, creditsPerWeek, prixImg, priceFcfa, paymentDate, expiresAt });
   } catch(e) {
     console.error('[Invoice] Erreur génération PDF:', e.message);
   }
 
   const planLabel = PLAN_LABELS[plan] || plan;
+  const cycleLabel = cycle === 'annual' ? 'annuel' : 'mensuel';
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;">
-      <h2 style="color:#2D7FF9;">Paiement confirmé ✅</h2>
+      <h2 style="color:#5B8DEF;">Paiement confirmé ✅</h2>
       <p>Bonjour${name ? ' ' + name : ''},</p>
-      <p>Merci pour ton abonnement <strong>${planLabel}</strong> ! Ton paiement a bien été reçu.</p>
+      <p>Merci pour ton abonnement <strong>${planLabel}</strong> (${cycleLabel}) ! Ton paiement a bien été reçu.</p>
       <div style="background:#F5F8FF;border-radius:10px;padding:16px 20px;margin:20px 0;">
-        <p style="margin:4px 0;"><strong>Plan :</strong> ${planLabel}</p>
+        <p style="margin:4px 0;"><strong>Plan :</strong> ${planLabel} — ${cycleLabel}</p>
+        <p style="margin:4px 0;"><strong>Images livrées :</strong> ${creditsPerWeek || 0} / semaine</p>
         <p style="margin:4px 0;"><strong>Montant :</strong> ${priceFcfa.toLocaleString('fr-FR')} FCFA</p>
         <p style="margin:4px 0;"><strong>Valide jusqu'au :</strong> ${expiresAt.toLocaleDateString('fr-FR')}</p>
       </div>
-      <p>Ta facture est jointe à cet email. Tu peux dès maintenant demander tes premiers visuels depuis <a href="https://adstackofficial.com/adboard/products">AdBoard</a>.</p>
+      <p>Ta facture détaillée est jointe à cet email. Tu peux dès maintenant demander tes premiers visuels depuis <a href="https://adstackofficial.com/adboard/products">AdBoard</a>.</p>
       <p style="color:#999;font-size:12px;margin-top:30px;">AdStack — Dakar, Sénégal</p>
     </div>
   `;
@@ -731,9 +756,10 @@ async function sendWelcomeEmail({ email, name }) {
 }
 
 // Activer un abonnement dans Supabase (upsert)
-async function activateSubscription(userId, plan, creditsPerWeek, priceFcfa, email, name) {
+async function activateSubscription(userId, plan, cycle, creditsPerWeek, priceFcfa, prixImg, email, name) {
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 jours, reset complet à chaque paiement
+  const dureeJours = cycle === 'annual' ? 365 : 30;
+  const expiresAt = new Date(now.getTime() + dureeJours * 24 * 60 * 60 * 1000);
   const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions`, {
     method: 'POST',
     headers: {
@@ -745,6 +771,7 @@ async function activateSubscription(userId, plan, creditsPerWeek, priceFcfa, ema
     body: JSON.stringify({
       user_id: userId,
       plan: plan,
+      cycle: cycle,
       credits_per_week: creditsPerWeek,
       active: true,
       started_at: now.toISOString(),
@@ -752,11 +779,11 @@ async function activateSubscription(userId, plan, creditsPerWeek, priceFcfa, ema
     })
   });
   const data = await r.json();
-  console.log(`[Chariow] ✅ Abonnement activé: ${userId} → ${plan} (expire le ${expiresAt.toISOString()})`);
+  console.log(`[Chariow] ✅ Abonnement activé: ${userId} → ${plan} (${cycle}, expire le ${expiresAt.toISOString()})`);
 
   // Envoi email + facture (non bloquant, ne casse pas l'activation si ça échoue)
   if (email && priceFcfa) {
-    sendPaymentConfirmationEmail({ email, name, plan, priceFcfa, paymentDate: now, expiresAt }).catch(e => {
+    sendPaymentConfirmationEmail({ email, name, plan, cycle, creditsPerWeek, prixImg, priceFcfa, paymentDate: now, expiresAt }).catch(e => {
       console.error('[Email] Échec non bloquant:', e.message);
     });
   }
@@ -2541,8 +2568,8 @@ if (req.method === 'POST' && req.url === '/create-checkout') {
       } else if (data?.data?.step === 'completed') {
         // Produit déjà acheté ou gratuit → activer directement
         if (user_id && plan) {
-          const planInfo = PLAN_MAP[product_id] || { plan, credits_per_week: 9, price_fcfa: 0 };
-          await activateSubscription(user_id, planInfo.plan, planInfo.credits_per_week, planInfo.price_fcfa, email);
+          const planInfo = PLAN_MAP[product_id] || { plan, cycle: 'monthly', credits_per_week: 9, price_fcfa: 0, prix_img: 0 };
+          await activateSubscription(user_id, planInfo.plan, planInfo.cycle, planInfo.credits_per_week, planInfo.price_fcfa, planInfo.prix_img, email);
         }
         res.writeHead(200, {'Content-Type':'application/json'});
         res.end(JSON.stringify({ checkout_url: null, already_active: true }));
@@ -2583,7 +2610,7 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
       // Si on a le user_id → activer directement
       if (userId) {
         console.log(`[Pulse] user_id trouvé directement dans custom_fields: ${userId}`);
-        await activateSubscription(userId, planInfo.plan, planInfo.credits_per_week, planInfo.price_fcfa, email, customer?.name);
+        await activateSubscription(userId, planInfo.plan, planInfo.cycle, planInfo.credits_per_week, planInfo.price_fcfa, planInfo.prix_img, email, customer?.name);
         return;
       }
       // Sinon chercher par email — chemin de secours, ne devrait quasi jamais arriver pour un achat AdBoard normal
@@ -2592,7 +2619,7 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
         const user = await findUserByEmail(email);
         if (user) {
           console.log(`[Pulse] Fallback email: match trouvé → user_id=${user.id} pour email="${email}"`);
-          await activateSubscription(user.id, planInfo.plan, planInfo.credits_per_week, planInfo.price_fcfa, email, user.user_metadata?.full_name || customer?.name);
+          await activateSubscription(user.id, planInfo.plan, planInfo.cycle, planInfo.credits_per_week, planInfo.price_fcfa, planInfo.prix_img, email, user.user_metadata?.full_name || customer?.name);
         } else {
           console.warn(`[Pulse] User introuvable pour email: ${email} — abonnement en attente`);
         }
