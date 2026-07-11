@@ -2767,7 +2767,7 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
             if (hoursSinceView >= 20) {
               await sendPushToUser(user.id, {
                 title: '💬 Des questions sur nos offres ?',
-                body: 'Amina peut y répondre directement sur AdBoard, ou lance-toi avec Starter.',
+                body: 'Ava peut y répondre directement sur AdBoard, ou lance-toi avec Starter.',
                 url: '/adboard/offers'
               });
               await markSequenceSent(user.id, 'push_saw_pricing');
@@ -2833,7 +2833,7 @@ if (req.method === 'GET' && req.url.startsWith('/check-subscription/')) {
 }
 
 
-// POST /chat — Amina AI Assistant
+// POST /chat — Ava AI Assistant
 if (req.method === 'POST' && req.url === '/chat') {
   let body = '';
   req.on('data', d => body += d);
@@ -2861,8 +2861,11 @@ if (req.method === 'POST' && req.url === '/chat') {
         return new Intl.NumberFormat(undefined, {style:'currency', currency, maximumFractionDigits:0}).format(val);
       };
       const userMarket = [...new Set(products.map(p => p.pays).filter(Boolean))].join(', ') || 'non précisé';
+      const today = new Date().toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
 
-      const SYSTEM = `Tu es Amina, l'assistante d'AdStack — agence d'images publicitaires Meta Ads pour vendeurs en ligne.
+      const SYSTEM = `Tu es Ava, l'assistante d'AdStack — agence d'images publicitaires Meta Ads pour vendeurs en ligne.
+
+DATE DU JOUR : ${today}. Utilise toujours cette date comme référence — ne suppose jamais une autre année.
 
 CONTEXTE UTILISATEUR
 - Statut : ${isConnected ? 'Connecté (' + user?.email + ')' : 'Non connecté'}
@@ -2873,16 +2876,24 @@ CONTEXTE UTILISATEUR
 - Devise : ${currency}
 - Messages échangés : ${msgCount}
 
-OFFRES (toujours dans la devise de l'utilisateur)
-Starter : ${formatPrice(39900)}/mois · 9 images/sem · 1 produit
-Pro : ${formatPrice(79900)}/mois · 18 images/sem · 2 produits
-Scale : ${formatPrice(99900)}/mois · 36 images/sem · 4 produits
+OFFRES (toujours dans la devise de l'utilisateur — mensuel ET annuel existent, l'annuel fait économiser ~25%)
+Starter : ${formatPrice(39900)}/mois (mensuel) ou ${formatPrice(29900)}/mois (annuel) · 9 images/sem · 1 produit
+Pro : ${formatPrice(69900)}/mois (mensuel) ou ${formatPrice(54900)}/mois (annuel) · 18 images/sem · 1-2 produits
+Scale : ${formatPrice(109900)}/mois (mensuel) ou ${formatPrice(79900)}/mois (annuel) · 36 images/sem · 1-4 produits
 Plan actif : ${hasSubscription ? planActive.toUpperCase() + ' — NE JAMAIS le reproposer' : 'AUCUN'}
 
 TU ES
-Amina. Tu parles comme une vraie personne — directe, chaleureuse. Prénom utilisé MAX 1 fois dans toute la conversation.
+Ava. Tu parles comme une vraie personne — directe, chaleureuse. Prénom utilisé MAX 1 fois dans toute la conversation.
 
 ━━━━━━━━━━━━━━━
+RÈGLE 0 — TON RÔLE, STRICT ET NON NÉGOCIABLE
+Tu ne fais JAMAIS le travail toi-même. Tu ne proposes JAMAIS d'angles marketing, tu ne demandes JAMAIS les couleurs
+d'un produit, tu ne demandes JAMAIS quel type de visuel (avant/après, etc.) la personne veut, tu ne donnes JAMAIS
+d'avis créatif ou d'analyse de marché. Ce travail est fait après la commande par notre équipe humaine — pas par toi.
+Ton rôle se limite à : expliquer comment AdStack fonctionne, rassurer, rediriger vers la bonne action (créer un
+produit, s'abonner, suivre une commande, voir la galerie). Si on te demande un avis créatif/marketing, réponds que
+notre équipe s'en charge une fois la commande passée, et redirige vers l'action correspondante.
+
 RÈGLE 1 — FORMAT (décide AVANT d'écrire)
 → Réponse simple = 1-3 phrases, zéro bullet
 → 2-4 éléments = bullets courts, 1 ligne max chacun
@@ -2894,10 +2905,10 @@ RÈGLE 2 — CONCISION
 Maximum d'info, minimum de mots.
 
 RÈGLE 3 — GOOGLE SEARCH
-Construis toujours la requête avec : marché de l'utilisateur (${userMarket}), catégorie produit, année en cours. Jamais de données d'un autre pays que le sien.
+Construis toujours la requête avec : marché de l'utilisateur (${userMarket}), catégorie produit, année en cours (${new Date().getFullYear()}). Jamais de données d'un autre pays que le sien.
 
-RÈGLE 4 — BÉNÉFICES PAS FEATURES
-❌ "36 images/semaine" → ✅ "Tester 6 angles — quand tu trouves le winner, tu scales."
+RÈGLE 4 — BÉNÉFICES PAS FEATURES (dans le discours, jamais dans les faits — voir RÈGLE 0)
+❌ "36 images/semaine" → ✅ "Notre équipe teste plusieurs angles pour toi — quand le winner sort, tu scales."
 Désir profond : plus de ventes, moins de galère, liberté financière.
 
 RÈGLE 5 — CTA
@@ -2925,11 +2936,11 @@ Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`
       let token;
       try { token = await getToken(); }
       catch(e) { throw new Error('Token Vertex AI impossible: ' + e.message); }
-      console.log('[Amina] Appel Vertex AI model=gemini-2.5-flash contents.length=', contents.length);
+      console.log('[Ava] Appel Vertex AI model=gemini-2.5-flash contents.length=', contents.length);
       const geminiData = await vertexRequest(token, CHAT_MODEL, vertexBody, 25000);
-      console.log('[Amina] Réponse Vertex AI:', JSON.stringify(geminiData).slice(0, 400));
+      console.log('[Ava] Réponse Vertex AI:', JSON.stringify(geminiData).slice(0, 400));
       if (!geminiData?.candidates?.[0]) {
-        console.error('[Amina] Gemini error:', JSON.stringify(geminiData).slice(0,300));
+        console.error('[Ava] Gemini error:', JSON.stringify(geminiData).slice(0,300));
       }
       const reply = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "Désolée, je n'ai pas pu répondre. Réessaie dans un instant.";
 
@@ -2949,7 +2960,7 @@ Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ reply }));
     } catch(e) {
-      console.error('[Amina] ERREUR COMPLÈTE:', e.message, e.stack?.slice(0,300));
+      console.error('[Ava] ERREUR COMPLÈTE:', e.message, e.stack?.slice(0,300));
       res.writeHead(500);
       res.end(JSON.stringify({ reply: "Une erreur s'est produite. Réessaie dans un instant.", error: e.message }));
     }
