@@ -2381,15 +2381,15 @@ EXEMPLES PARFAITS (modèle à suivre) :
     return;
   }
 
-// POST /push-subscribe — enregistre une souscription push pour un utilisateur
+// POST /push-subscribe — enregistre une souscription push pour un utilisateur OU un visiteur anonyme
   if (req.method === 'POST' && req.url === '/push-subscribe') {
     let body = '';
     req.on('data', d => body += d);
     req.on('end', async () => {
       try {
-        const { user_id, subscription } = JSON.parse(body);
-        if (!user_id || !subscription?.endpoint) {
-          console.warn('[Push] /push-subscribe: payload invalide', { user_id, hasEndpoint: !!subscription?.endpoint });
+        const { user_id, anon_id, subscription } = JSON.parse(body);
+        if ((!user_id && !anon_id) || !subscription?.endpoint) {
+          console.warn('[Push] /push-subscribe: payload invalide', { user_id, anon_id, hasEndpoint: !!subscription?.endpoint });
           res.writeHead(400); res.end('{}'); return;
         }
         const insertRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/push_subscriptions`, {
@@ -2401,7 +2401,8 @@ EXEMPLES PARFAITS (modèle à suivre) :
             'Prefer': 'resolution=merge-duplicates',
           },
           body: JSON.stringify({
-            user_id,
+            user_id: user_id || null,
+            anon_id: user_id ? null : anon_id,
             endpoint: subscription.endpoint,
             p256dh: subscription.keys?.p256dh,
             auth: subscription.keys?.auth,
@@ -2413,11 +2414,40 @@ EXEMPLES PARFAITS (modèle à suivre) :
           res.writeHead(500); res.end(JSON.stringify({ error: 'insert_failed' }));
           return;
         }
-        console.log(`[Push] ✅ Souscription enregistrée pour user ${user_id}`);
+        console.log(`[Push] ✅ Souscription enregistrée pour ${user_id ? 'user '+user_id : 'anon '+anon_id}`);
         res.writeHead(200, {'Content-Type':'application/json'});
         res.end(JSON.stringify({ ok: true }));
       } catch(e) {
         console.error('[Push] /push-subscribe: exception', e.message);
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+// POST /push-merge-anon — relie une souscription anonyme au vrai compte, une fois connecté
+  if (req.method === 'POST' && req.url === '/push-merge-anon') {
+    let body = '';
+    req.on('data', d => body += d);
+    req.on('end', async () => {
+      try {
+        const { anon_id, user_id } = JSON.parse(body);
+        if (!anon_id || !user_id) { res.writeHead(400); res.end('{}'); return; }
+        const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/push_subscriptions?anon_id=eq.${anon_id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_SERVICE_KEY,
+            'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+            'Prefer': 'return=minimal',
+          },
+          body: JSON.stringify({ user_id, anon_id: null })
+        });
+        console.log(`[Push] Fusion anon→user : ${anon_id} → ${user_id} (${r.ok ? 'ok' : 'échec ' + r.status})`);
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ ok: r.ok }));
+      } catch(e) {
+        console.error('[Push] /push-merge-anon: exception', e.message);
         res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
       }
     });
