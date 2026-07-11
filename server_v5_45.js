@@ -2854,6 +2854,23 @@ if (req.method === 'POST' && req.url === '/chat') {
       const isConnected = !!user;
       const planActive = subscription?.plan || 'none';
 
+      // ── Situation calculée en code, pas laissée à l'appréciation du modèle ──
+      // C'est la cause profonde des incohérences passées : donner des faits épars et
+      // laisser le modèle deviner la bonne action le fait retomber sur ses réflexes
+      // génériques de "chatbot de vente" (proposer un plan) même quand ce n'est pas pertinent.
+      let situationAction;
+      if (!isConnected) {
+        situationAction = "Pas encore connecté → priorité : proposer de se connecter avec Google (bouton login).";
+      } else if (!hasSubscription) {
+        situationAction = "Aucun abonnement actif en ce moment (jamais pris, ou expiré) → proposer un plan adapté à son besoin, avec le bouton checkout correspondant.";
+      } else if (products.length === 0) {
+        situationAction = "Abonné actif mais AUCUN produit créé → dire d'aller créer un produit (bouton openProductForm). C'est la seule étape qui manque avant de pouvoir demander des images. Ne JAMAIS proposer un plan, il en a déjà un actif.";
+      } else if ((credits.available||0) >= 9) {
+        situationAction = `Abonné actif, ${products.length} produit(s) créé(s), ${credits.available} images DISPONIBLES MAINTENANT → dire d'aller sur "Mes Produits" et cliquer "Demander mes images" sur le produit concerné, livraison sous 48h. NE JAMAIS proposer un plan ni un renouvellement, il en a déjà un actif avec des images disponibles.`;
+      } else {
+        situationAction = `Abonné actif, ${products.length} produit(s) créé(s), mais crédits de la semaine épuisés (0 disponible) → c'est normal et temporaire (l'abonnement lui-même reste actif, ce n'est qu'une pause hebdomadaire). Dire que les prochaines images arrivent au rechargement hebdomadaire${credits.nextCreditDate ? ' (' + new Date(credits.nextCreditDate).toLocaleDateString('fr-FR',{day:'numeric',month:'long'}) + ')' : ''}. NE JAMAIS proposer de reprendre un plan ou de "renouveler" — l'abonnement n'a pas expiré, c'est juste le cycle hebdomadaire normal.`;
+      }
+
       const { currency='XOF', currencyRate=1 } = context;
       const formatPrice = (fcfa) => {
         if (currency === 'XOF') return fcfa.toLocaleString('fr-FR') + ' FCFA';
@@ -2867,7 +2884,14 @@ if (req.method === 'POST' && req.url === '/chat') {
 
 DATE DU JOUR : ${today}. Utilise toujours cette date comme référence — ne suppose jamais une autre année.
 
-CONTEXTE UTILISATEUR
+━━━━━━━━━━━━━━━
+SITUATION ACTUELLE DE CETTE PERSONNE (calculée, fiable à 100% — ne la recalcule jamais toi-même)
+${situationAction}
+Dès qu'on te demande "comment avoir mes images / comment ça marche / je fais quoi maintenant", c'est CETTE ligne
+qui donne la bonne réponse — pas une réponse générique sur les plans. Relis-la avant de répondre à ce type de question.
+━━━━━━━━━━━━━━━
+
+CONTEXTE UTILISATEUR (détails à l'appui de la situation ci-dessus)
 - Statut : ${isConnected ? 'Connecté (' + user?.email + ')' : 'Non connecté'}
 - Plan : ${hasSubscription ? planActive.toUpperCase() : 'Aucun abonnement'}
 - Marché : ${userMarket}
@@ -2916,7 +2940,10 @@ RÈGLE 5 — CTA
 Prospect chaud → bouton checkout DIRECT au message suivant.
 [BTN:login:Connecter mon compte] [BTN:openProductForm:Créer mon produit]
 [BTN:checkout:starter:Démarrer →] [BTN:checkout:pro:Passer en Pro →] [BTN:checkout:scale:Passer en Scale →]
+[BTN:checkout-annual:starter:Starter annuel -25% →] [BTN:checkout-annual:pro:Pro annuel -25% →] [BTN:checkout-annual:scale:Scale annuel -25% →]
 [BTN:navigate:suivi:Mes demandes] [BTN:navigate:galerie:Mes images]
+Utilise checkout-annual quand la personne parle d'engagement long terme, d'économiser, ou demande explicitement
+l'annuel. Sinon, checkout (mensuel) reste le choix par défaut.
 
 Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`
 
