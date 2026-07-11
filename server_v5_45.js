@@ -2732,40 +2732,76 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
         }
       }
 
-      // ── Nudges push contextuels (vague 2) — chacun envoyé au maximum 1 fois, jamais répété ──
+      // ── Nudges push contextuels — répétés chaque jour (rotation de 10 accroches) tant que l'action n'est pas faite ──
       if (ageDays >= 2) {
-        const pushNoProduct = await wasSequenceSent(user.id, 'push_no_product');
-        const pushNoBrief = await wasSequenceSent(user.id, 'push_no_brief');
+        const todayKey = new Date().toISOString().slice(0,10); // YYYY-MM-DD
 
-        if (!pushNoProduct || !pushNoBrief) {
-          const prodRes2 = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?user_id=eq.${user.id}&select=id,nom`, {
-            headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
-          });
-          const userProducts = await prodRes2.json();
-          const hasAnyProduct = Array.isArray(userProducts) && userProducts.length > 0;
+        const CATALOGUE_VIDE_VARIANTS = [
+          "👋 Heyy — Ajoute ton premier produit, ça prend 30 secondes.",
+          "Prêt pour qu'on t'aide à exploser tes ventes ? Ça commence par ajouter ton produit !",
+          "Ton catalogue attend son premier produit. On s'occupe du reste.",
+          "30 secondes. C'est le temps qu'il te faut pour ajouter ton produit et démarrer.",
+          "Tes concurrents publient déjà. Ajoute ton produit, ne perds plus de temps.",
+          "Un produit ajouté = une semaine d'images publicitaires qui commence. On attend le tien.",
+          "Toujours pas de produit dans ton catalogue ? On est prêts dès que toi tu l'es.",
+          "Ajoute ton produit maintenant — tes premières images arrivent vite après.",
+          "Ton compte AdBoard est prêt. Il ne manque plus qu'un produit.",
+          "On ne peut rien faire sans ton produit. Ajoute-le, on prend le relais.",
+        ];
+        const PRET_VISUELS_VARIANTS = (nom) => [
+          `💥BOOM!!! c'est le bruit de la demande qu'a ${nom} sur ton marché. Et notre équipe n'attend que toi, pour tout rafler 🫵`,
+          `${nom} est dans ton catalogue. Il ne manque plus qu'un forfait pour lancer tes visuels.`,
+          `Chaque jour sans forfait, c'est un jour sans nouvelles images publicitaires pour ${nom}.`,
+          `Tes concurrents sur ${nom} ne t'attendent pas. Prends ton forfait, on s'occupe du reste.`,
+          `${nom} mérite de vraies images publicitaires. On est prêts quand toi tu l'es.`,
+          `Encore un produit sans visuels ? Débloque tes premières images dès aujourd'hui.`,
+          `On a hâte de bosser sur ${nom}. Choisis ton forfait pour démarrer.`,
+          `${nom} est prêt à décoller — reste juste le forfait à choisir.`,
+          `Le potentiel de ${nom} mérite mieux que Canva. Passe au niveau supérieur.`,
+          `Ton produit est là, tes images ne le sont pas encore. On règle ça avec un forfait.`,
+        ];
 
-          if (!hasAnyProduct && !pushNoProduct) {
-            await sendPushToUser(user.id, {
-              title: '👋 Ton catalogue est vide',
-              body: 'Ajoute ton premier produit — ça prend 2 minutes.',
-              url: '/adboard/products'
-            });
-            await markSequenceSent(user.id, 'push_no_product');
-            sentCount++;
-          } else if (hasAnyProduct && !pushNoBrief) {
-            const productIds = userProducts.map(p => p.id).join(',');
-            const briefRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?product_id=in.(${productIds})&select=id&limit=1`, {
+        const prodRes2 = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?user_id=eq.${user.id}&select=id,nom`, {
+          headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+        });
+        const userProducts = await prodRes2.json();
+        const hasAnyProduct = Array.isArray(userProducts) && userProducts.length > 0;
+
+        if (!hasAnyProduct) {
+          const dailyKey = `push_no_product_${todayKey}`;
+          if (!(await wasSequenceSent(user.id, dailyKey))) {
+            const countRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/email_sequence_log?user_id=eq.${user.id}&email_key=like.push_no_product_*&select=id`, {
               headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
             });
-            const briefs = await briefRes.json();
-            const hasAnyBrief = Array.isArray(briefs) && briefs.length > 0;
-            if (!hasAnyBrief) {
+            const sentSoFar = (await countRes.json())?.length || 0;
+            await sendPushToUser(user.id, {
+              title: 'Ton catalogue est vide',
+              body: CATALOGUE_VIDE_VARIANTS[sentSoFar % 10],
+              url: '/adboard/products'
+            });
+            await markSequenceSent(user.id, dailyKey);
+            sentCount++;
+          }
+        } else {
+          // A un produit — vérifie s'il a un abonnement actif (pas juste une demande faite ou non)
+          const subRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?user_id=eq.${user.id}&active=eq.true&select=id&limit=1`, {
+            headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+          });
+          const hasActiveSub = (await subRes.json())?.length > 0;
+          if (!hasActiveSub) {
+            const dailyKey = `push_no_plan_${todayKey}`;
+            if (!(await wasSequenceSent(user.id, dailyKey))) {
+              const countRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/email_sequence_log?user_id=eq.${user.id}&email_key=like.push_no_plan_*&select=id`, {
+                headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+              });
+              const sentSoFar = (await countRes.json())?.length || 0;
+              const variants = PRET_VISUELS_VARIANTS(userProducts[0].nom);
               await sendPushToUser(user.id, {
                 title: '📸 Prêt pour tes premiers visuels ?',
-                body: `${userProducts[0].nom} est dans ton catalogue — demande tes images maintenant.`,
-                url: '/adboard/products'
+                body: variants[sentSoFar % 10],
+                url: '/adboard/offers'
               });
-              await markSequenceSent(user.id, 'push_no_brief');
+              await markSequenceSent(user.id, dailyKey);
               sentCount++;
             }
           }
@@ -2810,6 +2846,39 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
         }
       }
     }
+
+    // ── Rappel de renouvellement — chaque jour à partir de J-5 avant expiration ──
+    try {
+      const subsRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?active=eq.true&select=user_id,plan,expires_at`, {
+        headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+      });
+      const activeSubs = await subsRes.json();
+      const todayKey = new Date().toISOString().slice(0,10);
+      if (Array.isArray(activeSubs)) {
+        for (const sub of activeSubs) {
+          if (!sub.expires_at) continue;
+          const daysLeft = Math.ceil((new Date(sub.expires_at).getTime() - Date.now()) / DAY_MS);
+          if (daysLeft < 0 || daysLeft > 5) continue; // fenêtre J-5 à J0 uniquement
+          const dailyKey = `renewal_reminder_${todayKey}`;
+          if (await wasSequenceSent(sub.user_id, dailyKey)) continue;
+          const planLabelR = PLAN_LABELS[sub.plan] || sub.plan;
+          const body = daysLeft === 0
+            ? `Ton forfait ${planLabelR} expire aujourd'hui — renouvelle pour ne pas perdre tes images de la semaine.`
+            : `Ton forfait ${planLabelR} expire dans ${daysLeft} jour${daysLeft>1?'s':''} — pense à renouveler.`;
+          await notifyUserBoth(sub.user_id, {
+            title: daysLeft === 0 ? '⏰ Ton forfait expire aujourd\'hui' : '⏰ Ton forfait expire bientôt',
+            body,
+            url: '/adboard/offers',
+            type: 'warning',
+          });
+          await markSequenceSent(sub.user_id, dailyKey);
+          sentCount++;
+        }
+      }
+    } catch(e) {
+      console.error('[Sequence] Erreur rappel renouvellement:', e.message);
+    }
+
     console.log(`[Sequence] ✅ Traitement quotidien terminé — ${sentCount} email(s) envoyé(s)`);
   } catch(e) {
     console.error('[Sequence] Erreur cron:', e.message);
@@ -3051,6 +3120,32 @@ if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/delete$/)) {
   saveBriefs(filtered);
   res.writeHead(200, {'Content-Type':'application/json'});
   res.end(JSON.stringify({ ok: true }));
+  return;
+}
+
+// POST /notify-action — notifs push+in-app pour des actions déclenchées côté client
+// (création produit, annulation demande, suppression produit — pas de round-trip serveur existant sinon)
+const ACTION_NOTIFS = {
+  product_created:   (name) => ({ title: '✅ Produit créé',      body: `"${name}" a été ajouté à ton catalogue.`,          url: '/adboard/products', type: 'product' }),
+  request_cancelled: (name) => ({ title: 'Demande annulée',      body: `Ta demande pour "${name}" a bien été annulée.`,     url: '/adboard/tracking', type: 'warning' }),
+  product_deleted:   (name) => ({ title: 'Produit supprimé',     body: `"${name}" a été retiré de ton catalogue.`,          url: '/adboard/products', type: 'info' }),
+};
+if (req.method === 'POST' && req.url === '/notify-action') {
+  let body = '';
+  req.on('data', d => body += d);
+  req.on('end', async () => {
+    try {
+      const { user_id, action, name } = JSON.parse(body);
+      const builder = ACTION_NOTIFS[action];
+      if (!user_id || !builder) { res.writeHead(400); res.end('{}'); return; }
+      await notifyUserBoth(user_id, builder(name || ''));
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok: true }));
+    } catch(e) {
+      console.error('[NotifyAction] Erreur:', e.message);
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+  });
   return;
 }
 
