@@ -342,11 +342,26 @@ const PLAN_MAP = {
 const PLAN_LABELS = { starter: 'Conversion Starter', pro: 'Conversion Pro', scale: 'Conversion Scale' };
 
 // ── Séquence email de conversion J1/J5/J12/J21 ─────────────────────────────
-const SEQUENCE_PRICES = { starter: { price: 39900, perImg: 4433 } }; // Starter = 9 images/sem, référence pour {prix_par_image}
+const SEQUENCE_PRICES = { starter: { price: 39900 } }; // Starter mensuel, référence pour les prix cités dans les emails
 
-function renderSequenceEmail(key, { firstName='', productName='' }) {
-  const prixLocal = SEQUENCE_PRICES.starter.price.toLocaleString('fr-FR') + ' FCFA';
-  const prixParImage = SEQUENCE_PRICES.starter.perImg.toLocaleString('fr-FR') + ' FCFA';
+// Convertit un prix FCFA vers la devise de la personne (détectée et mémorisée côté AdBoard).
+// Taux récupéré à chaque envoi — jamais de taux périmé, contrairement à un taux figé au moment de l'inscription.
+async function formatPriceForCurrency(fcfa, currency) {
+  if (!currency || currency === 'XOF') return fcfa.toLocaleString('fr-FR') + ' FCFA';
+  try {
+    const rates = await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/xof.json').then(r => r.json());
+    const rate = rates.xof?.[currency.toLowerCase()];
+    if (!rate) return fcfa.toLocaleString('fr-FR') + ' FCFA';
+    const val = Math.round(fcfa * rate * 1.035);
+    return new Intl.NumberFormat(undefined, { style:'currency', currency, maximumFractionDigits:0 }).format(val);
+  } catch(e) {
+    return fcfa.toLocaleString('fr-FR') + ' FCFA';
+  }
+}
+
+async function renderSequenceEmail(key, { firstName='', productName='', productPays='', currency='XOF' } = {}) {
+  const prixLocal = await formatPriceForCurrency(SEQUENCE_PRICES.starter.price, currency);
+  const prixParImage = await formatPriceForCurrency(Math.round(SEQUENCE_PRICES.starter.price / 36), currency);
   const wrap = (body) => `<div style="font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#222;font-size:15px;line-height:1.65;">${body}</div>`;
 
   const templates = {
@@ -362,22 +377,24 @@ function renderSequenceEmail(key, { firstName='', productName='' }) {
       `)
     },
     'j1_has_product': {
-      subject: `${firstName || 'Ton produit'} est prêt — pas tes visuels`,
+      subject: `🤯 ${firstName || 'Salut'} ! Découverte hallucinante sur ${productName || 'ton produit'}...`,
       html: wrap(`
-        <p>Salut${firstName ? ' ' + firstName : ''},</p>
-        <p>Tu as créé ${productName || 'ton produit'}. Il est là, prêt.</p>
-        <p>Sauf qu'un produit sans images publicitaires, c'est un produit qui ne vend pas encore à son potentiel.</p>
+        <p>Heyy${firstName ? ' ' + firstName : ''},</p>
+        <p>Tu as créé ${productName || 'ton produit'} que tu vends sur ${productPays || 'ton marché'}.</p>
+        <p>Et notamment nos spécialistes ont découvert un potentiel énorme sur la croissance de la demande pour ce type de produit dans les 3 prochains mois.</p>
+        <p>Bref, c'est la ruée vers l'or ! Mais si t'as pas une équipe de tueurs à tes côtés tu peux dire adieu à cette opportunité, ou sinon tu peux faire le bon choix aujourd'hui.</p>
         <p><a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Demander mes visuels →</a></p>
         <p style="margin-top:24px;">AdStack</p>
       `)
     },
     'j5_vision': {
-      subject: 'La méthode qui a fait la différence pour un de nos clients',
+      subject: '🫣 La méthode secrète qui a fait la différence pour un de nos clients',
       html: wrap(`
         <p>Salut${firstName ? ' ' + firstName : ''},</p>
-        <p><strong>AVANT :</strong> tu bricoles tes visuels toi-même avec l'IA, tu lances, tu croises les doigts. Si ça marche pas, tu recommences de zéro.</p>
-        <p><strong>APRÈS :</strong> chaque semaine, tu reçois plusieurs angles marketing différents pour ton produit — pas une seule image, plusieurs approches à tester en même temps. Tu identifies rapidement ce qui résonne avec ta cible, tu trouves ton winner plus vite.</p>
+        <p><strong>Maintenant :</strong> tu gères tes visuels toi-même avec l'IA, tu lances, tu croises les doigts. Si ça marche pas, tu recommences de zéro.</p>
+        <p><strong>Avec AdStack :</strong> tu profites des années d'expérience en stratégie publicitaire de notre équipe, tout est fait avec précision et avec un unique but — exploser tes records de ventes sans que t'aies rien à faire.</p>
         <p>C'est exactement ce qui a convaincu un de nos clients qui vend un produit santé complexe en Afrique francophone : les angles distincts lui ont permis de tester ce qui marchait vraiment, au lieu de deviner.</p>
+        <p>En conséquence il ne compte pas sur la chance pour faire "SOLD OUT".</p>
         <p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Découvrir Starter — ${prixLocal} →</a></p>
         <p style="margin-top:24px;">AdStack</p>
       `)
@@ -386,29 +403,30 @@ function renderSequenceEmail(key, { firstName='', productName='' }) {
       subject: '"C\'est cher" — parlons-en',
       html: wrap(`
         <p>Salut${firstName ? ' ' + firstName : ''},</p>
-        <p>Tu regardes peut-être le prix de Starter (${prixLocal}/mois) et tu te dis que c'est cher.</p>
-        <p>Fais le calcul : ça revient à environ ${prixParImage} par image. Un freelance basique facture souvent plus cher pour une seule image, sans données marché, sans plusieurs angles à tester.</p>
-        <p>Le vrai coût, c'est pas Starter. C'est chaque jour sans bonnes images pendant que tes concurrents testent et toi non.</p>
+        <p>Tu regardes peut-être le prix de Starter (${prixLocal}) et tu te dis que c'est cher.</p>
+        <p>Fais le calcul : ça revient à environ ${prixParImage} par image. Un freelance basique facture souvent 5x plus cher pour une seule image, sans données marché, sans stratégie ni amélioration continue.</p>
+        <p>Le vrai coût, c'est pas Starter. C'est chaque jour sans bon contenu publicitaire qui brûle ton budget, sans savoir comprendre pourquoi ça n'a pas marché.</p>
+        <p>La meilleure solution, elle est devant toi — pas ChatGPT que tout le monde a.</p>
         <p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Je démarre avec Starter →</a></p>
         <p style="margin-top:24px;">AdStack</p>
       `)
     },
     'j21_breakup': {
-      subject: 'Je vais arrêter de t\'écrire',
+      subject: '🤐 je vais arrêter de t\'écrire !!!',
       html: wrap(`
         <p>Salut${firstName ? ' ' + firstName : ''},</p>
-        <p>Ça fait 3 semaines que je t'envoie des emails, sans retour de ta part. Je vais arrêter de te solliciter pour pas être lourd.</p>
-        <p>Si c'est juste pas le bon moment, aucun souci, zéro pression.</p>
-        <p>Si t'as une question ou un truc qui bloque, réponds à cet email — je lis tout, je réponds à tout.</p>
+        <p>Je vais arrêter de t'écrire — pas parce qu'on perd notre temps, mais plutôt pour qualifier les personnes avec qui on travaille.</p>
+        <p>Car tout e-commerçant voulant vraiment scaler son business aurait compris directement la valeur unique qu'on apporte dès le premier message.</p>
+        <p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Passer à l'action →</a></p>
         <p style="margin-top:24px;">AdStack</p>
       `)
     },
     'monthly_social_proof': {
-      subject: 'Ce qu\'un vendeur COD a fait avec ses images cette semaine',
+      subject: 'Ce qu\'un vendeur a fait avec ses images cette semaine',
       html: wrap(`
         <p>Salut${firstName ? ' ' + firstName : ''},</p>
-        <p>Un de nos clients vend un produit santé avec plusieurs bénéfices différents — difficile de savoir quel argument allait vraiment convaincre.</p>
-        <p>On lui a livré plusieurs angles marketing distincts la même semaine. Il a pu tester lequel résonnait le plus avec sa cible, au lieu de deviner.</p>
+        <p>Un de nos clients vend un produit cosmétique avec plusieurs bénéfices différents — difficile de savoir quel argument allait vraiment convaincre.</p>
+        <p>On lui a livré une bonne diversité d'images publicitaires la même semaine. Il a pu tester quel angle résonnait le plus avec sa cible, au lieu de deviner.</p>
         <p>C'est exactement ce que Starter permet de faire, chaque semaine.</p>
         <p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Revoir les offres →</a></p>
         <p style="margin-top:24px;">AdStack</p>
@@ -440,7 +458,7 @@ function renderSequenceEmail(key, { firstName='', productName='' }) {
 async function sendSequenceEmail(email, key, ctx) {
   const RESEND_KEY = process.env.RESEND_API_KEY;
   if (!RESEND_KEY) return false;
-  const tpl = renderSequenceEmail(key, ctx);
+  const tpl = await renderSequenceEmail(key, ctx);
   if (!tpl) return false;
   try {
     const r = await fetch('https://api.resend.com/emails', {
@@ -710,25 +728,22 @@ async function sendWelcomeEmail({ email, name }) {
     <div style="font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#222;font-size:15px;line-height:1.65;">
       <p>Salut${firstName ? ' ' + firstName : ''},</p>
 
-      <p>Moi c'est Amar, fondateur d'AdStack.</p>
+      <p>Moi c'est Amar, CEO et Founder d'AdStack.</p>
 
-      <p>J'ai lancé AdStack parce que je voyais des vendeurs comme toi perdre des heures chaque semaine sur Canva ou ChatGPT à essayer de sortir des images publicitaires potables — pendant que leurs concurrents scalent tranquillement avec des visuels qui convertissent.</p>
+      <p>J'ai lancé AdStack parce que je voyais des vendeurs comme toi perdre des heures chaque semaine à essayer de sortir des images publicitaires génériques — pendant que leurs concurrents scalent tranquillement avec des visuels qui sont faits pour vendre.</p>
 
-      <p>L'idée est simple : tu nous donnes ton produit, on t'envoie des images prêtes à lancer chaque semaine. Toi tu te concentres sur les ventes.</p>
+      <p>L'idée est simple : tu nous donnes ton produit, on t'envoie des images prêtes à lancer chaque semaine. Toi tu te concentres sur gérer ton business.</p>
 
       <p>3 trucs pour bien démarrer :</p>
 
       <p>
         1. <a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Crée ton premier produit</a><br>
-        2. <a href="https://adstackofficial.com/adboard/demo" style="color:#2D7FF9;">Regarde un exemple de ce qu'on livre</a><br>
-        3. <a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Découvre les offres</a>
+        2. <a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Demande des images</a><br>
+        3. <a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Découvre nos offres</a>
       </p>
 
-      <p style="margin-top:28px;color:#555;">P.S. : Pourquoi tu t'es inscrit sur AdBoard ? C'est quoi ton plus gros problème en ce moment avec tes pubs ?<br>
-      Réponds direct à cet email, je lis et je réponds à tout le monde.</p>
-
       <p style="margin-top:24px;">Amar<br>
-      <span style="color:#888;">Fondateur, AdStack</span></p>
+      <span style="color:#888;">CEO et Founder, AdStack</span></p>
     </div>
   `;
 
@@ -2688,18 +2703,19 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
       const ageMs = Date.now() - new Date(user.created_at).getTime();
       const ageDays = ageMs / DAY_MS;
       const firstName = user.user_metadata?.full_name?.split(' ')[0] || '';
+      const userCurrency = user.user_metadata?.currency || 'XOF';
 
       // J1 — variante selon présence de produit (fenêtre 0.5 à 2 jours pour tolérance du cron quotidien)
       if (ageDays >= 0.5 && ageDays < 2) {
         const alreadySent = await wasSequenceSent(user.id, 'j1_no_product') || await wasSequenceSent(user.id, 'j1_has_product');
         if (!alreadySent) {
-          const prodRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?user_id=eq.${user.id}&select=nom&limit=1`, {
+          const prodRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?user_id=eq.${user.id}&select=nom,pays&limit=1`, {
             headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
           });
           const prods = await prodRes.json();
           const hasProduct = Array.isArray(prods) && prods.length > 0;
           const emailKey = hasProduct ? 'j1_has_product' : 'j1_no_product';
-          const ok = await sendSequenceEmail(user.email, emailKey, { firstName, productName: hasProduct ? prods[0].nom : '' });
+          const ok = await sendSequenceEmail(user.email, emailKey, { firstName, productName: hasProduct ? prods[0].nom : '', productPays: hasProduct ? prods[0].pays : '', currency: userCurrency });
           if (ok) { await markSequenceSent(user.id, emailKey); sentCount++; }
         }
       }
@@ -2710,7 +2726,7 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
         if (ageDays >= step.day - 0.5 && ageDays < step.day + 0.5) {
           const alreadySent = await wasSequenceSent(user.id, step.key);
           if (!alreadySent) {
-            const ok = await sendSequenceEmail(user.email, step.key, { firstName });
+            const ok = await sendSequenceEmail(user.email, step.key, { firstName, currency: userCurrency });
             if (ok) { await markSequenceSent(user.id, step.key); sentCount++; }
           }
         }
@@ -2788,7 +2804,7 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
         if (ageDays >= targetDay - 1 && ageDays < targetDay + 1) {
           const alreadySent = await wasSequenceSent(user.id, monthlyKey);
           if (!alreadySent) {
-            const ok = await sendSequenceEmail(user.email, templateKey, { firstName });
+            const ok = await sendSequenceEmail(user.email, templateKey, { firstName, currency: userCurrency });
             if (ok) { await markSequenceSent(user.id, monthlyKey); sentCount++; }
           }
         }
