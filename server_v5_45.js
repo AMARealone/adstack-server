@@ -3191,6 +3191,143 @@ function isLowEffortAnswer(text) {
   return false;
 }
 
+// Les 4 messages validés — sans accents volontairement (au-delà de 160 caractères GSM sinon la limite tombe à 70)
+const SMS_TEMPLATES = {
+  intro: (m) => `Bonjour ${m.marque}, vu votre pub ${m.produit}. On aide des vendeurs a booster leurs ventes avec de meilleures images pub. Voici votre demo gratuite : ${m.lien}`,
+  j3:    (m) => `Salut ${m.marque}, vous avez vu la demo pour ${m.produit} ? On sait ce qui pousse vos clients a acheter. Vos prochaines images peuvent en parler : ${m.lien}`,
+  j10:   (m) => `Bonjour ${m.marque}, les boutiques qui gagnent du terrain sur ${m.produit} misent sur plusieurs angles pub. On peut faire pareil pour vous : ${m.lien}`,
+  j21:   (m) => `Hello ${m.marque}, ${m.produit} a un vrai potentiel selon notre analyse. Le jour ou vous etes pret, on est la : ${m.lien}`,
+};
+
+const AT_USERNAME = 'AdStack';
+const AT_API_KEY = process.env.AT_API_KEY;
+
+// Normalise un numéro vers le format international E.164 (nécessaire pour Africa's Talking)
+function normalizePhone(phone, defaultCountryCode = '221') { // 221 = Sénégal
+  let cleaned = (phone || '').replace(/[\s\-().]/g, '');
+  if (cleaned.startsWith('+')) return cleaned;
+  if (cleaned.startsWith('00')) return '+' + cleaned.slice(2);
+  if (cleaned.startsWith('0')) return `+${defaultCountryCode}${cleaned.slice(1)}`;
+  return `+${defaultCountryCode}${cleaned}`;
+}
+
+// POST /send-prospect-sms — envoie un SMS de prospection (intro/j3/j10/j21), raccourcit le lien, appelle Africa's Talking
+if (req.method === 'POST' && req.url === '/send-prospect-sms') {
+  let body = '';
+  req.on('data', d => body += d);
+  req.on('end', async () => {
+    try {
+      const { phone, template, marque, produit, dest_url, country_code } = JSON.parse(body);
+      const builder = SMS_TEMPLATES[template];
+      if (!phone || !builder || !marque || !produit || !dest_url) {
+        res.writeHead(400); res.end(JSON.stringify({ error: 'missing_fields' })); return;
+      }
+      if (!AT_API_KEY) {
+        res.writeHead(500); res.end(JSON.stringify({ error: 'AT_API_KEY manquante sur le serveur' })); return;
+      }
+
+      // 1. Raccourcir le lien avec tracking UTM déjà inclus dans dest_url
+      const code = crypto.randomBytes(4).toString('hex');
+      await fetch(`${SUPABASE_URL_INT}/rest/v1/short_links`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` },
+        body: JSON.stringify({ code, long_url: dest_url })
+      });
+      const shortUrl = `https://adstackofficial.com/s/${code}`;
+
+      // 2. Construire le message
+      const message = builder({ marque, produit, lien: shortUrl });
+
+      // 3. Envoyer via Africa's Talking (API live, form-urlencoded)
+      const toNumber = normalizePhone(phone, country_code || '221');
+      const params = new URLSearchParams({ username: AT_USERNAME, to: toNumber, message });
+      const atRes = await fetch('https://api.africastalking.com/version1/messaging', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
+          'apiKey': AT_API_KEY,
+        },
+        body: params.toString(),
+      });
+      const atData = await atRes.json();
+      const recipient = atData?.SMSMessageData?.Recipients?.[0];
+
+      console.log(`[SMS] ${template} → ${toNumber} : ${recipient?.status || 'inconnu'} (${recipient?.cost || '?'})`);
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok: recipient?.status === 'Success', status: recipient?.status, cost: recipient?.cost, message_id: recipient?.messageId, short_url: shortUrl }));
+    } catch(e) {
+      console.error('[SMS] Erreur:', e.message);
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+  return;
+}
+
+// POST /shorten — crée un lien court auto-hébergé (utilisé pour les SMS, limite de caractères)
+if (req.method === 'POST' && req.url === '/shorten') {
+  let body = '';
+  req.on('data', d => body += d);
+  req.on('end', async () => {
+    try {
+      const { url } = JSON.parse(body);
+      if (!url) { res.writeHead(400); res.end(JSON.stringify({ error: 'missing_url' })); return; }
+      const code = crypto.randomBytes(4).toString('hex'); // 8 caractères, ex: a1b2c3d4
+      const insertRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/short_links`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_SERVICE_KEY,
+          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        },
+        body: JSON.stringify({ code, long_url: url })
+      });
+      if (!insertRes.ok) {
+        const errText = await insertRes.text();
+        console.error('[Shorten] Échec insertion:', insertRes.status, errText.slice(0,300));
+        res.writeHead(500); res.end(JSON.stringify({ error: 'insert_failed' })); return;
+      }
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ short_url: `https://adstackofficial.com/s/${code}` }));
+    } catch(e) {
+      console.error('[Shorten] Erreur:', e.message);
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+  return;
+}
+
+// GET /s/:code — redirige vers le lien d'origine, compte le clic
+if (req.method === 'GET' && req.url.startsWith('/s/')) {
+  const code = req.url.split('/s/')[1]?.split('?')[0];
+  if (!code) { res.writeHead(404); res.end('Not found'); return; }
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/short_links?code=eq.${code}&select=id,long_url,clicks`, {
+      headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+    });
+    const rows = await r.json();
+    const link = rows?.[0];
+    if (!link) { res.writeHead(404); res.end('Lien introuvable ou expiré'); return; }
+    // Comptage du clic — non bloquant, ne retarde pas la redirection
+    fetch(`${SUPABASE_URL_INT}/rest/v1/short_links?id=eq.${link.id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify({ clicks: (link.clicks || 0) + 1 })
+    }).catch(()=>{});
+    res.writeHead(302, { 'Location': link.long_url });
+    res.end();
+  } catch(e) {
+    console.error('[Shorten] Erreur redirection:', e.message);
+    res.writeHead(500); res.end('Erreur serveur');
+  }
+  return;
+}
+
 // POST /save-form-response — reçoit les réponses du formulaire pré-achat ou post-achat
 if (req.method === 'POST' && req.url === '/save-form-response') {
   let body = '';
