@@ -3179,6 +3179,70 @@ if (req.method === 'POST' && req.url === '/notify-action') {
   return;
 }
 
+// Garde-fou simple contre les réponses manifestement bâclées/du n'importe quoi — pas d'appel IA, juste des heuristiques rapides
+function isLowEffortAnswer(text) {
+  const t = (text || '').trim();
+  if (t.length < 8) return true; // trop court pour être une vraie réponse
+  const words = t.split(/\s+/).filter(w => w.length > 1);
+  if (words.length < 2) return true; // moins de 2 mots réels
+  if (/(.)\1{5,}/.test(t)) return true; // "aaaaaaa", répétition abusive d'un caractère
+  const uniqueChars = new Set(t.toLowerCase().replace(/\s/g, '')).size;
+  if (t.length > 15 && uniqueChars < 5) return true; // charabia clavier ("asdasdasdasd")
+  return false;
+}
+
+// POST /save-form-response — reçoit les réponses du formulaire pré-achat ou post-achat
+if (req.method === 'POST' && req.url === '/save-form-response') {
+  let body = '';
+  req.on('data', d => body += d);
+  req.on('end', async () => {
+    try {
+      const { user_id, email, source, answers } = JSON.parse(body);
+      if (!source || !Array.isArray(answers) || answers.length === 0) {
+        res.writeHead(400); res.end(JSON.stringify({ error: 'invalid_payload' })); return;
+      }
+
+      // Garde-fou uniquement sur le formulaire pré-achat (obligatoire) — le post-achat est facultatif, pas de blocage
+      if (source === 'prepurchase_form') {
+        const lowEffortCount = answers.filter(a => isLowEffortAnswer(a.answer)).length;
+        if (lowEffortCount > 2) {
+          res.writeHead(422, {'Content-Type':'application/json'});
+          res.end(JSON.stringify({ error: 'low_effort', message: 'Essaie de répondre un peu plus en détail à certaines questions.' }));
+          return;
+        }
+      }
+
+      const rows = answers.map(a => ({
+        source, user_id: user_id || null, email: email || null,
+        question: a.question, answer: a.answer,
+      }));
+      const insertRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/data_insights`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_SERVICE_KEY,
+          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        },
+        body: JSON.stringify(rows)
+      });
+      if (!insertRes.ok) {
+        const errText = await insertRes.text();
+        console.error('[DataInsights] Échec insertion:', insertRes.status, errText.slice(0,300));
+        res.writeHead(500); res.end(JSON.stringify({ error: 'insert_failed' })); return;
+      }
+
+      console.log(`[DataInsights] ✅ ${rows.length} réponse(s) enregistrée(s) — source: ${source}`);
+      res.writeHead(200, {'Content-Type':'application/json'});
+      // Code promo uniquement pour le pré-achat — code fixe, à créer une seule fois dans le dashboard Chariow
+      res.end(JSON.stringify({ ok: true, promo_code: source === 'prepurchase_form' ? 'MERCI10' : null }));
+    } catch(e) {
+      console.error('[DataInsights] Erreur:', e.message);
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+  return;
+}
+
 // POST /commandes/:id/done — marquer livré
   if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/done$/)) {
 
