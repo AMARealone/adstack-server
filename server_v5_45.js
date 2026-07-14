@@ -221,7 +221,7 @@ function getToken() {
 }
 
 // ── Vertex AI Global Request (gemini-3-pro-image) ──
-function vertexRequestGlobal(token, model, body) {
+function vertexRequestGlobal(token, model, body, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
     const bodyStr = JSON.stringify(body);
     const path = `/v1/projects/${PROJECT_ID}/locations/global/publishers/google/models/${model}:generateContent`;
@@ -231,15 +231,28 @@ function vertexRequestGlobal(token, model, body) {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(bodyStr)
-      }
+      },
+      timeout: timeoutMs
     }, res => {
       let d = '';
       res.on('data', c => d += c);
       res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(e); } });
     });
     req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout Vertex AI Image (${timeoutMs/1000}s)`)); });
     req.write(bodyStr); req.end();
   });
+}
+
+// Réessaie une fois automatiquement en cas d'échec (timeout, erreur réseau, etc.) avant d'abandonner —
+// la génération d'image Vertex a des ralentissements ponctuels, un simple réessai suffit la plupart du temps.
+async function vertexRequestGlobalAvecReessai(token, model, body, timeoutMs = 120000) {
+  try {
+    return await vertexRequestGlobal(token, model, body, timeoutMs);
+  } catch(e) {
+    console.log(`⚠️  Échec 1ère tentative (${e.message}) — nouvel essai...`);
+    return await vertexRequestGlobal(token, model, body, timeoutMs);
+  }
 }
 
 // ── Vertex AI Request ──────────────────────────
@@ -1821,7 +1834,7 @@ HARD LOCKS :
           }
         };
 
-        const data = await vertexRequestGlobal(token, 'gemini-3-pro-image', vertexBody);
+        const data = await vertexRequestGlobalAvecReessai(token, 'gemini-3-pro-image', vertexBody);
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
         const responseParts = data.candidates?.[0]?.content?.parts || [];
@@ -2031,7 +2044,7 @@ HARD LOCKS :
           }
         };
 
-        const data = await vertexRequestGlobal(token, 'gemini-3-pro-image', vertexBody);
+        const data = await vertexRequestGlobalAvecReessai(token, 'gemini-3-pro-image', vertexBody);
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
         const responseParts = data.candidates?.[0]?.content?.parts || [];
