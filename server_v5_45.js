@@ -1134,7 +1134,7 @@ const server = http.createServer(async (req, res) => {
     const target = new URL(PROSPECTOR_URL + path);
     const options = {
       hostname: target.hostname,
-      path: target.pathname,
+      path: target.pathname + target.search,   // .search inclus — sinon ?since=X est perdu
       method,
       headers: { 'X-Api-Key': PROSPECTOR_KEY }
     };
@@ -1167,8 +1167,8 @@ const server = http.createServer(async (req, res) => {
     relayToProspector('/prospector/stop', 'POST', res);
     return;
   }
-  if (req.method === 'GET' && req.url === '/prospector/status') {
-    relayToProspector('/prospector/status', 'GET', res);
+  if (req.method === 'GET' && req.url.startsWith('/prospector/status')) {
+    relayToProspector(req.url, 'GET', res);
     return;
   }
 
