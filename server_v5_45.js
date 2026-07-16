@@ -1156,7 +1156,11 @@ const server = http.createServer(async (req, res) => {
       pRes.on('data', c => body += c);
       pRes.on('end', () => {
         console.log(`[Prospector Relay] Réponse ${pRes.statusCode} : ${body.slice(0, 150)}`);
-        res.writeHead(pRes.statusCode || 200, { 'Content-Type': 'application/json' });
+        res.writeHead(pRes.statusCode || 200, {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+          'Pragma': 'no-cache',
+        });
         res.end(body || '{}');
       });
     });
@@ -1172,12 +1176,12 @@ const server = http.createServer(async (req, res) => {
     r.end();
   }
 
-  if (req.method === 'POST' && req.url === '/prospector/start') {
-    relayToProspector('/prospector/start', 'POST', res);
+  if (req.method === 'POST' && req.url.startsWith('/prospector/start')) {
+    relayToProspector(req.url, 'POST', res);
     return;
   }
-  if (req.method === 'POST' && req.url === '/prospector/stop') {
-    relayToProspector('/prospector/stop', 'POST', res);
+  if (req.method === 'POST' && req.url.startsWith('/prospector/stop')) {
+    relayToProspector(req.url, 'POST', res);
     return;
   }
   if (req.method === 'GET' && req.url.startsWith('/prospector/status')) {
