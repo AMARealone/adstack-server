@@ -3649,3 +3649,15 @@ async function processProductPhoto(photoBase64, briefId) {
 server.listen(PORT, () => {
   console.log(`\n✅ AdStack Server → http://localhost:${PORT}\n`);
 });
+
+// ── Auto-ping — empêche Render (offre gratuite) de mettre le serveur en veille ──
+// Sans ça, après 15 min sans trafic, Render endort le service, et le 1er visiteur
+// suivant (souvent un prospect qui clique sur sa démo) tombe sur l'écran de réveil
+// générique de Render — mauvaise impression, surtout en pleine prospection à froid.
+const RENDER_URL_PUBLIC = 'https://adstack-server.onrender.com';
+setInterval(() => {
+  https.get(`${RENDER_URL_PUBLIC}/`, (res) => {
+    res.on('data', () => {});
+    res.on('end', () => console.log(`[Auto-ping] OK (${res.statusCode})`));
+  }).on('error', (e) => console.log(`[Auto-ping] Erreur : ${e.message}`));
+}, 10 * 60 * 1000); // toutes les 10 minutes — bien en dessous du seuil de 15 min de Render
