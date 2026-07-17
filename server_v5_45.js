@@ -3318,7 +3318,7 @@ if (req.method === 'POST' && req.url === '/shorten') {
   req.on('data', d => body += d);
   req.on('end', async () => {
     try {
-      const { url, thumbnail } = JSON.parse(body);
+      const { url, thumbnail, campagne } = JSON.parse(body);
       if (!url) { res.writeHead(400); res.end(JSON.stringify({ error: 'missing_url' })); return; }
       const code = crypto.randomBytes(4).toString('hex'); // 8 caractères, ex: a1b2c3d4
       const insertRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/short_links`, {
@@ -3328,7 +3328,7 @@ if (req.method === 'POST' && req.url === '/shorten') {
           'apikey': SUPABASE_SERVICE_KEY,
           'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
         },
-        body: JSON.stringify({ code, long_url: url, thumbnail: thumbnail || null })
+        body: JSON.stringify({ code, long_url: url, thumbnail: thumbnail || null, campagne: campagne || null })
       });
       if (!insertRes.ok) {
         const errText = await insertRes.text();
