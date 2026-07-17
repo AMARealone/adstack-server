@@ -3281,13 +3281,44 @@ if (req.method === 'POST' && req.url === '/send-prospect-sms') {
   return;
 }
 
-// POST /shorten — crée un lien court auto-hébergé (utilisé pour les SMS, limite de caractères)
+// GET /setup-thumbnails — génère et upload les 3 miniatures AdStack vers Supabase (à usage unique)
+if (req.method === 'GET' && req.url === '/setup-thumbnails') {
+  (async () => {
+    const SB_URL2 = 'https://mifljhsusidgzelnswma.supabase.co';
+    const SB_KEY2 = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pZmxqaHN1c2lkZ3plbG5zd21hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MjI2MzQsImV4cCI6MjA5MzQ5ODYzNH0.AX4Xu0sP2tgjLhZSbCKhtw4Q3sd7GRMJ2aMKK3GfzUc';
+    const resultats = [];
+    for (const v of THUMBS_ADSTACK) {
+      try {
+        const svg = buildAdStackThumb(v);
+        const png = new Resvg(svg, { fitTo: { mode: 'width', value: 1200 } }).render().asPng();
+        const uploadRes = await new Promise((resolve, reject) => {
+          const r = https.request({
+            hostname: 'mifljhsusidgzelnswma.supabase.co',
+            path: `/storage/v1/object/demos/${v.nom}.png`,
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${SB_KEY2}`, 'apikey': SB_KEY2, 'Content-Type': 'image/png', 'Content-Length': png.length, 'x-upsert': 'true' }
+          }, resp => { let d=''; resp.on('data', c=>d+=c); resp.on('end', () => resolve({status: resp.statusCode, body: d})); });
+          r.on('error', reject); r.write(png); r.end();
+        });
+        resultats.push({ nom: v.nom, ok: uploadRes.status === 200 || uploadRes.status === 201, status: uploadRes.status, url: `${SB_URL2}/storage/v1/object/public/demos/${v.nom}.png` });
+      } catch(e) {
+        resultats.push({ nom: v.nom, ok: false, erreur: e.message });
+      }
+    }
+    res.writeHead(200, {'Content-Type':'application/json'});
+    res.end(JSON.stringify(resultats, null, 2));
+  })();
+  return;
+}
+
+// POST /shorten — crée un lien court auto-hébergé (utilisé pour les SMS, limite de caractères,
+// et les relances J+10/J+21 qui ont besoin d'une miniature différente du lien direct)
 if (req.method === 'POST' && req.url === '/shorten') {
   let body = '';
   req.on('data', d => body += d);
   req.on('end', async () => {
     try {
-      const { url } = JSON.parse(body);
+      const { url, thumbnail } = JSON.parse(body);
       if (!url) { res.writeHead(400); res.end(JSON.stringify({ error: 'missing_url' })); return; }
       const code = crypto.randomBytes(4).toString('hex'); // 8 caractères, ex: a1b2c3d4
       const insertRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/short_links`, {
@@ -3297,7 +3328,7 @@ if (req.method === 'POST' && req.url === '/shorten') {
           'apikey': SUPABASE_SERVICE_KEY,
           'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
         },
-        body: JSON.stringify({ code, long_url: url })
+        body: JSON.stringify({ code, long_url: url, thumbnail: thumbnail || null })
       });
       if (!insertRes.ok) {
         const errText = await insertRes.text();
@@ -3314,12 +3345,14 @@ if (req.method === 'POST' && req.url === '/shorten') {
   return;
 }
 
-// GET /s/:code — redirige vers le lien d'origine, compte le clic
+// GET /s/:code — redirige vers le lien d'origine, compte le clic. Si une miniature a été
+// configurée sur ce lien (J+10/J+21), sert d'abord une page avec les bonnes balises OG,
+// puis redirige en JS — sinon un simple 302 direct (miniature par défaut d'AdBoard).
 if (req.method === 'GET' && req.url.startsWith('/s/')) {
   const code = req.url.split('/s/')[1]?.split('?')[0];
   if (!code) { res.writeHead(404); res.end('Not found'); return; }
   try {
-    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/short_links?code=eq.${code}&select=id,long_url,clicks`, {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/short_links?code=eq.${code}&select=id,long_url,clicks,thumbnail`, {
       headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
     });
     const rows = await r.json();
@@ -3336,6 +3369,32 @@ if (req.method === 'GET' && req.url.startsWith('/s/')) {
       },
       body: JSON.stringify({ clicks: (link.clicks || 0) + 1 })
     }).catch(()=>{});
+
+    if (link.thumbnail) {
+      const imgUrl = `https://mifljhsusidgzelnswma.supabase.co/storage/v1/object/public/demos/${link.thumbnail}.png`;
+      const escAttr = (s) => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+<meta property="og:type" content="website">
+<meta property="og:title" content="AdStack">
+<meta property="og:image" content="${escAttr(imgUrl)}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="${escAttr(imgUrl)}">
+<script>
+  (function(){
+    if (window.self !== window.top) return;
+    var ua = navigator.userAgent || '';
+    var isBot = /WhatsApp|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Googlebot|Slackbot|Discordbot/i.test(ua);
+    if (!isBot) window.location.replace(${JSON.stringify(link.long_url)});
+  })();
+</script>
+</head><body></body></html>`;
+      res.writeHead(200, {'Content-Type':'text/html; charset=utf-8'});
+      res.end(html);
+      return;
+    }
+
     res.writeHead(302, { 'Location': link.long_url });
     res.end();
   } catch(e) {
@@ -3476,6 +3535,44 @@ function fetchRawHtml(targetUrl, depth) {
 }
 
 // ── Teaser SVG (miniature OG style mindmap) ────────
+// ── Miniatures de marque AdStack (principale + 2 variantes J+10/J+21) ──
+// Générées une seule fois via /setup-thumbnails, puis servies statiquement depuis Supabase.
+function buildAdStackThumb({ accent, accentGlow, label }) {
+  return `<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="rgba(255,255,255,0.10)"/>
+    </pattern>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="${accentGlow}" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="${accentGlow}" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#0D1828"/>
+  <rect width="1200" height="630" fill="url(#dots)"/>
+  <circle cx="600" cy="315" r="420" fill="url(#glow)"/>
+  <rect x="790" y="90"  width="230" height="290" rx="16" fill="#16222F" stroke="#233247" stroke-width="1.5" opacity="0.9"/>
+  <rect x="815" y="115" width="180" height="130" rx="10" fill="#1D2F45"/>
+  <rect x="815" y="260" width="140" height="10" rx="5" fill="#2C4060"/>
+  <rect x="815" y="280" width="180" height="8"  rx="4" fill="#233247"/>
+  <rect x="815" y="296" width="120" height="8"  rx="4" fill="#233247"/>
+  <rect x="815" y="325" width="180" height="34" rx="8" fill="${accent}" opacity="0.9"/>
+  <rect x="1050" y="150" width="120" height="150" rx="14" fill="#16222F" stroke="#233247" stroke-width="1.5" opacity="0.55" transform="rotate(8 1110 225)"/>
+  <text x="80" y="270" fill="#FFFFFF" font-size="90" font-weight="900" font-family="Arial,sans-serif" letter-spacing="-2">AdStack</text>
+  <rect x="82" y="292" width="230" height="6" rx="3" fill="${accent}"/>
+  <text x="80" y="345" fill="#B0C4D8" font-size="27" font-weight="600" font-family="Arial,sans-serif">Images publicitaires Meta Ads,</text>
+  <text x="80" y="382" fill="#B0C4D8" font-size="27" font-weight="600" font-family="Arial,sans-serif">basées sur une vraie analyse de marché.</text>
+  <text x="80" y="450" fill="${accent}" font-size="20" font-weight="800" letter-spacing="2" font-family="Arial,sans-serif">${label}</text>
+  <text x="80" y="580" fill="#5A7290" font-size="19" font-weight="700" letter-spacing="1" font-family="Arial,sans-serif">ADSTACKOFFICIAL.COM</text>
+</svg>`;
+}
+
+const THUMBS_ADSTACK = [
+  { nom: 'adstack_thumb_main', accent: '#1FB6FF', accentGlow: '#1FB6FF', label: 'AGENCE DE CRÉATIVES PUBLICITAIRES' },
+  { nom: 'adstack_thumb_j10',  accent: '#32FF7E', accentGlow: '#32FF7E', label: 'VOS PROCHAINES IMAGES VOUS ATTENDENT' },
+  { nom: 'adstack_thumb_j21',  accent: '#FFB547', accentGlow: '#FFB547', label: 'DERNIÈRE RELANCE — POTENTIEL À EXPLOITER' },
+];
+
 function buildTeaserSvg({ marque, score }) {
   const escXml = (s) => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
 
