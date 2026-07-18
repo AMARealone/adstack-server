@@ -240,7 +240,7 @@ function vertexRequestGlobal(token, model, body, timeoutMs = 120000, typeAppel =
         try {
           const parsed = JSON.parse(d);
           const usage = parsed?.usageMetadata || {};
-          logCoutApi('demo', typeAppel, usage.promptTokenCount, usage.candidatesTokenCount, true);
+          logCoutApi('demo', typeAppel, usage);
           resolve(parsed);
         } catch(e) { reject(e); }
       });
@@ -270,11 +270,27 @@ const GEMINI_PRIX_IN        = 1.25 / 1_000_000;
 const GEMINI_PRIX_OUT       = 10.00 / 1_000_000;
 const GEMINI_PRIX_IMAGE_OUT = 120.0 / 1_000_000;
 
-function logCoutApi(source, typeAppel, tokensIn, tokensOut, estImage) {
+function logCoutApi(source, typeAppel, usage) {
   // Jamais bloquant — une erreur ici ne doit jamais casser la génération en cours.
+  // Gemini détaille les tokens de sortie par modalité (candidatesTokensDetails) et compte
+  // séparément les tokens de "réflexion" (thoughtsTokenCount) — les deux sont réels et
+  // facturés, mais absents du simple candidatesTokenCount si on ne creuse pas la réponse.
   try {
-    const prixOut = estImage ? GEMINI_PRIX_IMAGE_OUT : GEMINI_PRIX_OUT;
-    const cout = (tokensIn || 0) * GEMINI_PRIX_IN + (tokensOut || 0) * prixOut;
+    const tokensIn = usage?.promptTokenCount || 0;
+    const details = usage?.candidatesTokensDetails || [];
+    const tokensImage = details.filter(d => d.modality === 'IMAGE').reduce((s,d) => s + (d.tokenCount||0), 0);
+    const tokensTexteDetail = details.filter(d => d.modality !== 'IMAGE').reduce((s,d) => s + (d.tokenCount||0), 0);
+    // Si l'API ne détaille pas par modalité (réponse texte simple, cas le plus courant),
+    // se rabattre sur le total brut candidatesTokenCount.
+    const tokensTexte = details.length ? tokensTexteDetail : (usage?.candidatesTokenCount || 0);
+    const tokensReflexion = usage?.thoughtsTokenCount || 0;
+
+    const cout = tokensIn * GEMINI_PRIX_IN
+               + tokensImage * GEMINI_PRIX_IMAGE_OUT
+               + tokensTexte * GEMINI_PRIX_OUT
+               + tokensReflexion * GEMINI_PRIX_OUT;
+    const tokensOutTotal = tokensImage + tokensTexte + tokensReflexion;
+
     fetch(`${SUPABASE_URL_INT}/rest/v1/api_usage_log`, {
       method: 'POST',
       headers: {
@@ -285,7 +301,7 @@ function logCoutApi(source, typeAppel, tokensIn, tokensOut, estImage) {
       },
       body: JSON.stringify({
         source, type_appel: typeAppel,
-        tokens_in: tokensIn || 0, tokens_out: tokensOut || 0,
+        tokens_in: tokensIn, tokens_out: tokensOutTotal,
         cout_usd: Math.round(cout * 1e6) / 1e6,
       })
     }).catch(() => {});
@@ -311,7 +327,7 @@ function vertexRequest(token, model, body, timeoutMs = 90000, typeAppel = 'texte
         try {
           const parsed = JSON.parse(d);
           const usage = parsed?.usageMetadata || {};
-          logCoutApi('demo', typeAppel, usage.promptTokenCount, usage.candidatesTokenCount, false);
+          logCoutApi('demo', typeAppel, usage);
           resolve(parsed);
         } catch(e) { reject(new Error('Réponse Vertex invalide: ' + d.slice(0,200))); }
       });
