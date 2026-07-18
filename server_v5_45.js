@@ -221,7 +221,7 @@ function getToken() {
 }
 
 // ── Vertex AI Global Request (gemini-3-pro-image) ──
-function vertexRequestGlobal(token, model, body, timeoutMs = 120000) {
+function vertexRequestGlobal(token, model, body, timeoutMs = 120000, typeAppel = 'generation_image') {
   return new Promise((resolve, reject) => {
     const bodyStr = JSON.stringify(body);
     const path = `/v1/projects/${PROJECT_ID}/locations/global/publishers/google/models/${model}:generateContent`;
@@ -236,7 +236,14 @@ function vertexRequestGlobal(token, model, body, timeoutMs = 120000) {
     }, res => {
       let d = '';
       res.on('data', c => d += c);
-      res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(e); } });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(d);
+          const usage = parsed?.usageMetadata || {};
+          logCoutApi('demo', typeAppel, usage.promptTokenCount, usage.candidatesTokenCount, true);
+          resolve(parsed);
+        } catch(e) { reject(e); }
+      });
     });
     req.on('error', reject);
     req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout Vertex AI Image (${timeoutMs/1000}s)`)); });
@@ -246,17 +253,46 @@ function vertexRequestGlobal(token, model, body, timeoutMs = 120000) {
 
 // Réessaie une fois automatiquement en cas d'échec (timeout, erreur réseau, etc.) avant d'abandonner —
 // la génération d'image Vertex a des ralentissements ponctuels, un simple réessai suffit la plupart du temps.
-async function vertexRequestGlobalAvecReessai(token, model, body, timeoutMs = 120000) {
+async function vertexRequestGlobalAvecReessai(token, model, body, timeoutMs = 120000, typeAppel = 'generation_image') {
   try {
-    return await vertexRequestGlobal(token, model, body, timeoutMs);
+    return await vertexRequestGlobal(token, model, body, timeoutMs, typeAppel);
   } catch(e) {
     console.log(`⚠️  Échec 1ère tentative (${e.message}) — nouvel essai...`);
-    return await vertexRequestGlobal(token, model, body, timeoutMs);
+    return await vertexRequestGlobal(token, model, body, timeoutMs, typeAppel);
   }
 }
 
 // ── Vertex AI Request ──────────────────────────
-function vertexRequest(token, model, body, timeoutMs = 90000) {
+// ── Suivi des coûts API (Phase 2 AdStats) ──────────────────────────
+// Tarifs Gemini 2.5/3 Pro sur Vertex AI (contexte ≤200K) : $1.25/M tokens entrée, $10/M sortie texte.
+// Les tokens de sortie IMAGE sont facturés à part, bien plus cher : $120/M (confirmé, pas une supposition).
+const GEMINI_PRIX_IN        = 1.25 / 1_000_000;
+const GEMINI_PRIX_OUT       = 10.00 / 1_000_000;
+const GEMINI_PRIX_IMAGE_OUT = 120.0 / 1_000_000;
+
+function logCoutApi(source, typeAppel, tokensIn, tokensOut, estImage) {
+  // Jamais bloquant — une erreur ici ne doit jamais casser la génération en cours.
+  try {
+    const prixOut = estImage ? GEMINI_PRIX_IMAGE_OUT : GEMINI_PRIX_OUT;
+    const cout = (tokensIn || 0) * GEMINI_PRIX_IN + (tokensOut || 0) * prixOut;
+    fetch(`${SUPABASE_URL_INT}/rest/v1/api_usage_log`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify({
+        source, type_appel: typeAppel,
+        tokens_in: tokensIn || 0, tokens_out: tokensOut || 0,
+        cout_usd: Math.round(cout * 1e6) / 1e6,
+      })
+    }).catch(() => {});
+  } catch(e) {}
+}
+
+function vertexRequest(token, model, body, timeoutMs = 90000, typeAppel = 'texte_gemini') {
   return new Promise((resolve, reject) => {
     const bodyStr = JSON.stringify(body);
     const path = `/v1/projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${model}:generateContent`;
@@ -271,7 +307,14 @@ function vertexRequest(token, model, body, timeoutMs = 90000) {
     }, res => {
       let d = '';
       res.on('data', c => d += c);
-      res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(new Error('Réponse Vertex invalide: ' + d.slice(0,200))); } });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(d);
+          const usage = parsed?.usageMetadata || {};
+          logCoutApi('demo', typeAppel, usage.promptTokenCount, usage.candidatesTokenCount, false);
+          resolve(parsed);
+        } catch(e) { reject(new Error('Réponse Vertex invalide: ' + d.slice(0,200))); }
+      });
     });
     req.on('error', reject);
     req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout Vertex AI (${timeoutMs/1000}s)`)); });
@@ -1902,7 +1945,7 @@ HARD LOCKS :
           }
         };
 
-        const data = await vertexRequestGlobalAvecReessai(token, 'gemini-3-pro-image', vertexBody);
+        const data = await vertexRequestGlobalAvecReessai(token, 'gemini-3-pro-image', vertexBody, 120000, 'creative_image_demo');
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
         const responseParts = data.candidates?.[0]?.content?.parts || [];
@@ -2112,7 +2155,7 @@ HARD LOCKS :
           }
         };
 
-        const data = await vertexRequestGlobalAvecReessai(token, 'gemini-3-pro-image', vertexBody);
+        const data = await vertexRequestGlobalAvecReessai(token, 'gemini-3-pro-image', vertexBody, 120000, 'creative_image_prod');
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
         const responseParts = data.candidates?.[0]?.content?.parts || [];
