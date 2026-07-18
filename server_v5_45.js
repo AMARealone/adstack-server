@@ -3427,6 +3427,22 @@ function isLowEffortAnswer(text) {
   return false;
 }
 
+// Filtre basique — bloque les insultes les plus courantes (FR + EN). Non exhaustif par nature
+// (contournable avec des variantes orthographiques), mais suffit à éviter l'abus évident sur
+// un champ de commentaire libre destiné à de l'amélioration produit, pas à la modération fine.
+const MOTS_INTERDITS = [
+  'connard','connasse','encule','enculé','pute','putain','salope','batard','bâtard',
+  'nique','niquer','ntm','pd','pédé','pd','merde','con','conne','abruti','débile',
+  'fuck','shit','bitch','asshole','cunt','nigger','faggot',
+];
+function contientContenuInapproprie(texte) {
+  const normalise = (texte || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return MOTS_INTERDITS.some(mot => {
+    const motNormalise = mot.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return new RegExp(`\\b${motNormalise}\\b`, 'i').test(normalise);
+  });
+}
+
 // Les 4 messages validés — sans accents volontairement (au-delà de 160 caractères GSM sinon la limite tombe à 70)
 const SMS_TEMPLATES = {
   intro: (m) => `Bonjour ${m.marque}, vu votre pub ${m.produit}. On aide des vendeurs a booster leurs ventes avec de meilleures images pub. Voici votre demo gratuite : ${m.lien}`,
@@ -3680,6 +3696,48 @@ if (req.method === 'GET' && req.url.startsWith('/s/')) {
     console.error('[Shorten] Erreur redirection:', e.message);
     res.writeHead(500); res.end('Erreur serveur');
   }
+  return;
+}
+
+// POST /save-comment — commentaire libre depuis AdBoard, stocké comme les autres formulaires
+if (req.method === 'POST' && req.url === '/save-comment') {
+  let body = '';
+  req.on('data', d => body += d);
+  req.on('end', async () => {
+    try {
+      const { user_id, email, texte } = JSON.parse(body);
+      if (!texte || !texte.trim()) {
+        res.writeHead(400); res.end(JSON.stringify({ error: 'invalid_payload' })); return;
+      }
+      if (contientContenuInapproprie(texte)) {
+        res.writeHead(422, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ error: 'contenu_inapproprie' }));
+        return;
+      }
+      const insertRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/data_insights`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_SERVICE_KEY,
+          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        },
+        body: JSON.stringify([{
+          source: 'commentaire_libre', user_id: user_id || null, email: email || null,
+          question: 'Commentaire libre', answer: texte.trim(),
+        }])
+      });
+      if (!insertRes.ok) {
+        const errText = await insertRes.text();
+        console.error('[Commentaire] Échec insertion:', insertRes.status, errText.slice(0,300));
+        res.writeHead(500); res.end(JSON.stringify({ error: 'insert_failed' })); return;
+      }
+      console.log(`[Commentaire] ✅ Nouveau commentaire enregistré`);
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok: true }));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+  });
   return;
 }
 
