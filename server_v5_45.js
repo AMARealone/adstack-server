@@ -2824,7 +2824,74 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
   return;
 }
 
-// GET /cron/email-sequence — déclenché 1x/jour par un cron externe (cron-job.org)
+// GET /cron/clarity-snapshot — déclenché 1x/jour par un cron externe (cron-job.org).
+// Récupère les métriques comportementales AdBoard (clics de rage, clics morts, etc.)
+// depuis l'API officielle de Microsoft Clarity, et les accumule dans notre propre table —
+// l'API de Clarity ne garde que 3 jours glissants, donc on doit stocker nous-mêmes l'historique.
+if (req.method === 'GET' && req.url.startsWith('/cron/clarity-snapshot')) {
+  const urlObj = new URL(req.url, `http://${req.headers.host}`);
+  const key = urlObj.searchParams.get('key');
+  if (key !== process.env.SEQUENCE_CRON_SECRET) {
+    res.writeHead(403); res.end(JSON.stringify({ error: 'Clé invalide' })); return;
+  }
+  res.writeHead(200, {'Content-Type':'application/json'});
+  res.end(JSON.stringify({ ok: true, message: 'Récupération Clarity en cours' }));
+
+  try {
+    if (!process.env.CLARITY_API_TOKEN) {
+      console.warn('[Clarity] CLARITY_API_TOKEN manquant — snapshot ignoré');
+      return;
+    }
+    const r = await fetch('https://www.clarity.ms/export-data/api/v1/project-live-insights?numOfDays=1&dimension1=URL', {
+      headers: { 'Authorization': `Bearer ${process.env.CLARITY_API_TOKEN}`, 'Content-Type': 'application/json' }
+    });
+    if (!r.ok) {
+      console.warn(`[Clarity] Échec API (${r.status}) — snapshot ignoré`);
+      return;
+    }
+    const data = await r.json();
+
+    // La réponse groupe par nom de métrique ("Rage Click Count", "Dead Click Count", etc.),
+    // chaque groupe contenant un tableau par URL. On reconstruit une ligne par URL.
+    const parPage = {};
+    (data || []).forEach(bloc => {
+      const nomMetrique = bloc.metricName;
+      (bloc.information || []).forEach(info => {
+        const url = info.URL || info.url || 'inconnue';
+        if (!parPage[url]) parPage[url] = { url };
+        if (nomMetrique === 'Rage Click Count')    parPage[url].rage_click_count    = parseInt(info.rageClickCount    || info.count || 0);
+        if (nomMetrique === 'Dead Click Count')     parPage[url].dead_click_count     = parseInt(info.deadClickCount     || info.count || 0);
+        if (nomMetrique === 'Quickback Click')      parPage[url].quickback_click      = parseInt(info.quickbackCount     || info.count || 0);
+        if (nomMetrique === 'Excessive Scroll')     parPage[url].excessive_scroll     = parseInt(info.excessiveScrollCount || info.count || 0);
+        if (nomMetrique === 'Traffic')              parPage[url].traffic_sessions     = parseInt(info.totalSessionCount || 0);
+        if (nomMetrique === 'Scroll Depth')          parPage[url].scroll_depth         = parseFloat(info.averageScrollDepth || info.scrollDepth || 0);
+        if (nomMetrique === 'Engagement Time')      parPage[url].engagement_time      = parseFloat(info.averageEngagementTime || info.engagementTime || 0);
+      });
+    });
+
+    const lignes = Object.values(parPage);
+    if (lignes.length) {
+      await fetch(`${SUPABASE_URL_INT}/rest/v1/clarity_snapshots`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_SERVICE_KEY,
+          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify(lignes)
+      });
+      console.log(`[Clarity] ✅ Snapshot enregistré — ${lignes.length} page(s)`);
+    } else {
+      console.log('[Clarity] Snapshot vide (aucune donnée retournée)');
+    }
+  } catch(e) {
+    console.error('[Clarity] Erreur snapshot:', e.message);
+  }
+  return;
+}
+
+
 if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
   const urlObj = new URL(req.url, `http://${req.headers.host}`);
   const key = urlObj.searchParams.get('key');
