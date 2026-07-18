@@ -2453,7 +2453,7 @@ EXEMPLES PARFAITS (modèle à suivre) :
           const nicheData = await vertexRequest(token, 'gemini-2.5-flash', {
             contents: [{ role:'user', parts:[{ text: `Grande catégorie marketing 1-2 mots max pour: "${produit || slug}". Exemples: cosmétiques, santé, mode, beauté, nutrition. UNIQUEMENT la catégorie, rien d'autre.` }] }],
             generationConfig: { maxOutputTokens: 50, temperature: 0, thinkingConfig: { thinkingBudget: 0 } }
-          });
+          }, 90000, 'remplissage_message_demo');
           niche = (nicheData.candidates?.[0]?.content?.parts?.[0]?.text || '').trim().split('\n')[0].replace(/['"«».,]/g,'');
         } catch(e) { niche = produit.split(' ')[0] || ''; }
 
