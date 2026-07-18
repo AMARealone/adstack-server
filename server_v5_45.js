@@ -2879,7 +2879,10 @@ if (req.method === 'GET' && req.url.startsWith('/cron/clarity-snapshot')) {
         if (nomMetrique === 'Dead Click Count')     parPage[url].dead_click_count     = parseInt(info.deadClickCount     || info.count || 0);
         if (nomMetrique === 'Quickback Click')      parPage[url].quickback_click      = parseInt(info.quickbackCount     || info.count || 0);
         if (nomMetrique === 'Excessive Scroll')     parPage[url].excessive_scroll     = parseInt(info.excessiveScrollCount || info.count || 0);
-        if (nomMetrique === 'Traffic')              parPage[url].traffic_sessions     = parseInt(info.totalSessionCount || 0);
+        if (nomMetrique === 'Traffic') {
+          parPage[url].traffic_sessions = parseInt(info.totalSessionCount || 0);
+          parPage[url].visiteurs_uniques = parseInt(info.distantUserCount || 0);
+        }
         if (nomMetrique === 'Scroll Depth')          parPage[url].scroll_depth         = parseFloat(info.averageScrollDepth || info.scrollDepth || 0);
         if (nomMetrique === 'Engagement Time')      parPage[url].engagement_time      = parseFloat(info.averageEngagementTime || info.engagementTime || 0);
       });
@@ -3494,6 +3497,66 @@ if (req.method === 'POST' && req.url === '/send-prospect-sms') {
       res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
     }
   });
+  return;
+}
+
+// GET /crm/utilisateurs — combine comptes AdBoard + produits créés + abonnement + LTV.
+// Utilise la clé service Supabase CÔTÉ SERVEUR uniquement — jamais exposée au CRM
+// (qui n'a que la clé anonyme), pour ne pas donner un accès total à la base à qui ouvre
+// les outils de développement du navigateur.
+if (req.method === 'GET' && req.url === '/crm/utilisateurs') {
+  if (req.headers['x-api-key'] !== 'adstack2024xProspectionKey99') {
+    res.writeHead(401); res.end(JSON.stringify({ error: 'unauthorized' })); return;
+  }
+  try {
+    const headersAdmin = { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` };
+
+    const [usersRes, produitsRes, subsRes, txRes] = await Promise.all([
+      fetch(`${SUPABASE_URL_INT}/auth/v1/admin/users?per_page=1000`, { headers: headersAdmin }),
+      fetch(`${SUPABASE_URL_INT}/rest/v1/products?select=user_id`, { headers: headersAdmin }),
+      fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?select=user_id,plan,active,expires_at,started_at`, { headers: headersAdmin }),
+      fetch(`${SUPABASE_URL_INT}/rest/v1/transactions?select=user_id,montant_net_fcfa`, { headers: headersAdmin }),
+    ]);
+    const usersData = await usersRes.json();
+    const produits  = await produitsRes.json();
+    const subs      = await subsRes.json();
+    const txs       = await txRes.json();
+
+    const nbProduitsParUser = {};
+    (produits || []).forEach(p => { nbProduitsParUser[p.user_id] = (nbProduitsParUser[p.user_id]||0) + 1; });
+
+    const subParUser = {};
+    (subs || []).forEach(s => {
+      // Garder l'abonnement le plus récent si plusieurs lignes existent pour le même user
+      if (!subParUser[s.user_id] || new Date(s.started_at) > new Date(subParUser[s.user_id].started_at)) {
+        subParUser[s.user_id] = s;
+      }
+    });
+
+    const ltvParUser = {};
+    (txs || []).forEach(t => { ltvParUser[t.user_id] = (ltvParUser[t.user_id]||0) + (t.montant_net_fcfa||0); });
+
+    const utilisateurs = (usersData?.users || []).map(u => {
+      const sub = subParUser[u.id];
+      return {
+        id: u.id,
+        email: u.email,
+        created_at: u.created_at,
+        nb_produits: nbProduitsParUser[u.id] || 0,
+        plan: sub?.plan || null,
+        plan_actif: sub ? (sub.active && new Date(sub.expires_at) > new Date()) : false,
+        a_achete: !!ltvParUser[u.id],
+        ltv_fcfa: ltvParUser[u.id] || 0,
+      };
+    });
+
+    res.writeHead(200, {'Content-Type':'application/json'});
+    res.end(JSON.stringify({ utilisateurs }));
+  } catch(e) {
+    console.error('[CRM Utilisateurs] Erreur:', e.message);
+    res.writeHead(500, {'Content-Type':'application/json'});
+    res.end(JSON.stringify({ error: e.message }));
+  }
   return;
 }
 
