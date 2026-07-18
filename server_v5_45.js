@@ -827,6 +827,52 @@ async function activateSubscription(userId, plan, cycle, creditsPerWeek, priceFc
 }
 
 // Trouver un user Supabase par email
+// Traite l'attribution CRM au moment d'un achat confirmé — marque automatiquement le prospect
+// correspondant comme "acheteur" et enregistre quel message (démo/J+3/J+10/J+21) l'a converti.
+// Ne fait rien si l'utilisateur n'a pas d'attribution attachée (ex: compte créé avant cette
+// fonctionnalité, ou arrivé par un autre canal que nos liens traqués).
+async function traiterAttributionCRM(userId) {
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/auth/v1/admin/users/${userId}`, {
+      headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+    });
+    if (!r.ok) { console.warn('[Attribution CRM] Utilisateur introuvable:', userId); return; }
+    const user = await r.json();
+    const prospectId = user?.user_metadata?.crm_prospect_id;
+    const campagne   = user?.user_metadata?.crm_last_campaign;
+    if (!prospectId) {
+      console.log('[Attribution CRM] Aucune attribution pour cet utilisateur — achat non lié à un prospect CRM');
+      return;
+    }
+
+    const pRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/prospects?id=eq.${prospectId}&select=id,notes,statut`, {
+      headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+    });
+    const prospects = await pRes.json();
+    const prospect = prospects?.[0];
+    if (!prospect) { console.warn('[Attribution CRM] Prospect introuvable:', prospectId); return; }
+
+    let notes = {};
+    try { notes = JSON.parse(prospect.notes || '{}'); } catch(e) {}
+    notes.conversion_campagne = campagne || 'inconnue';
+    notes.conversion_date = new Date().toISOString();
+
+    await fetch(`${SUPABASE_URL_INT}/rest/v1/prospects?id=eq.${prospectId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify({ statut: 'acheteur', notes: JSON.stringify(notes) })
+    });
+    console.log(`[Attribution CRM] ✅ Prospect ${prospectId} marqué acheteur — converti via "${campagne}"`);
+  } catch(e) {
+    console.error('[Attribution CRM] Erreur:', e.message);
+  }
+}
+
 async function findUserByEmail(email) {
   if (!email) return null;
   // ⚠️ L'API Admin Supabase ignore silencieusement ?email=... et renvoie TOUS les utilisateurs.
@@ -2691,6 +2737,7 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
       if (userId) {
         console.log(`[Pulse] user_id trouvé directement dans custom_fields: ${userId}`);
         await activateSubscription(userId, planInfo.plan, planInfo.cycle, planInfo.credits_per_week, planInfo.price_fcfa, planInfo.prix_img, email, customer?.name);
+        await traiterAttributionCRM(userId);
         return;
       }
       // Sinon chercher par email — chemin de secours, ne devrait quasi jamais arriver pour un achat AdBoard normal
@@ -2700,6 +2747,7 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
         if (user) {
           console.log(`[Pulse] Fallback email: match trouvé → user_id=${user.id} pour email="${email}"`);
           await activateSubscription(user.id, planInfo.plan, planInfo.cycle, planInfo.credits_per_week, planInfo.price_fcfa, planInfo.prix_img, email, user.user_metadata?.full_name || customer?.name);
+          await traiterAttributionCRM(user.id);
         } else {
           console.warn(`[Pulse] User introuvable pour email: ${email} — abonnement en attente`);
         }
