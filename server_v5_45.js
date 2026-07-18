@@ -852,6 +852,30 @@ async function activateSubscription(userId, plan, cycle, creditsPerWeek, priceFc
   const data = await r.json();
   console.log(`[Chariow] ✅ Abonnement activé: ${userId} → ${plan} (${cycle}, expire le ${expiresAt.toISOString()})`);
 
+  // Log permanent de CE paiement précis — jamais écrasé, contrairement à "subscriptions" qui ne
+  // garde que l'état courant. Nécessaire pour calculer LTV et fréquence d'achat par client.
+  if (priceFcfa) {
+    const commission = Math.round(priceFcfa * 0.15);
+    try {
+      await fetch(`${SUPABASE_URL_INT}/rest/v1/transactions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_SERVICE_KEY,
+          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({
+          user_id: userId, email: email || null, nom: name || null,
+          plan, cycle,
+          montant_fcfa: priceFcfa,
+          commission_chariow_fcfa: commission,
+          montant_net_fcfa: priceFcfa - commission,
+        })
+      });
+    } catch(e) { console.error('[Transactions] Erreur log:', e.message); }
+  }
+
   // Envoi email + facture (non bloquant, ne casse pas l'activation si ça échoue)
   if (email && priceFcfa) {
     sendPaymentConfirmationEmail({ email, name, plan, cycle, creditsPerWeek, prixImg, priceFcfa, paymentDate: now, expiresAt }).catch(e => {
