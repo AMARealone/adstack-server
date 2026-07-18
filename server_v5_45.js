@@ -1502,6 +1502,24 @@ PLAN DE RECHERCHE (effectue PLUSIEURS requêtes Google distinctes pour couvrir c
 8. CONTEXTE CULTUREL PAYS : comment cette catégorie de produit est perçue/consommée dans ${pays}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ GARDE-FOU CRITIQUE — NE JAMAIS MÉLANGER PRODUIT EXACT ET CATÉGORIE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Les étapes 1 à 6 élargissent volontairement aux avis de la CATÉGORIE (produits similaires,
+pas forcément identiques) pour collecter des verbatims et du contexte. C'est voulu. MAIS deux
+informations ne doivent JAMAIS venir de cette recherche élargie, UNIQUEMENT de la page produit
+officielle (étape 0) :
+- LE PRIX : toujours dans la devise locale exacte vue sur la page produit officielle (${pays}).
+  Ne JAMAIS reporter un prix vu sur AliExpress/Amazon (souvent en USD) comme étant le prix du
+  produit — ces sites servent uniquement à trouver des avis sur des produits comparables, jamais
+  à déterminer le prix. Si le prix n'est pas visible sur la page produit officielle, écris
+  explicitement [PRIX NON TROUVÉ SUR LA PAGE OFFICIELLE] plutôt que d'utiliser un prix externe.
+- LE PROBLÈME PRINCIPAL RÉSOLU : uniquement ce qui est écrit sur la page produit officielle
+  elle-même (titre, description, bénéfices annoncés). Ne JAMAIS déduire ou emprunter le problème
+  résolu depuis un avis trouvé sur un produit similaire de la catégorie — un produit "brûleur de
+  graisse" et un produit "anti-douleur" peuvent apparaître dans les mêmes recherches élargies
+  sans être le même produit ni résoudre le même problème.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FORMAT DE TON OUTPUT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
