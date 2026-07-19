@@ -3672,17 +3672,25 @@ if (req.method === 'GET' && req.url.startsWith('/s/')) {
     const rows = await r.json();
     const link = rows?.[0];
     if (!link) { res.writeHead(404); res.end('Lien introuvable ou expiré'); return; }
-    // Comptage du clic — non bloquant, ne retarde pas la redirection
-    fetch(`${SUPABASE_URL_INT}/rest/v1/short_links?id=eq.${link.id}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': SUPABASE_SERVICE_KEY,
-        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-        'Prefer': 'return=minimal',
-      },
-      body: JSON.stringify({ clicks: (link.clicks || 0) + 1 })
-    }).catch(()=>{});
+    // Comptage du clic — uniquement pour un vrai visiteur, jamais pour un robot de
+    // prévisualisation (WhatsApp/Facebook/etc. visitent le lien automatiquement pour générer
+    // l'aperçu — image, titre — dès l'envoi du message, bien avant que quiconque clique
+    // vraiment). Sans ce filtre, chaque message envoyé gonflait le compteur de plusieurs
+    // clics fantômes.
+    const _uaClic = req.headers['user-agent'] || '';
+    const _estRobotClic = /WhatsApp|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Googlebot|Slackbot|Discordbot|bot|crawler|spider/i.test(_uaClic);
+    if (!_estRobotClic) {
+      fetch(`${SUPABASE_URL_INT}/rest/v1/short_links?id=eq.${link.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_SERVICE_KEY,
+          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({ clicks: (link.clicks || 0) + 1 })
+      }).catch(()=>{});
+    }
 
     if (link.thumbnail) {
       const imgUrl = `https://mifljhsusidgzelnswma.supabase.co/storage/v1/object/public/demos/${link.thumbnail}.png`;
