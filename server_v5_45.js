@@ -431,100 +431,35 @@ async function formatPriceForCurrency(fcfa, currency) {
   }
 }
 
+// Remplace les {{variable}} par leur valeur réelle — utilisé pour tous les templates
+// stockés en base (emails + notifications), maintenant modifiables depuis le CRM.
+function interpoler(texte, variables) {
+  return (texte || '').replace(/\{\{(\w+)\}\}/g, (_, cle) => (variables[cle] ?? ''));
+}
+
+async function chargerTemplate(cle) {
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/templates?cle=eq.${cle}&select=*`, {
+      headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+    });
+    const rows = await r.json();
+    return rows?.[0] || null;
+  } catch(e) { return null; }
+}
+
 async function renderSequenceEmail(key, { firstName='', productName='', productPays='', currency='XOF' } = {}) {
   const prixLocal = await formatPriceForCurrency(SEQUENCE_PRICES.starter.price, currency);
   const prixParImage = await formatPriceForCurrency(Math.round(SEQUENCE_PRICES.starter.price / 36), currency);
   const wrap = (body) => `<div style="font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#222;font-size:15px;line-height:1.65;">${body}</div>`;
 
-  const templates = {
-    'j1_no_product': {
-      subject: 'Ton catalogue est vide — 2 minutes pour changer ça',
-      html: wrap(`
-        <p>Salut${firstName ? ' ' + firstName : ''},</p>
-        <p>Tu t'es inscrit sur AdBoard, mais ton catalogue est encore vide.</p>
-        <p>On sait que beaucoup de vendeurs bricolent leurs visuels eux-mêmes avec ChatGPT ou Canva pour aller plus vite — sauf que "plus vite" prend souvent des heures, et le résultat ne convertit pas toujours.</p>
-        <p>Ajoute ton produit, on s'occupe du reste.</p>
-        <p><a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Ajouter mon produit →</a></p>
-        <p style="margin-top:24px;">AdStack</p>
-      `)
-    },
-    'j1_has_product': {
-      subject: `🤯 ${firstName || 'Salut'} ! Découverte hallucinante sur ${productName || 'ton produit'}...`,
-      html: wrap(`
-        <p>Heyy${firstName ? ' ' + firstName : ''},</p>
-        <p>Tu as créé ${productName || 'ton produit'} que tu vends sur ${productPays || 'ton marché'}.</p>
-        <p>Et notamment nos spécialistes ont découvert un potentiel énorme sur la croissance de la demande pour ce type de produit dans les 3 prochains mois.</p>
-        <p>Bref, c'est la ruée vers l'or ! Mais si t'as pas une équipe de tueurs à tes côtés tu peux dire adieu à cette opportunité, ou sinon tu peux faire le bon choix aujourd'hui.</p>
-        <p><a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Demander mes visuels →</a></p>
-        <p style="margin-top:24px;">AdStack</p>
-      `)
-    },
-    'j5_vision': {
-      subject: '🫣 La méthode secrète qui a fait la différence pour un de nos clients',
-      html: wrap(`
-        <p>Salut${firstName ? ' ' + firstName : ''},</p>
-        <p><strong>Maintenant :</strong> tu gères tes visuels toi-même avec l'IA, tu lances, tu croises les doigts. Si ça marche pas, tu recommences de zéro.</p>
-        <p><strong>Avec AdStack :</strong> tu profites des années d'expérience en stratégie publicitaire de notre équipe, tout est fait avec précision et avec un unique but — exploser tes records de ventes sans que t'aies rien à faire.</p>
-        <p>C'est exactement ce qui a convaincu un de nos clients qui vend un produit santé complexe en Afrique francophone : les angles distincts lui ont permis de tester ce qui marchait vraiment, au lieu de deviner.</p>
-        <p>En conséquence il ne compte pas sur la chance pour faire "SOLD OUT".</p>
-        <p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Découvrir Starter — ${prixLocal} →</a></p>
-        <p style="margin-top:24px;">AdStack</p>
-      `)
-    },
-    'j12_offer': {
-      subject: '"C\'est cher" — parlons-en',
-      html: wrap(`
-        <p>Salut${firstName ? ' ' + firstName : ''},</p>
-        <p>Tu regardes peut-être le prix de Starter (${prixLocal}) et tu te dis que c'est cher.</p>
-        <p>Fais le calcul : ça revient à environ ${prixParImage} par image. Un freelance basique facture souvent 5x plus cher pour une seule image, sans données marché, sans stratégie ni amélioration continue.</p>
-        <p>Le vrai coût, c'est pas Starter. C'est chaque jour sans bon contenu publicitaire qui brûle ton budget, sans savoir comprendre pourquoi ça n'a pas marché.</p>
-        <p>La meilleure solution, elle est devant toi — pas ChatGPT que tout le monde a.</p>
-        <p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Je démarre avec Starter →</a></p>
-        <p style="margin-top:24px;">AdStack</p>
-      `)
-    },
-    'j21_breakup': {
-      subject: '🤐 je vais arrêter de t\'écrire !!!',
-      html: wrap(`
-        <p>Salut${firstName ? ' ' + firstName : ''},</p>
-        <p>Je vais arrêter de t'écrire — pas parce qu'on perd notre temps, mais plutôt pour qualifier les personnes avec qui on travaille.</p>
-        <p>Car tout e-commerçant voulant vraiment scaler son business aurait compris directement la valeur unique qu'on apporte dès le premier message.</p>
-        <p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Passer à l'action →</a></p>
-        <p style="margin-top:24px;">AdStack</p>
-      `)
-    },
-    'monthly_social_proof': {
-      subject: 'Ce qu\'un vendeur a fait avec ses images cette semaine',
-      html: wrap(`
-        <p>Salut${firstName ? ' ' + firstName : ''},</p>
-        <p>Un de nos clients vend un produit cosmétique avec plusieurs bénéfices différents — difficile de savoir quel argument allait vraiment convaincre.</p>
-        <p>On lui a livré une bonne diversité d'images publicitaires la même semaine. Il a pu tester quel angle résonnait le plus avec sa cible, au lieu de deviner.</p>
-        <p>C'est exactement ce que Starter permet de faire, chaque semaine.</p>
-        <p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Revoir les offres →</a></p>
-        <p style="margin-top:24px;">AdStack</p>
-      `)
-    },
-    'monthly_novelty': {
-      subject: 'Ce qui a changé sur AdBoard depuis ta dernière visite',
-      html: wrap(`
-        <p>Salut${firstName ? ' ' + firstName : ''},</p>
-        <p>AdBoard continue d'évoluer — nouvelles fonctionnalités, suivi de tes demandes en temps réel, assistant intégré pour répondre à tes questions direct dans la plateforme.</p>
-        <p>Si tu avais mis ton inscription de côté, c'est peut-être le bon moment d'y rejeter un œil.</p>
-        <p><a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Retourner sur AdBoard →</a></p>
-        <p style="margin-top:24px;">AdStack</p>
-      `)
-    },
-    'monthly_checkin': {
-      subject: 'On est toujours là',
-      html: wrap(`
-        <p>Salut${firstName ? ' ' + firstName : ''},</p>
-        <p>Pas de pitch aujourd'hui — juste un mot pour savoir où tu en es.</p>
-        <p>Si tu as des questions sur AdStack, ou juste besoin d'un conseil sur tes visuels publicitaires, réponds à cet email. Zéro obligation d'acheter quoi que ce soit.</p>
-        <p style="margin-top:24px;">AdStack</p>
-      `)
-    },
+  const tpl = await chargerTemplate(`email_${key}`);
+  if (!tpl) return null;
+
+  const variables = { firstName, productName, productPays, prixLocal, prixParImage };
+  return {
+    subject: interpoler(tpl.sujet, variables),
+    html: wrap(interpoler(tpl.contenu, variables)),
   };
-  return templates[key];
 }
 
 async function sendSequenceEmail(email, key, ctx) {
@@ -795,29 +730,11 @@ async function sendWelcomeEmail({ email, name }) {
   if (!RESEND_KEY) { console.warn('[Email] RESEND_API_KEY manquante — welcome email non envoyé'); return; }
 
   const firstName = name ? name.split(' ')[0] : '';
+  const tpl = await chargerTemplate('email_welcome');
+  if (!tpl) { console.warn('[Email] Template email_welcome introuvable en base — welcome email non envoyé'); return; }
 
-  const html = `
-    <div style="font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#222;font-size:15px;line-height:1.65;">
-      <p>Salut${firstName ? ' ' + firstName : ''},</p>
-
-      <p>Moi c'est Amar, CEO et Founder d'AdStack.</p>
-
-      <p>J'ai lancé AdStack parce que je voyais des vendeurs comme toi perdre des heures chaque semaine à essayer de sortir des images publicitaires génériques — pendant que leurs concurrents scalent tranquillement avec des visuels qui sont faits pour vendre.</p>
-
-      <p>L'idée est simple : tu nous donnes ton produit, on t'envoie des images prêtes à lancer chaque semaine. Toi tu te concentres sur gérer ton business.</p>
-
-      <p>3 trucs pour bien démarrer :</p>
-
-      <p>
-        1. <a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Crée ton premier produit</a><br>
-        2. <a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Demande des images</a><br>
-        3. <a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Découvre nos offres</a>
-      </p>
-
-      <p style="margin-top:24px;">Amar<br>
-      <span style="color:#888;">CEO et Founder, AdStack</span></p>
-    </div>
-  `;
+  const html = `<div style="font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#222;font-size:15px;line-height:1.65;">${interpoler(tpl.contenu, { firstName })}</div>`;
+  const subject = interpoler(tpl.sujet, { firstName });
 
   try {
     const r = await fetch('https://api.resend.com/emails', {
@@ -827,7 +744,7 @@ async function sendWelcomeEmail({ email, name }) {
         from: 'AdStack <contact@adstackofficial.com>',
         to: [email],
         reply_to: 'amarbiranediaw@gmail.com',
-        subject: 'Bienvenue sur AdBoard — j\'ai une question pour toi',
+        subject,
         html,
       })
     });
@@ -3002,30 +2919,14 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
       if (ageDays >= 2) {
         const todayKey = new Date().toISOString().slice(0,10); // YYYY-MM-DD
 
-        const CATALOGUE_VIDE_VARIANTS = [
-          "👋 Heyy — Ajoute ton premier produit, ça prend 30 secondes.",
-          "Prêt pour qu'on t'aide à exploser tes ventes ? Ça commence par ajouter ton produit !",
-          "Ton catalogue attend son premier produit. On s'occupe du reste.",
-          "30 secondes. C'est le temps qu'il te faut pour ajouter ton produit et démarrer.",
-          "Tes concurrents publient déjà. Ajoute ton produit, ne perds plus de temps.",
-          "Un produit ajouté = une semaine d'images publicitaires qui commence. On attend le tien.",
-          "Toujours pas de produit dans ton catalogue ? On est prêts dès que toi tu l'es.",
-          "Ajoute ton produit maintenant — tes premières images arrivent vite après.",
-          "Ton compte AdBoard est prêt. Il ne manque plus qu'un produit.",
-          "On ne peut rien faire sans ton produit. Ajoute-le, on prend le relais.",
-        ];
-        const PRET_VISUELS_VARIANTS = (nom) => [
-          `💥BOOM!!! c'est le bruit de la demande qu'a ${nom} sur ton marché. Et notre équipe n'attend que toi, pour tout rafler 🫵`,
-          `${nom} est dans ton catalogue. Il ne manque plus qu'un forfait pour lancer tes visuels.`,
-          `Chaque jour sans forfait, c'est un jour sans nouvelles images publicitaires pour ${nom}.`,
-          `Tes concurrents sur ${nom} ne t'attendent pas. Prends ton forfait, on s'occupe du reste.`,
-          `${nom} mérite de vraies images publicitaires. On est prêts quand toi tu l'es.`,
-          `Encore un produit sans visuels ? Débloque tes premières images dès aujourd'hui.`,
-          `On a hâte de bosser sur ${nom}. Choisis ton forfait pour démarrer.`,
-          `${nom} est prêt à décoller — reste juste le forfait à choisir.`,
-          `Le potentiel de ${nom} mérite mieux que Canva. Passe au niveau supérieur.`,
-          `Ton produit est là, tes images ne le sont pas encore. On règle ça avec un forfait.`,
-        ];
+        const chargerVariantes = async (prefixe) => {
+          try {
+            const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/templates?cle=like.push_${prefixe}_*&select=titre,contenu,cle&order=cle.asc`, {
+              headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+            });
+            return await r.json();
+          } catch(e) { return []; }
+        };
 
         const prodRes2 = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?user_id=eq.${user.id}&select=id,nom`, {
           headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
@@ -3040,13 +2941,17 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
               headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
             });
             const sentSoFar = (await countRes.json())?.length || 0;
-            await sendPushToUser(user.id, {
-              title: 'Ton catalogue est vide',
-              body: CATALOGUE_VIDE_VARIANTS[sentSoFar % 10],
-              url: '/adboard/products'
-            });
-            await markSequenceSent(user.id, dailyKey);
-            sentCount++;
+            const variantes = await chargerVariantes('catalogue_vide');
+            if (variantes.length) {
+              const v = variantes[sentSoFar % variantes.length];
+              await sendPushToUser(user.id, {
+                title: interpoler(v.titre, {}),
+                body: interpoler(v.contenu, {}),
+                url: '/adboard/products'
+              });
+              await markSequenceSent(user.id, dailyKey);
+              sentCount++;
+            }
           }
         } else {
           // A un produit — vérifie s'il a un abonnement actif (pas juste une demande faite ou non)
@@ -3061,14 +2966,18 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
                 headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
               });
               const sentSoFar = (await countRes.json())?.length || 0;
-              const variants = PRET_VISUELS_VARIANTS(userProducts[0].nom);
-              await sendPushToUser(user.id, {
-                title: '📸 Prêt pour tes premiers visuels ?',
-                body: variants[sentSoFar % 10],
-                url: '/adboard/offers'
-              });
-              await markSequenceSent(user.id, dailyKey);
-              sentCount++;
+              const variantes = await chargerVariantes('pret_visuels');
+              if (variantes.length) {
+                const v = variantes[sentSoFar % variantes.length];
+                const vars = { nom: userProducts[0].nom };
+                await sendPushToUser(user.id, {
+                  title: interpoler(v.titre, vars),
+                  body: interpoler(v.contenu, vars),
+                  url: '/adboard/offers'
+                });
+                await markSequenceSent(user.id, dailyKey);
+                sentCount++;
+              }
             }
           }
         }
@@ -3570,6 +3479,108 @@ if (req.method === 'GET' && req.url === '/crm/utilisateurs') {
     res.end(JSON.stringify({ utilisateurs }));
   } catch(e) {
     console.error('[CRM Utilisateurs] Erreur:', e.message);
+    res.writeHead(500, {'Content-Type':'application/json'});
+    res.end(JSON.stringify({ error: e.message }));
+  }
+  return;
+}
+
+// GET /setup-templates — remplit la table templates avec le contenu actuel (emails + notifications),
+// à lancer UNE SEULE FOIS pour migrer ce qui était codé en dur vers un espace modifiable par le CRM.
+if (req.method === 'GET' && req.url === '/setup-templates') {
+  const T = [
+    // ── Emails ──
+    { cle: 'email_welcome', categorie: 'email', etape_funnel: 'acquisition',
+      sujet: `Bienvenue dans l'écosystème d'AdStack 👍`,
+      contenu: `<p>Salut{{firstName}},</p><p>Moi c'est Amar, CEO et Founder d'AdStack.</p><p>J'ai lancé AdStack parce que je voyais des vendeurs comme toi perdre des heures chaque semaine à essayer de sortir des images publicitaires génériques — pendant que leurs concurrents scalent tranquillement avec des visuels qui sont faits pour vendre.</p><p>L'idée est simple : tu nous donnes ton produit, on t'envoie des images prêtes à lancer chaque semaine. Toi tu te concentres sur gérer ton business.</p><p>3 trucs pour bien démarrer :</p><p>1. <a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Crée ton premier produit</a><br>2. <a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Demande des images</a><br>3. <a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Découvre nos offres</a></p><p style="margin-top:24px;">Amar<br><span style="color:#888;">CEO et Founder, AdStack</span></p>` },
+
+    { cle: 'email_j1_no_product', categorie: 'email', etape_funnel: 'activation',
+      sujet: 'Ton catalogue est vide — 2 minutes pour changer ça',
+      contenu: `<p>Salut{{firstName}},</p><p>Tu t'es inscrit sur AdBoard, mais ton catalogue est encore vide.</p><p>On sait que beaucoup de vendeurs bricolent leurs visuels eux-mêmes avec ChatGPT ou Canva pour aller plus vite — sauf que "plus vite" prend souvent des heures, et le résultat ne convertit pas toujours.</p><p>Ajoute ton produit, on s'occupe du reste.</p><p><a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Ajouter mon produit →</a></p><p style="margin-top:24px;">AdStack</p>` },
+
+    { cle: 'email_j1_has_product', categorie: 'email', etape_funnel: 'activation',
+      sujet: `🤯 {{firstName}} ! Découverte hallucinante sur {{productName}}...`,
+      contenu: `<p>Heyy{{firstName}},</p><p>On vient de faire une petite analyse sur {{productName}}.</p><p>Et nos spécialistes ont découvert une potentielle <strong>hausse de demande</strong> d'environ <strong>32%</strong> pour ce type de produit dans les 3 prochains mois.</p><p>Mais pour capter cette demande, il te faut une stratégie de créative publicitaire en béton. Ce qui est précisément ce dont nous sommes spécialisés — on sera ravis de mettre nos années d'expérience à ton service.</p><p><a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Demander mes visuels →</a></p><p style="margin-top:24px;">AdStack</p>` },
+
+    { cle: 'email_j5_vision', categorie: 'email', etape_funnel: 'conversion',
+      sujet: '🫣 La méthode secrète qui a fait la différence pour un de nos clients',
+      contenu: `<p>Salut{{firstName}},</p><p><strong>Maintenant :</strong> tu gères tes visuels toi-même avec l'IA, tu lances, tu croises les doigts. Si ça marche pas, tu recommences de zéro.</p><p><strong>Avec AdStack :</strong> tu profites des années d'expérience en stratégie publicitaire de notre équipe, tout est fait avec précision et avec un unique but — exploser tes records de ventes sans que t'aies rien à faire.</p><p>C'est exactement ce qui a convaincu un de nos clients qui vend un produit santé complexe en Afrique francophone : les angles distincts lui ont permis de tester ce qui marchait vraiment, au lieu de deviner.</p><p>En conséquence il ne compte pas sur la chance pour faire "SOLD OUT".</p><p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Découvrir Starter — {{prixLocal}} →</a></p><p style="margin-top:24px;">AdStack</p>` },
+
+    { cle: 'email_j12_offer', categorie: 'email', etape_funnel: 'conversion',
+      sujet: `"C'est cher" — parlons-en`,
+      contenu: `<p>Salut{{firstName}},</p><p>Tu regardes peut-être le prix de Starter ({{prixLocal}}) et tu te dis que c'est cher.</p><p>Fais le calcul : ça revient à environ {{prixParImage}} par image. Un freelance basique facture souvent 5x plus cher pour une seule image, sans données marché, sans stratégie ni amélioration continue.</p><p>Le vrai coût, c'est pas Starter. C'est chaque jour sans bon contenu publicitaire qui brûle ton budget, sans savoir comprendre pourquoi ça n'a pas marché.</p><p>La meilleure solution, elle est devant toi — pas ChatGPT que tout le monde a.</p><p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Je démarre avec Starter →</a></p><p style="margin-top:24px;">AdStack</p>` },
+
+    { cle: 'email_j21_breakup', categorie: 'email', etape_funnel: 'conversion',
+      sujet: `🤐 je vais arrêter de t'écrire !!!`,
+      contenu: `<p>Salut{{firstName}},</p><p>Je vais arrêter de t'écrire — pas parce qu'on perd notre temps, mais plutôt pour qualifier les personnes avec qui on travaille.</p><p>Car tout e-commerçant voulant vraiment scaler son business aurait compris directement la valeur unique qu'on apporte dès le premier message.</p><p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Passer à l'action →</a></p><p style="margin-top:24px;">AdStack</p>` },
+
+    { cle: 'email_monthly_social_proof', categorie: 'email', etape_funnel: 'retention',
+      sujet: `Ce qu'un vendeur a fait avec ses images cette semaine`,
+      contenu: `<p>Salut{{firstName}},</p><p>Un de nos clients vend un produit cosmétique avec plusieurs bénéfices différents — difficile de savoir quel argument allait vraiment convaincre.</p><p>On lui a livré une bonne diversité d'images publicitaires la même semaine. Il a pu tester quel angle résonnait le plus avec sa cible, au lieu de deviner.</p><p>C'est exactement ce que Starter permet de faire, chaque semaine.</p><p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Revoir les offres →</a></p><p style="margin-top:24px;">AdStack</p>` },
+
+    { cle: 'email_monthly_novelty', categorie: 'email', etape_funnel: 'retention',
+      sujet: `Ce qui a changé sur AdBoard depuis ta dernière visite`,
+      contenu: `<p>Salut{{firstName}},</p><p>AdBoard continue d'évoluer — nouvelles fonctionnalités, suivi de tes demandes en temps réel, assistant intégré pour répondre à tes questions direct dans la plateforme.</p><p>Si tu avais mis ton inscription de côté, c'est peut-être le bon moment d'y rejeter un œil.</p><p><a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Retourner sur AdBoard →</a></p><p style="margin-top:24px;">AdStack</p>` },
+
+    { cle: 'email_monthly_checkin', categorie: 'email', etape_funnel: 'retention',
+      sujet: 'On est toujours là',
+      contenu: `<p>Salut{{firstName}},</p><p>Pas de pitch aujourd'hui — juste un mot pour savoir où tu en es.</p><p>Si tu as des questions sur AdStack, ou juste besoin d'un conseil sur tes visuels publicitaires, réponds à cet email. Zéro obligation d'acheter quoi que ce soit.</p><p style="margin-top:24px;">AdStack</p>` },
+
+    // ── Notifications — catalogue vide (10 variantes) ──
+    ...[
+      "👋 Heyy — Ajoute ton premier produit, ça prend 30 secondes.",
+      "Prêt pour qu'on t'aide à exploser tes ventes ? Ça commence par ajouter ton produit !",
+      "Ton catalogue attend son premier produit. On s'occupe du reste.",
+      "30 secondes. C'est le temps qu'il te faut pour ajouter ton produit et démarrer.",
+      "Tes concurrents publient déjà. Ajoute ton produit, ne perds plus de temps.",
+      "Un produit ajouté = une semaine d'images publicitaires qui commence. On attend le tien.",
+      "Toujours pas de produit dans ton catalogue ? On est prêts dès que toi tu l'es.",
+      "Ajoute ton produit maintenant — tes premières images arrivent vite après.",
+      "Ton compte AdBoard est prêt. Il ne manque plus qu'un produit.",
+      "On ne peut rien faire sans ton produit. Ajoute-le, on prend le relais.",
+    ].map((texte, i) => ({
+      cle: `push_catalogue_vide_${String(i+1).padStart(2,'0')}`, categorie: 'notification', etape_funnel: 'activation',
+      titre: 'Ton catalogue est vide', contenu: texte,
+    })),
+
+    // ── Notifications — prêt pour les visuels (10 variantes) ──
+    ...[
+      `💥BOOM!!! c'est le bruit de la demande qu'a {{nom}} sur ton marché. Et notre équipe n'attend que toi, pour tout rafler 🫵`,
+      `{{nom}} est dans ton catalogue. Il ne manque plus qu'un forfait pour lancer tes visuels.`,
+      `Chaque jour sans forfait, c'est un jour sans nouvelles images publicitaires pour {{nom}}.`,
+      `Tes concurrents sur {{nom}} ne t'attendent pas. Prends ton forfait, on s'occupe du reste.`,
+      `{{nom}} mérite de vraies images publicitaires. On est prêts quand toi tu l'es.`,
+      `Encore un produit sans visuels ? Débloque tes premières images dès aujourd'hui.`,
+      `On a hâte de bosser sur {{nom}}. Choisis ton forfait pour démarrer.`,
+      `{{nom}} est prêt à décoller — reste juste le forfait à choisir.`,
+      `Le potentiel de {{nom}} mérite mieux que Canva. Passe au niveau supérieur.`,
+      `Ton produit est là, tes images ne le sont pas encore. On règle ça avec un forfait.`,
+    ].map((texte, i) => ({
+      cle: `push_pret_visuels_${String(i+1).padStart(2,'0')}`, categorie: 'notification', etape_funnel: 'conversion',
+      titre: '📸 Prêt pour tes premiers visuels ?', contenu: texte,
+    })),
+  ];
+
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/templates`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'Prefer': 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify(T)
+    });
+    if (!r.ok) {
+      const errText = await r.text();
+      res.writeHead(500, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ error: errText.slice(0,500) }));
+      return;
+    }
+    res.writeHead(200, {'Content-Type':'application/json'});
+    res.end(JSON.stringify({ ok: true, count: T.length }));
+  } catch(e) {
     res.writeHead(500, {'Content-Type':'application/json'});
     res.end(JSON.stringify({ error: e.message }));
   }
