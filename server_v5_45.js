@@ -3561,6 +3561,14 @@ if (req.method === 'GET' && req.url === '/setup-templates') {
     })),
   ];
 
+  // PostgREST exige que TOUS les objets d'un envoi groupé aient exactement les mêmes clés —
+  // les emails ont "sujet" (pas "titre"), les notifications l'inverse. On uniformise ici
+  // plutôt que de dupliquer titre:null / sujet:null sur chacune des 29 entrées ci-dessus.
+  const T_NORMALISE = T.map(t => ({
+    cle: t.cle, categorie: t.categorie, etape_funnel: t.etape_funnel || null,
+    sujet: t.sujet || null, titre: t.titre || null, contenu: t.contenu,
+  }));
+
   try {
     const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/templates`, {
       method: 'POST',
@@ -3570,7 +3578,7 @@ if (req.method === 'GET' && req.url === '/setup-templates') {
         'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
         'Prefer': 'resolution=merge-duplicates,return=minimal',
       },
-      body: JSON.stringify(T)
+      body: JSON.stringify(T_NORMALISE)
     });
     if (!r.ok) {
       const errText = await r.text();
