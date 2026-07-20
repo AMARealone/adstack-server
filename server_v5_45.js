@@ -239,6 +239,17 @@ function vertexRequestGlobal(token, model, body, timeoutMs = 120000, typeAppel =
       res.on('end', () => {
         try {
           const parsed = JSON.parse(d);
+          // Une réponse d'erreur Vertex (429 "Resource exhausted", quota, etc.) arrive
+          // avec un JSON valide — avant, ça résolvait comme un succès, donc le réessai
+          // ne voyait JAMAIS passer ces erreurs (il n'attrape que les pannes réseau).
+          // On rejette explicitement ici pour que le réessai puisse enfin les traiter.
+          if (parsed?.error || res.statusCode >= 400) {
+            const err = new Error(parsed?.error?.message || `Erreur Vertex AI (HTTP ${res.statusCode})`);
+            err.statusCode = res.statusCode;
+            err.isRateLimit = res.statusCode === 429 || /resource exhausted|quota/i.test(parsed?.error?.message || '');
+            reject(err);
+            return;
+          }
           const usage = parsed?.usageMetadata || {};
           logCoutApi('demo', typeAppel, usage);
           resolve(parsed);
@@ -251,15 +262,35 @@ function vertexRequestGlobal(token, model, body, timeoutMs = 120000, typeAppel =
   });
 }
 
-// Réessaie une fois automatiquement en cas d'échec (timeout, erreur réseau, etc.) avant d'abandonner —
-// la génération d'image Vertex a des ralentissements ponctuels, un simple réessai suffit la plupart du temps.
+// Réessaie automatiquement en cas d'échec — jusqu'à 3 tentatives au total pour une limite de
+// débit (429 "Resource exhausted"), avec une vraie attente entre chaque (15s, 30s) puisqu'une
+// limite de débit a besoin de temps pour se libérer, pas d'un réessai instantané qui retombe
+// presque toujours dessus. Pour les autres erreurs (réseau, timeout), 1 seul réessai immédiat
+// comme avant — ces pannes-là sont généralement ponctuelles.
 async function vertexRequestGlobalAvecReessai(token, model, body, timeoutMs = 120000, typeAppel = 'generation_image') {
-  try {
-    return await vertexRequestGlobal(token, model, body, timeoutMs, typeAppel);
-  } catch(e) {
-    console.log(`⚠️  Échec 1ère tentative (${e.message}) — nouvel essai...`);
-    return await vertexRequestGlobal(token, model, body, timeoutMs, typeAppel);
+  const delaisRateLimit = [15000, 30000]; // 15s puis 30s
+  let derniereErreur;
+  for (let tentative = 0; tentative <= delaisRateLimit.length; tentative++) {
+    try {
+      return await vertexRequestGlobal(token, model, body, timeoutMs, typeAppel);
+    } catch(e) {
+      derniereErreur = e;
+      if (tentative === 0) {
+        console.log(`⚠️  Échec 1ère tentative (${e.message})${e.isRateLimit ? ' — limite de débit détectée' : ''} — nouvel essai...`);
+      }
+      if (e.isRateLimit && tentative < delaisRateLimit.length) {
+        const delai = delaisRateLimit[tentative];
+        console.log(`   ⏳ Limite de débit — attente de ${delai/1000}s avant nouvel essai (${tentative+2}/${delaisRateLimit.length+1})...`);
+        await new Promise(r => setTimeout(r, delai));
+        continue;
+      }
+      if (!e.isRateLimit && tentative === 0) {
+        continue; // 1 seul réessai immédiat pour une erreur non liée au débit
+      }
+      break;
+    }
   }
+  throw derniereErreur;
 }
 
 // ── Vertex AI Request ──────────────────────────
