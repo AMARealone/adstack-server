@@ -262,35 +262,20 @@ function vertexRequestGlobal(token, model, body, timeoutMs = 120000, typeAppel =
   });
 }
 
-// Réessaie automatiquement en cas d'échec — jusqu'à 3 tentatives au total pour une limite de
-// débit (429 "Resource exhausted"), avec une vraie attente entre chaque (15s, 30s) puisqu'une
-// limite de débit a besoin de temps pour se libérer, pas d'un réessai instantané qui retombe
-// presque toujours dessus. Pour les autres erreurs (réseau, timeout), 1 seul réessai immédiat
-// comme avant — ces pannes-là sont généralement ponctuelles.
+// Réessaie automatiquement en cas d'échec — un seul réessai (comme avant), mais avec une
+// courte attente d'abord si c'est une limite de débit (429), pour éviter de retomber
+// instantanément dessus. Attente volontairement courte (8s, pas 15-30s comme un premier essai
+// l'avait fait) : le total (tentative + attente + réessai) doit rester proche du fonctionnement
+// d'avant (120s+120s max), sinon on risque de dépasser la limite de temps que Render impose à
+// une requête HTTP — ce qui provoquait justement un "Failed to fetch" côté navigateur.
 async function vertexRequestGlobalAvecReessai(token, model, body, timeoutMs = 120000, typeAppel = 'generation_image') {
-  const delaisRateLimit = [15000, 30000]; // 15s puis 30s
-  let derniereErreur;
-  for (let tentative = 0; tentative <= delaisRateLimit.length; tentative++) {
-    try {
-      return await vertexRequestGlobal(token, model, body, timeoutMs, typeAppel);
-    } catch(e) {
-      derniereErreur = e;
-      if (tentative === 0) {
-        console.log(`⚠️  Échec 1ère tentative (${e.message})${e.isRateLimit ? ' — limite de débit détectée' : ''} — nouvel essai...`);
-      }
-      if (e.isRateLimit && tentative < delaisRateLimit.length) {
-        const delai = delaisRateLimit[tentative];
-        console.log(`   ⏳ Limite de débit — attente de ${delai/1000}s avant nouvel essai (${tentative+2}/${delaisRateLimit.length+1})...`);
-        await new Promise(r => setTimeout(r, delai));
-        continue;
-      }
-      if (!e.isRateLimit && tentative === 0) {
-        continue; // 1 seul réessai immédiat pour une erreur non liée au débit
-      }
-      break;
-    }
+  try {
+    return await vertexRequestGlobal(token, model, body, timeoutMs, typeAppel);
+  } catch(e) {
+    console.log(`⚠️  Échec 1ère tentative (${e.message})${e.isRateLimit ? ' — limite de débit détectée, courte attente...' : ' — nouvel essai...'}`);
+    if (e.isRateLimit) await new Promise(r => setTimeout(r, 8000));
+    return await vertexRequestGlobal(token, model, body, timeoutMs, typeAppel);
   }
-  throw derniereErreur;
 }
 
 // ── Vertex AI Request ──────────────────────────
