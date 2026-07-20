@@ -1562,6 +1562,7 @@ PLAN DE RECHERCHE (effectue PLUSIEURS requêtes Google distinctes pour couvrir c
 6. X/TWITTER : mentions "${marque}" + hashtags liés à la catégorie + pays ${pays}
 7. PRIX LOCAL ET CONCURRENTS : prix observés en ${pays} (devise locale) sur Jumia, sites locaux, groupes Facebook
 8. CONTEXTE CULTUREL PAYS : comment cette catégorie de produit est perçue/consommée dans ${pays}
+9. TAILLE ET CROISSANCE DU MARCHÉ : cherche des données chiffrées sur la taille de ce marché dans ${pays} ou en Afrique francophone (nombre de personnes concernées, volume de ventes estimé, valeur en FCFA/USD si trouvable), et des signaux de tendance (recherches Google Trends, articles sectoriels, croissance du e-commerce dans cette catégorie). Si aucun chiffre fiable n'est trouvé, écris explicitement [AUCUNE DONNÉE DE TAILLE DE MARCHÉ TROUVÉE] plutôt que d'estimer.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ GARDE-FOU CRITIQUE — NE JAMAIS MÉLANGER PRODUIT EXACT ET CATÉGORIE
@@ -1585,7 +1586,7 @@ officielle (étape 0) :
 FORMAT DE TON OUTPUT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Organise en sections (## AVIS PRODUIT, ## VERBATIMS REDDIT, ## VERBATIMS TRUSTPILOT, ## VERBATIMS ALIEXPRESS/AMAZON, ## VERBATIMS X-TWITTER, ## PRIX LOCAL ET CONCURRENTS, ## CONTEXTE CULTUREL).
+Organise en sections (## AVIS PRODUIT, ## VERBATIMS REDDIT, ## VERBATIMS TRUSTPILOT, ## VERBATIMS ALIEXPRESS/AMAZON, ## VERBATIMS X-TWITTER, ## PRIX LOCAL ET CONCURRENTS, ## CONTEXTE CULTUREL, ## TAILLE ET CROISSANCE DU MARCHÉ).
 
 Pour chaque verbatim ramené : cite la phrase exacte entre guillemets + l'URL de la source + (si possible) le pseudo de l'auteur. Si une section retourne ZÉRO résultat exploitable, écris explicitement [AUCUN VERBATIM TROUVÉ] pour cette section — ne fabrique rien.
 
@@ -3498,6 +3499,75 @@ if (req.method === 'GET' && req.url === '/crm/utilisateurs') {
     res.writeHead(500, {'Content-Type':'application/json'});
     res.end(JSON.stringify({ error: e.message }));
   }
+  return;
+}
+
+// POST /livrable-marche — 4e agent production : réécrit la synthèse S0→S7 en langage simple
+// pour le client, et l'écrit directement dans son compte AdBoard (produits.marche).
+// Les cibles s'ACCUMULENT à chaque appel (une par batch/angle), positionnement et insights
+// sont rafraîchis à chaque fois (dernière compréhension du marché).
+if (req.method === 'POST' && req.url === '/livrable-marche') {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', async () => {
+    try {
+      const { synthese, brief = {}, angleUtilise = '', productId, systemPrompt } = JSON.parse(body);
+      if (!productId) { res.writeHead(400); res.end(JSON.stringify({ error: 'productId manquant' })); return; }
+
+      console.log(`\n📊 LIVRABLE MARCHÉ — ${brief.marque || '?'} / ${brief.produit || '?'} (produit ${productId})`);
+
+      const prompt = `SYNTHÈSE S0→S7 :\n${synthese}\n\nBRIEF : marque=${brief.marque||''}, produit=${brief.produit||''}, pays=${brief.pays||''}\n\nANGLE UTILISÉ POUR CE BATCH :\n${angleUtilise || '(non précisé — déduis-le du S2 de la synthèse)'}`;
+
+      const texteReponse = await callGeminiPro(systemPrompt, [{ type: 'text', text: prompt }], 3000, { temperature: 0.4, thinkingBudget: 8192, logLabel: 'Livrable Marché' });
+
+      const raw = texteReponse.replace(/```json|```/g, '').trim();
+      const a = raw.indexOf('{'), b = raw.lastIndexOf('}');
+      const livrable = JSON.parse(raw.slice(a, b + 1));
+
+      // Lire l'état actuel du produit pour accumuler les cibles (pas écraser)
+      const rProd = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=marche`, {
+        headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+      });
+      const prodRows = await rProd.json();
+      const marcheActuel = prodRows?.[0]?.marche || { cibles: [] };
+
+      const nouvelleCible = {
+        id: `cible_${Date.now()}`,
+        date: new Date().toISOString(),
+        ...livrable.cible,
+      };
+
+      const marcheMisAJour = {
+        positionnement: livrable.positionnement,
+        insights: livrable.insights,
+        cibles: [...(marcheActuel.cibles || []), nouvelleCible],
+        derniere_maj: new Date().toISOString(),
+      };
+
+      const rWrite = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_SERVICE_KEY,
+          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({ marche: marcheMisAJour })
+      });
+      if (!rWrite.ok) {
+        const errText = await rWrite.text();
+        throw new Error(`Écriture Supabase échouée : ${errText.slice(0,300)}`);
+      }
+
+      console.log(`✅ Livrable marché écrit — ${marcheMisAJour.cibles.length} cible(s) au total pour ce produit`);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, marche: marcheMisAJour }));
+    } catch(e) {
+      console.error('✗ livrable-marche error:', e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
   return;
 }
 
