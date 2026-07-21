@@ -1557,12 +1557,13 @@ PLAN DE RECHERCHE (effectue PLUSIEURS requêtes Google distinctes pour couvrir c
 1. AVIS PRODUIT EXACT : "${produit}" "${marque}" + avis OU reviews OU "ça marche" (pays ${pays})
 2. AVIS CATÉGORIE : "${produit}" + verbatims/témoignages (élargis à la catégorie produit, francophone)
 3. REDDIT : "${produit}" reddit OR sous-reddits liés (ex : r/Skincareaddiction, r/Nutrition, r/Senegal, r/CoteDIvoire)
-4. TRUSTPILOT : recherche avis sur "${marque}" + 2-3 concurrents directs identifiés
-5. ALIEXPRESS / AMAZON : reviews sur produits équivalents de la catégorie — extraits 1★ ET 5★
+4. TRUSTPILOT : recherche avis sur "${marque}" + 2-3 concurrents directs identifiés — pour chaque concurrent, cherche spécifiquement CE QUI REVIENT dans les avis positifs (pourquoi les gens ont acheté, ce qu'ils apprécient) ET dans les avis négatifs (pourquoi ils regrettent, ce qui les a fait hésiter avant d'acheter)
+5. ALIEXPRESS / AMAZON : reviews sur produits équivalents de la catégorie — extraits 1★ ET 5★, en notant explicitement la RAISON derrière chaque type d'avis (1★ = objection ou déception réelle, 5★ = déclencheur d'achat réel)
 6. X/TWITTER : mentions "${marque}" + hashtags liés à la catégorie + pays ${pays}
 7. PRIX LOCAL ET CONCURRENTS : prix observés en ${pays} (devise locale) sur Jumia, sites locaux, groupes Facebook
 8. CONTEXTE CULTUREL PAYS : comment cette catégorie de produit est perçue/consommée dans ${pays}
 9. TAILLE ET CROISSANCE DU MARCHÉ : cherche des données chiffrées sur la taille de ce marché dans ${pays} ou en Afrique francophone (nombre de personnes concernées, volume de ventes estimé, valeur en FCFA/USD si trouvable), et des signaux de tendance (recherches Google Trends, articles sectoriels, croissance du e-commerce dans cette catégorie). Si aucun chiffre fiable n'est trouvé, écris explicitement [AUCUNE DONNÉE DE TAILLE DE MARCHÉ TROUVÉE] plutôt que d'estimer.
+10. SCEPTICISME DU MARCHÉ : sur les sites de concurrents et d'alternatives à ce produit (pas seulement la marque du client), cherche explicitement POURQUOI les gens achètent ce type de produit et POURQUOI ils ne l'achètent pas ou le regrettent — objections récurrentes (prix, doute sur l'efficacité, peur d'un effet indésirable, déception passée avec un produit similaire), et raisons d'achat récurrentes (recommandation, urgence d'un problème, réassurance trouvée quelque part). Cite les formulations réelles trouvées, pas une reformulation générique.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ GARDE-FOU CRITIQUE — NE JAMAIS MÉLANGER PRODUIT EXACT ET CATÉGORIE
@@ -1586,7 +1587,7 @@ officielle (étape 0) :
 FORMAT DE TON OUTPUT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Organise en sections (## AVIS PRODUIT, ## VERBATIMS REDDIT, ## VERBATIMS TRUSTPILOT, ## VERBATIMS ALIEXPRESS/AMAZON, ## VERBATIMS X-TWITTER, ## PRIX LOCAL ET CONCURRENTS, ## CONTEXTE CULTUREL, ## TAILLE ET CROISSANCE DU MARCHÉ).
+Organise en sections (## AVIS PRODUIT, ## VERBATIMS REDDIT, ## VERBATIMS TRUSTPILOT, ## VERBATIMS ALIEXPRESS/AMAZON, ## VERBATIMS X-TWITTER, ## PRIX LOCAL ET CONCURRENTS, ## CONTEXTE CULTUREL, ## TAILLE ET CROISSANCE DU MARCHÉ, ## SCEPTICISME DU MARCHÉ).
 
 Pour chaque verbatim ramené : cite la phrase exacte entre guillemets + l'URL de la source + (si possible) le pseudo de l'auteur. Si une section retourne ZÉRO résultat exploitable, écris explicitement [AUCUN VERBATIM TROUVÉ] pour cette section — ne fabrique rien.
 
