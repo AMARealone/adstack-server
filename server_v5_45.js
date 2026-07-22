@@ -2189,42 +2189,88 @@ HARD LOCKS :
     req.on('data', chunk => body += chunk);
     req.on('end', async () => {
       try {
-        const { synthesis, ctList, count } = JSON.parse(body);
-        console.log('\n🎯 SELECT-CTs — Sélection de ' + count + ' CTs parmi ' + ctList.length + '...');
+        const { synthesis, ctList, count, mode } = JSON.parse(body);
+        console.log('\n🎯 SELECT-CTs [' + (mode || 'demo') + '] — Sélection de ' + count + ' CTs parmi ' + ctList.length + '...');
 
         const token = await getToken();
-        const ctListText = ctList.map((ct, i) => `${i+1}. ID: ${ct.id} → "${ct.name}"`).join('\n');
+        // Inclut les méta-tags/description si présents — sinon juste le nom (rétrocompatible
+        // avec les CT pas encore enrichis).
+        const ctListText = ctList.map((ct, i) =>
+          `${i+1}. ID: ${ct.id} → "${ct.name}"${ct.meta ? ` — ${ct.meta}` : ''}`
+        ).join('\n');
         const synthExcerpt = (synthesis || '').substring(0, 3500);
 
-        const systemInstruction = { parts: [{ text: `Tu es un expert en sélection de formats publicitaires Meta Ads.
-Tu reçois une synthèse de marché et une liste de Creative Templates (CT) avec leurs noms descriptifs.
-Tu dois choisir exactement ${count} CTs adaptés au contexte ET visuellement distincts les uns des autres.
+        // Tolérance de redondance par volume — préparation pour les futurs batchs 18/36.
+        // Un batch de 9 (3 angles × 3 niveaux) exige 0% de redondance structurelle. Au-delà,
+        // une petite tolérance devient nécessaire faute d'assez de concepts vraiment distincts.
+        let toleranceTxt = 'ZÉRO tolérance : les ' + count + ' CTs doivent TOUS être structurellement distincts, aucune exception.';
+        if (count > 9 && count <= 18) toleranceTxt = 'Tolérance : jusqu\'à ~20% des CTs peuvent partager une structure proche (pas identique) si la galerie ne permet pas plus de diversité — mais priorise toujours la diversité maximale d\'abord.';
+        else if (count > 18) toleranceTxt = 'Tolérance : jusqu\'à ~25-30% des CTs peuvent partager une structure proche (pas identique) si la galerie ne permet pas plus de diversité — mais priorise toujours la diversité maximale d\'abord.';
+
+        let systemText, userText;
+
+        if (mode === 'production') {
+          // Mode production : structure obligatoire 3 angles × 3 niveaux de conscience.
+          // Le client doit résoudre les IDs retournés dans CET ordre exact : positions 0-2
+          // = Angle 1 (Solution/Product/Most Aware), 3-5 = Angle 2, 6-8 = Angle 3, etc.
+          systemText = `Tu es un expert en sélection de formats publicitaires Meta Ads.
+Tu reçois une synthèse de marché (3 angles marketing, chacun décliné en 3 niveaux de conscience : Solution Aware / Product Aware / Most Aware) et une liste de Creative Templates (CT).
+
+Tu dois choisir exactement ${count} CTs, organisés en ${count/3} groupes de 3 — un groupe par angle. À l'intérieur de CHAQUE groupe, les 3 CTs doivent être adaptés respectivement à Solution Aware, Product Aware, puis Most Aware, DANS CET ORDRE.
 
 RÈGLES DE DIVERSIFICATION (PRIORITÉ ABSOLUE) :
-1. ZÉRO DOUBLON : chaque CT sélectionné doit avoir un ID unique.
-2. ZÉRO STRUCTURE IDENTIQUE : pas deux CTs avec le même concept visuel (pas 2x avant/après, pas 2x testimonial, pas 2x hero produit seul, etc.)
-3. COUVERTURE VARIÉE : les ${count} CTs doivent couvrir un maximum de structures différentes parmi : hero produit, split lifestyle, avant-après, grille bénéfices, screenshot témoignage, podcast 2-col, story narrative, comparatif, UGC, stats preuve sociale, etc.
-4. Pour les 3 créatives d'un même angle, les 3 CTs doivent avoir des approches visuelles complémentaires (jamais 2x le même concept dans un angle).
+1. ZÉRO DOUBLON : chaque CT sélectionné a un ID unique.
+2. ${toleranceTxt}
+3. COUVERTURE VARIÉE : couvre un maximum de structures différentes parmi : hero produit, split lifestyle, avant-après, grille bénéfices, screenshot témoignage, podcast 2-col, story narrative, comparatif, UGC, stats preuve sociale, etc.
+4. À l'intérieur d'un même groupe (même angle), les 3 CTs doivent être des approches visuelles complémentaires — jamais 2x le même concept.
+
+RÈGLES D'ADAPTATION PAR NIVEAU DE CONSCIENCE (à l'intérieur de chaque groupe de 3) :
+- Position 1 (Solution Aware) : storytelling, lifestyle, comparaison douce aux solutions connues — produit peu ou pas visible
+- Position 2 (Product Aware) : comparatifs, témoignages, preuves sociales, screenshots, produit visible
+- Position 3 (Most Aware) : hero produit, offre/prix, urgence, CTA direct
 
 RÈGLES DE CONTEXTUALISATION (après diversification) :
 - Adapte au TYPE DE PRODUIT identifié dans la synthèse (santé, beauté, fitness, food, tech, mode...)
 - Adapte au PERSONA (âge, sexe, classe sociale, culture du pays cible)
-- TOF (Unaware/Problem Aware) : storytelling, lifestyle, avant-après émotionnel
-- MOF (Solution Aware) : comparatifs, témoignages, preuves sociales, screenshots
-- BOF (Product Aware) : hero produit, pills bénéfices, offre/prix, CTA direct
+
+Si la liste a moins de ${count} CTs distincts, retourne tous les IDs disponibles (sans doublon), dans le meilleur ordre possible.
+
+IMPORTANT FORMAT : réponds UNIQUEMENT avec un JSON array sur UNE SEULE LIGNE, dans l'ordre exact décrit ci-dessus, sans markdown, sans backticks, sans explication.
+Format exact (copie exactement ce style) : ["ct_xxx", "ct_yyy", "ct_zzz"]`;
+          userText = 'SYNTHÈSE DE CAMPAGNE (extrait) :\n' + synthExcerpt +
+            '\n\n---\nCT DISPONIBLES :\n' + ctListText +
+            '\n\nSélectionne ' + count + ' CTs optimaux, organisés en ' + (count/3) + ' groupes de 3 (Solution/Product/Most Aware par groupe).';
+        } else {
+          // Mode démo : pas de structure par niveau de conscience — un seul lot de CTs
+          // adaptés globalement à l'angle × produit × persona de la synthèse.
+          systemText = `Tu es un expert en sélection de formats publicitaires Meta Ads.
+Tu reçois une synthèse de marché simplifiée (angle unique, persona, produit) et une liste de Creative Templates (CT).
+Tu dois choisir exactement ${count} CTs adaptés au contexte ET visuellement distincts les uns des autres — pas de structure par niveau de conscience ici, juste la meilleure adéquation globale à l'angle, au produit et au persona.
+
+RÈGLES DE DIVERSIFICATION (PRIORITÉ ABSOLUE) :
+1. ZÉRO DOUBLON : chaque CT sélectionné a un ID unique.
+2. ${toleranceTxt}
+3. COUVERTURE VARIÉE : les ${count} CTs doivent couvrir un maximum de structures différentes parmi : hero produit, split lifestyle, avant-après, grille bénéfices, screenshot témoignage, podcast 2-col, story narrative, comparatif, UGC, stats preuve sociale, etc.
+
+RÈGLES DE CONTEXTUALISATION (après diversification) :
+- Adapte au TYPE DE PRODUIT identifié dans la synthèse (santé, beauté, fitness, food, tech, mode...)
+- Adapte au PERSONA (âge, sexe, classe sociale, culture du pays cible)
+- Adapte à l'angle marketing unique décrit dans la synthèse
 
 Si la liste a moins de ${count} CTs distincts, retourne tous les IDs disponibles (sans doublon).
 
 IMPORTANT FORMAT : réponds UNIQUEMENT avec un JSON array sur UNE SEULE LIGNE, sans markdown, sans backticks, sans explication.
-Format exact (copie exactement ce style) : ["ct_xxx", "ct_yyy", "ct_zzz"]` }] };
+Format exact (copie exactement ce style) : ["ct_xxx", "ct_yyy", "ct_zzz"]`;
+          userText = 'SYNTHÈSE DE CAMPAGNE (extrait) :\n' + synthExcerpt +
+            '\n\n---\nCT DISPONIBLES :\n' + ctListText +
+            '\n\nSélectionne ' + count + ' CTs optimaux.';
+        }
+
+        const systemInstruction = { parts: [{ text: systemText }] };
 
         const geminiBody = {
           systemInstruction,
-          contents: [{ role: 'user', parts: [{ text:
-            'SYNTHÈSE DE CAMPAGNE (extrait) :\n' + synthExcerpt +
-            '\n\n---\nCT DISPONIBLES :\n' + ctListText +
-            '\n\nSélectionne ' + count + ' CTs optimaux.'
-          }]}],
+          contents: [{ role: 'user', parts: [{ text: userText }]}],
           generationConfig: { temperature: 0.3, maxOutputTokens: 1200 }
         };
 
@@ -2349,13 +2395,15 @@ EXEMPLES PARFAITS (modèle à suivre) :
 "Stack vertical noir/or — headline shock haut + 3 visuels résultats + CTA bouton doré bas"
 "Hero centré fond sable — portrait femme 35s plein cadre + badge prix coin haut droit + 5★ bas"
 "Plein-cadre produit vert/blanc — flacon centré grand format + liste 4 bénéfices gauche + marque haut"
-"Grille 3 vignettes blanc — 3 photos usage quotidien + légende sous chaque + CTA bas centre"` }] };
+"Grille 3 vignettes blanc — 3 photos usage quotidien + légende sous chaque + CTA bas centre"
+
+Après le nom, sur une DEUXIÈME ligne, ajoute le mécanisme psychologique principal que ce CT semble utiliser pour convaincre — en 3-6 mots maximum, parmi (ou proche de) : preuve sociale, comparaison concurrentielle, aspiration lifestyle, urgence/offre, autorité/expertise, transformation avant-après, dramatisation du problème, réassurance/garantie.` }] };
 
         const geminiBody = {
           systemInstruction,
           contents: [{ role: 'user', parts: [
             { inlineData: { mimeType: mime || 'image/jpeg', data: b64 } },
-            { text: 'Génère le nom précis de ce Creative Template. Sois très descriptif et spécifique.' }
+            { text: 'Génère le nom précis de ce Creative Template (ligne 1), puis son mécanisme psychologique principal (ligne 2). Sois très descriptif et spécifique.' }
           ]}],
           generationConfig: { temperature: 0.2, maxOutputTokens: 500 }
         };
@@ -2364,10 +2412,12 @@ EXEMPLES PARFAITS (modèle à suivre) :
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
         const raw = (data.candidates?.[0]?.content?.parts || []).map(p => p.text).join('').trim();
-        const clean = raw.replace(/^["'«»\-]|["'«»]$/g, '').split('\n')[0].trim().substring(0, 70);
-        console.log('  → "' + clean + '"');
+        const lignes = raw.split('\n').map(l => l.trim()).filter(Boolean);
+        const clean = (lignes[0] || '').replace(/^["'«»\-]|["'«»]$/g, '').substring(0, 70);
+        const meta = (lignes[1] || '').replace(/^["'«»\-]|["'«»]$/g, '').substring(0, 60);
+        console.log('  → "' + clean + '" · méta: ' + meta);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ name: clean }));
+        res.end(JSON.stringify({ name: clean, meta: meta }));
       } catch(e) {
         console.error('✗ NAME-CT error:', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
