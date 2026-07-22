@@ -342,6 +342,17 @@ function vertexRequest(token, model, body, timeoutMs = 90000, typeAppel = 'texte
       res.on('end', () => {
         try {
           const parsed = JSON.parse(d);
+          // Une réponse d'erreur (429 "Resource exhausted", quota, etc.) arrive avec un JSON
+          // valide — avant, ça résolvait comme un succès, laissant l'appelant gérer l'erreur
+          // APRÈS coup sans jamais pouvoir réessayer. On rejette ici pour permettre un vrai
+          // réessai automatique (voir vertexRequestAvecReessai).
+          if (parsed?.error || res.statusCode >= 400) {
+            const err = new Error(parsed?.error?.message || `Erreur Vertex AI (HTTP ${res.statusCode})`);
+            err.statusCode = res.statusCode;
+            err.isRateLimit = res.statusCode === 429 || /resource exhausted|quota/i.test(parsed?.error?.message || '');
+            reject(err);
+            return;
+          }
           const usage = parsed?.usageMetadata || {};
           logCoutApi('demo', typeAppel, usage);
           resolve(parsed);
@@ -352,6 +363,20 @@ function vertexRequest(token, model, body, timeoutMs = 90000, typeAppel = 'texte
     req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout Vertex AI (${timeoutMs/1000}s)`)); });
     req.write(bodyStr); req.end();
   });
+}
+
+// Réessaie automatiquement en cas d'échec — le générateur démo doit TOUJOURS terminer sa
+// tâche plutôt que d'abandonner sur un premier incident ponctuel (timeout réseau, limite de
+// débit passagère). 1 réessai immédiat pour une panne réseau/timeout ; pour une limite de
+// débit (429), courte attente (8s) avant de réessayer pour ne pas retomber instantanément dessus.
+async function vertexRequestAvecReessai(token, model, body, timeoutMs = 90000, typeAppel = 'texte_gemini') {
+  try {
+    return await vertexRequest(token, model, body, timeoutMs, typeAppel);
+  } catch(e) {
+    console.log(`⚠️  Échec 1ère tentative (${e.message})${e.isRateLimit ? ' — limite de débit détectée, courte attente...' : ' — nouvel essai...'}`);
+    if (e.isRateLimit) await new Promise(r => setTimeout(r, 8000));
+    return await vertexRequest(token, model, body, timeoutMs, typeAppel);
+  }
 }
 
 // ── HTML (inline fallback) ─────────────────────
@@ -1465,7 +1490,7 @@ const server = http.createServer(async (req, res) => {
           vertexBody.tools = [{ googleSearch: {} }];
         }
 
-        const data = await vertexRequest(token, 'gemini-2.5-flash', vertexBody);
+        const data = await vertexRequestAvecReessai(token, 'gemini-2.5-flash', vertexBody, 150000, 'demo_stratege_synthese');
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
