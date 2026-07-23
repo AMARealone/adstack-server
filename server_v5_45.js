@@ -1532,6 +1532,85 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // CRM SÉCURISÉ — prospects/demos ne passent plus jamais par la clé anon
+  // exposée côté navigateur. Ces 3 endpoints utilisent SUPABASE_SERVICE_KEY
+  // (jamais envoyée au client) et remplacent les appels directs Supabase
+  // que l'Usine faisait auparavant depuis le navigateur.
+  // ═══════════════════════════════════════════════════════════════════
+
+  // ── Lecture des démos en attente (jointure prospects) ──
+  if (req.method === 'GET' && req.url === '/crm/demos-en-attente') {
+    try {
+      const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/demos?statut=eq.en_attente&order=created_at.asc&select=*,prospects(nom_marque,produit,pays,page_produit,notes)`, {
+        headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+      });
+      const data = await r.json();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(data));
+    } catch(e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // ── Marquer une démo comme livrée + écrire le lien dans les notes du prospect ──
+  if (req.method === 'POST' && req.url === '/crm/sync-demo-delivered') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { prospect_id, demo_id, lien_demo, produit } = JSON.parse(body);
+        if (!prospect_id || !demo_id || !lien_demo) throw new Error('prospect_id, demo_id et lien_demo requis');
+
+        const SB_H_S = { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' };
+
+        // 1. Écrire lien_demo dans prospects.notes
+        const pRes  = await fetch(`${SUPABASE_URL_INT}/rest/v1/prospects?id=eq.${prospect_id}&select=notes`, { headers: SB_H_S });
+        const pRows = await pRes.json();
+        const pNotes = (() => { try { return JSON.parse((pRows[0]||{}).notes||'{}'); } catch(e) { return {}; } })();
+        pNotes.lien_demo = lien_demo;
+        pNotes.produit_demo = produit || '';
+        await fetch(`${SUPABASE_URL_INT}/rest/v1/prospects?id=eq.${prospect_id}`, {
+          method:'PATCH', headers:{...SB_H_S,'Prefer':'return=minimal'},
+          body: JSON.stringify({ notes: JSON.stringify(pNotes) })
+        });
+
+        // 2. Passer le demo en "livré"
+        await fetch(`${SUPABASE_URL_INT}/rest/v1/demos?id=eq.${demo_id}`, {
+          method:'PATCH', headers:{...SB_H_S,'Prefer':'return=minimal'},
+          body: JSON.stringify({ statut:'livre', lien_demo, delivered_at: new Date().toISOString() })
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch(e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // ── Supprimer une démo de la file d'attente ──
+  if (req.method === 'DELETE' && req.url.startsWith('/crm/demos/')) {
+    const id = req.url.split('/')[3];
+    try {
+      if (!id) throw new Error('id manquant');
+      await fetch(`${SUPABASE_URL_INT}/rest/v1/demos?id=eq.${id}`, {
+        method: 'DELETE',
+        headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`, 'Prefer': 'return=minimal' }
+      });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    } catch(e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
 
   // ── Copywriter : Claude Sonnet 4.6 text-only (sans image, sans grounding) ──
   if (req.method === 'POST' && req.url === '/copywriter') {
