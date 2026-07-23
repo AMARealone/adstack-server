@@ -1516,13 +1516,46 @@ const server = http.createServer(async (req, res) => {
         if (finishReason === 'MAX_TOKENS') {
           throw new Error(`Synthèse tronquée par maxOutputTokens (finishReason=MAX_TOKENS, ${text.length} chars produits au lieu de 9000-12000) — le budget de réflexion a probablement consommé l'essentiel du budget de sortie. Relance la génération ; si ça se reproduit, augmente encore maxOutputTokens ou réduis thinkingBudget dans /synthesize.`);
         }
-        if (enrichWithSearch && text.length < 8000) {
-          console.log(`   ⚠️  [Stratège Démo] Synthèse anormalement courte (${text.length} chars, attendu 9000-12000) — à vérifier manuellement, ce n'est pas forcément une troncature.`);
+
+        // Cause profonde corrigée : la consigne de longueur dans le prompt (9000-12000) n'était
+        // qu'une instruction — rien ne l'imposait réellement, le modèle pouvait l'ignorer (constaté :
+        // 18768 puis 21000 chars). Fix réel, au niveau du code : si la synthèse dépasse le plafond,
+        // un second appel Gemini la condense explicitement avant de la renvoyer, sans jamais
+        // supprimer d'information — seulement le remplissage/les répétitions.
+        let finalText = text;
+        if (enrichWithSearch && finalText.length > 13000) {
+          console.log(`   ⚠️  [Stratège Démo] Synthèse trop longue (${finalText.length} chars, cible 9000-12000) — compression automatique en cours...`);
+          try {
+            const compressBody = {
+              system_instruction: { parts: [{ text:
+                "Tu reçois une synthèse marketing structurée en sections S0 à S7. Ta seule tâche : la CONDENSER pour qu'elle fasse entre 9000 et 12000 caractères, jamais plus, jamais moins de 9000. Règles strictes : garde EXACTEMENT les mêmes sections (S0 à S7), garde CHAQUE information factuelle et chaque donnée déjà présente (chiffres, noms, verbatims, couleurs), ne supprime aucun élément que la structure d'origine exige. Coupe uniquement : les répétitions, les reformulations multiples de la même idée, les phrases de transition superflues, les détails redondants entre sections. Réponds uniquement avec la synthèse condensée, sans commentaire, sans préambule, en commençant directement par 'S0'."
+              }]},
+              contents: [{ role: 'user', parts: [{ text: finalText }] }],
+              generationConfig: { temperature: 0.3, maxOutputTokens: 8000, thinkingConfig: { thinkingBudget: 1024 } }
+            };
+            const compressData = await vertexRequestAvecReessai(token, 'gemini-2.5-flash', compressBody, 90000, 'demo_stratege_compression');
+            const compressCand = compressData.candidates?.[0];
+            const compressedText = (compressCand?.content?.parts || [])
+              .filter(p => !p.thought && typeof p.text === 'string')
+              .map(p => p.text).join('\n').trim();
+            if (compressedText && compressedText.length >= 7000 && compressedText.length < finalText.length) {
+              console.log(`   ✓ [Stratège Démo] Compression réussie : ${finalText.length} → ${compressedText.length} chars`);
+              finalText = compressedText;
+            } else {
+              console.log(`   ⚠️  [Stratège Démo] Compression ignorée (résultat invalide ou pas plus court) — synthèse originale conservée (${finalText.length} chars)`);
+            }
+          } catch(eCompress) {
+            console.log(`   ⚠️  [Stratège Démo] Compression échouée (${eCompress.message}) — synthèse originale conservée (${finalText.length} chars)`);
+          }
         }
 
-        console.log(enrichWithSearch ? `✓ Synthèse générée — ${text.length} chars` : `✓ Réponse Gemini — ${text.length} chars`);
+        if (enrichWithSearch && finalText.length < 8000) {
+          console.log(`   ⚠️  [Stratège Démo] Synthèse anormalement courte (${finalText.length} chars, attendu 9000-12000) — à vérifier manuellement, ce n'est pas forcément une troncature.`);
+        }
+
+        console.log(enrichWithSearch ? `✓ Synthèse générée — ${finalText.length} chars` : `✓ Réponse Gemini — ${finalText.length} chars`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ text }));
+        res.end(JSON.stringify({ text: finalText }));
       } catch(e) {
         console.error('✗ Synthesis error:', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -2567,12 +2600,29 @@ Après le nom, sur une DEUXIÈME ligne, ajoute le mécanisme psychologique princ
         const slug = lien_demo.split('/').pop().split('?')[0].replace('.html','');
         const filepath = path.join(MINDMAPS_DIR, slug + '.html');
 
-        if (!fs.existsSync(filepath)) {
-          res.writeHead(404); res.end(JSON.stringify({ error: `Mindmap introuvable : ${slug}.html` }));
-          return;
+        // Cause profonde corrigée : ce endpoint ne lisait QUE le disque local (éphémère,
+        // effacé à chaque redéploiement Render) — jamais le fallback Supabase déjà utilisé
+        // par /demo/:slug pour ce même problème. Résultat : après un redéploiement, toute
+        // mindmap générée avant devenait "introuvable" ici et le message retombait sur les
+        // anciennes données du prospect (produit/marque/pays périmés), silencieusement.
+        let html;
+        if (fs.existsSync(filepath)) {
+          html = fs.readFileSync(filepath, 'utf8');
+        } else {
+          try {
+            html = await new Promise((resolve, reject) => {
+              https.get(`https://mifljhsusidgzelnswma.supabase.co/storage/v1/object/public/demos/${slug}.html`, sbRes => {
+                if (sbRes.statusCode !== 200) { reject(new Error(`Supabase HTTP ${sbRes.statusCode}`)); return; }
+                let chunks = [];
+                sbRes.on('data', c => chunks.push(c));
+                sbRes.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+              }).on('error', reject);
+            });
+          } catch(eFallback) {
+            res.writeHead(404); res.end(JSON.stringify({ error: `Mindmap introuvable (disque local ET Supabase) : ${slug}.html — ${eFallback.message}` }));
+            return;
+          }
         }
-
-        const html = fs.readFileSync(filepath, 'utf8');
 
         // Extraction directe des valeurs depuis le HTML généré (les placeholders ont été remplacés)
         const extractBetween = (str, before, after) => {
