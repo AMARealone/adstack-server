@@ -1484,7 +1484,14 @@ const server = http.createServer(async (req, res) => {
         const vertexBody = {
           system_instruction: { parts: [{ text: reqBody.system }] },
           contents: [{ role: 'user', parts: _enrichedParts }],
-          generationConfig: { temperature: 0.8, maxOutputTokens: 8192 }
+          // Cause profonde corrigée : aucun thinkingConfig n'était fixé ici — la réflexion (thinking)
+          // partageait le même budget que maxOutputTokens et pouvait le consommer en entier avec le
+          // grounding Google Search, tronquant la vraie synthèse avant qu'elle ne soit écrite.
+          generationConfig: {
+            temperature: 0.8,
+            maxOutputTokens: 16000,
+            thinkingConfig: { thinkingBudget: 4096 }
+          }
         };
         if (enrichWithSearch) {
           vertexBody.tools = [{ googleSearch: {} }];
@@ -1493,8 +1500,25 @@ const server = http.createServer(async (req, res) => {
         const data = await vertexRequestAvecReessai(token, 'gemini-2.5-flash', vertexBody, 150000, 'demo_stratege_synthese');
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const cand = data.candidates?.[0];
+        // Cause profonde corrigée : ne garder que les parts finales, jamais une part "thought": true —
+        // filet de sécurité si l'API renvoie un jour le raisonnement interne comme part[0].
+        const text = (cand?.content?.parts || [])
+          .filter(p => !p.thought && typeof p.text === 'string')
+          .map(p => p.text)
+          .join('\n')
+          .trim();
         if (!text) throw new Error('Pas de texte dans la réponse');
+
+        const finishReason = cand?.finishReason || 'inconnu';
+        const usage = data.usageMetadata || {};
+        console.log(`   [Stratège Démo] finishReason=${finishReason} · tokens prompt=${usage.promptTokenCount ?? '?'} thinking=${usage.thoughtsTokenCount ?? 0} output=${usage.candidatesTokenCount ?? '?'} total=${usage.totalTokenCount ?? '?'}`);
+        if (finishReason === 'MAX_TOKENS') {
+          throw new Error(`Synthèse tronquée par maxOutputTokens (finishReason=MAX_TOKENS, ${text.length} chars produits au lieu de 9000-12000) — le budget de réflexion a probablement consommé l'essentiel du budget de sortie. Relance la génération ; si ça se reproduit, augmente encore maxOutputTokens ou réduis thinkingBudget dans /synthesize.`);
+        }
+        if (enrichWithSearch && text.length < 8000) {
+          console.log(`   ⚠️  [Stratège Démo] Synthèse anormalement courte (${text.length} chars, attendu 9000-12000) — à vérifier manuellement, ce n'est pas forcément une troncature.`);
+        }
 
         console.log(enrichWithSearch ? `✓ Synthèse générée — ${text.length} chars` : `✓ Réponse Gemini — ${text.length} chars`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
