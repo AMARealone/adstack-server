@@ -4201,10 +4201,7 @@ if (req.method === 'POST' && req.url === '/save-form-response') {
       briefs[idx].done_at = new Date().toISOString();
       await saveBriefs([briefs[idx]]);
 
-      // Pousser les livrables vers la table `briefs` d'AdBoard (même Supabase, même id —
-      // AdBoard envoie data.brief_id lors de la commande, utilisé comme commandes.id ici).
-      // Cause profonde : sans ça, "Envoyer au client" marquait Factory à jour mais le client
-      // ne voyait jamais rien de nouveau côté AdBoard — les deux tables n'étaient jamais reliées.
+      // Pousser les livrables vers la table `briefs` d'AdBoard (statut visible pour le client)
       if (briefs[idx].deliverables) {
         try {
           await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${id}`, {
@@ -4224,6 +4221,9 @@ if (req.method === 'POST' && req.url === '/save-form-response') {
         } catch(e) {
           console.error('[Deliver] Push vers briefs (AdBoard) échoué :', e.message);
         }
+        // Vraie liaison : pousser créatives (upload Storage) + ad copies dans products,
+        // au format que la Galerie Créatives et les Ad Copies lisent déjà.
+        await pushDeliverablesToProduct(briefs[idx].product?.id, id, briefs[idx].deliverables);
       } else {
         console.warn(`[Deliver] Aucun livrable sauvegardé pour ${id} — statut poussé à AdBoard sans contenu.`);
       }
@@ -4554,6 +4554,73 @@ async function checkPhotoQuality(photoBase64) {
   } catch(e) {
     console.warn('[Quality Check] Analyse échouée, image conservée par défaut :', e.message);
     return { ok: true, note: 'analyse échouée — image conservée par défaut' };
+  }
+}
+
+async function uploadCreativeImage(base64Data, mime, filename) {
+  const buffer = Buffer.from(base64Data, 'base64');
+  const ext = (mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+  const objPath = `creatives/${filename}.${ext}`;
+  const r = await fetch(`${SUPABASE_URL_INT}/storage/v1/object/demos/${objPath}`, {
+    method: 'POST',
+    headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': mime, 'x-upsert': 'true' },
+    body: buffer
+  });
+  if (!r.ok) throw new Error(`Upload créative échoué : HTTP ${r.status}`);
+  return `${SUPABASE_URL_INT}/storage/v1/object/public/demos/${objPath}`;
+}
+
+// Pousse les livrables (créatives uploadées en Storage + ad copies) dans la table `products`
+// d'AdBoard, dans le format EXACT que la Galerie Créatives et les Ad Copies attendent déjà
+// (vérifié dans Platform.jsx). Cumulatif — n'écrase jamais les livraisons précédentes du
+// même produit. Données Marché volontairement absent : l'agent qui produit ce format n'est
+// pas encore câblé dans le pipeline de production (voir note dans le code).
+async function pushDeliverablesToProduct(productId, ticketId, deliverables) {
+  if (!productId || !deliverables) return;
+  try {
+    const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=creatives,deliveries`, {
+      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+    });
+    if (!prRes.ok) throw new Error(`Lecture produit échouée : HTTP ${prRes.status}`);
+    const prRows = await prRes.json();
+    if (!prRows.length) throw new Error(`Produit ${productId} introuvable côté AdBoard`);
+    const existing = prRows[0];
+    const existingCreatives = existing.creatives || [];
+    const existingDeliveries = existing.deliveries || [];
+    const weekLabel = `S${existingDeliveries.length + 1}`;
+    const dateLabel = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+
+    const newCreatives = [];
+    for (let i = 0; i < (deliverables.creatives || []).length; i++) {
+      const c = deliverables.creatives[i];
+      if (!c || !c.imgB64) continue;
+      try {
+        const url = await uploadCreativeImage(c.imgB64, c.mime || 'image/png', `${ticketId}_${i}`);
+        newCreatives.push({
+          id: `${ticketId}_${i}`, productId,
+          angle: (deliverables.angles && deliverables.angles[c.angleIdx]) || `Angle ${((c.angleIdx || 0) + 1)}`,
+          week: weekLabel, imageUrl: url
+        });
+      } catch(eUp) { console.error('[Deliver] Upload créative échoué :', eUp.message); }
+    }
+
+    const angleEntries = (deliverables.copies || []).map((copy, i) => ({
+      numero: i + 1,
+      nom: (deliverables.angles && deliverables.angles[i]) || `Angle ${i + 1}`,
+      hooks: copy?.hooks || [], description: copy?.description || ''
+    }));
+
+    await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
+      method: 'PATCH',
+      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        creatives: [...existingCreatives, ...newCreatives],
+        deliveries: [...existingDeliveries, { semaine: weekLabel, date: dateLabel, angles: angleEntries }]
+      })
+    });
+    console.log(`[Deliver] ✅ ${newCreatives.length} créative(s) + ${angleEntries.length} angle(s) poussés vers products/${productId}`);
+  } catch(e) {
+    console.error('[Deliver] Push vers products échoué :', e.message);
   }
 }
 
