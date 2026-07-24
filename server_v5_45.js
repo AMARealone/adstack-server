@@ -4513,7 +4513,8 @@ async function saveBriefs(briefs) {
         },
         body: JSON.stringify({
           id: b.id, created_at: b.created_at, status: b.status, client: b.client,
-          product: b.product, quantity: b.quantity, history: b.history, photo_nobg: b.photo_nobg
+          product: b.product, quantity: b.quantity, history: b.history, photo_nobg: b.photo_nobg,
+          deliverables: b.deliverables, started_at: b.started_at, done_at: b.done_at
         })
       });
       if (!r.ok) console.error('[Commandes] Sauvegarde échouée pour', b.id, ':', await r.text());
