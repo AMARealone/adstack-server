@@ -2909,8 +2909,11 @@ Après le nom, sur une DEUXIÈME ligne, ajoute le mécanisme psychologique princ
             url: '/adboard/tracking'
           }).catch(()=>{});
         }
-        // Background removal en arrière-plan
+        // Background removal en arrière-plan + analyse qualité (log seulement, voir checkPhotoQuality)
         if (brief.product.photo_base64) {
+          checkPhotoQuality(brief.product.photo_base64).then(q => {
+            console.log(`[Quality Check] ${brief.id} : ${q.ok ? '✓ qualité correcte' : '⚠️  qualité douteuse'} — ${q.note}`);
+          });
           processProductPhoto(brief.product.photo_base64, brief.id).then(async nobg => {
             if (nobg) {
               const all = await loadBriefs();
@@ -4187,7 +4190,7 @@ if (req.method === 'POST' && req.url === '/save-form-response') {
   return;
 }
 
-// POST /commandes/:id/done — marquer livré
+// POST /commandes/:id/done — "Envoyer au client" : marque livré + pousse vers AdBoard (table briefs)
   if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/done$/)) {
 
     const id = req.url.split('/')[2];
@@ -4197,6 +4200,34 @@ if (req.method === 'POST' && req.url === '/save-form-response') {
       briefs[idx].status = 'done';
       briefs[idx].done_at = new Date().toISOString();
       await saveBriefs([briefs[idx]]);
+
+      // Pousser les livrables vers la table `briefs` d'AdBoard (même Supabase, même id —
+      // AdBoard envoie data.brief_id lors de la commande, utilisé comme commandes.id ici).
+      // Cause profonde : sans ça, "Envoyer au client" marquait Factory à jour mais le client
+      // ne voyait jamais rien de nouveau côté AdBoard — les deux tables n'étaient jamais reliées.
+      if (briefs[idx].deliverables) {
+        try {
+          await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${id}`, {
+            method: 'PATCH',
+            headers: {
+              apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+              'Content-Type': 'application/json', Prefer: 'return=minimal'
+            },
+            body: JSON.stringify({
+              status: 'done',
+              done_at: briefs[idx].done_at,
+              creatives: briefs[idx].deliverables.creatives || null,
+              ad_copies: briefs[idx].deliverables.copies || null,
+              market_data: briefs[idx].deliverables.synthesis || null,
+            })
+          });
+        } catch(e) {
+          console.error('[Deliver] Push vers briefs (AdBoard) échoué :', e.message);
+        }
+      } else {
+        console.warn(`[Deliver] Aucun livrable sauvegardé pour ${id} — statut poussé à AdBoard sans contenu.`);
+      }
+
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true }));
       // Notification push + trace persistante — livrables prêts
@@ -4212,6 +4243,30 @@ if (req.method === 'POST' && req.url === '/save-form-response') {
     } else {
       res.writeHead(404); res.end(JSON.stringify({ error: 'Brief not found' }));
     }
+    return;
+  }
+
+  // POST /commandes/:id/save-deliverables — appelé automatiquement dès qu'une production
+  // se termine (si lancée depuis un ticket), pour que "Envoyer au client" trouve toujours
+  // les livrables même après avoir quitté la page.
+  if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/save-deliverables$/)) {
+    const id = req.url.split('/')[2];
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const deliverables = JSON.parse(body);
+        const briefs = await loadBriefs();
+        const idx = briefs.findIndex(b => b.id === id);
+        if (idx < 0) { res.writeHead(404); res.end(JSON.stringify({error:'Brief not found'})); return; }
+        briefs[idx].deliverables = deliverables;
+        await saveBriefs([briefs[idx]]);
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ ok: true }));
+      } catch(e) {
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
     return;
   }
 
@@ -4476,6 +4531,30 @@ function removeBackground(inputPath, outputPath) {
       else { resolve(outputPath); }
     });
   });
+}
+
+// ── Analyse qualité photo produit (Gemini Vision) ──
+// Ne fait QUE signaler une qualité insuffisante (netteté/résolution/cadrage) — ne remplace
+// PAS automatiquement l'image. Une vraie recherche "trouve-moi une photo plus propre du même
+// produit" nécessiterait une API de recherche d'image inversée ; Google Custom Search Image
+// est fermée aux nouveaux projets GCP (déjà rencontré sur ce projet, cf. Analyste de Marché) —
+// pas de solution fiable identifiée pour l'instant. À traiter séparément si besoin réel.
+async function checkPhotoQuality(photoBase64) {
+  try {
+    const m = photoBase64.match(/^data:(image\/[a-z]+);base64,(.+)$/);
+    if (!m) return { ok: true, note: 'format non reconnu — analyse ignorée' };
+    const result = await callGeminiPro(
+      'Tu évalues UNIQUEMENT la qualité technique d\'une photo produit e-commerce (netteté, résolution, cadrage, éclairage, présence de watermark/texte parasite) — jamais son contenu marketing. Réponds UNIQUEMENT par un JSON strict, sans texte autour : {"qualite":"bonne","raison":"..."} ou {"qualite":"mauvaise","raison":"..."} — raison en une phrase courte.',
+      [{ type: 'image', source: { media_type: m[1], data: m[2] } }, { type: 'text', text: 'Évalue la qualité technique de cette photo produit.' }],
+      200,
+      { temperature: 0.2, thinkingBudget: 0, logLabel: 'Quality Check Photo', timeoutMs: 30000 }
+    );
+    const parsed = JSON.parse(result.replace(/```json|```/g, '').trim());
+    return { ok: parsed.qualite === 'bonne', note: parsed.raison || '' };
+  } catch(e) {
+    console.warn('[Quality Check] Analyse échouée, image conservée par défaut :', e.message);
+    return { ok: true, note: 'analyse échouée — image conservée par défaut' };
+  }
 }
 
 async function processProductPhoto(photoBase64, briefId) {
