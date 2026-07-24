@@ -2871,7 +2871,7 @@ Après le nom, sur une DEUXIÈME ligne, ajoute le mécanisme psychologique princ
     req.on('end', async () => {
       try {
         const data = JSON.parse(body);
-        const briefs = loadBriefs();
+        const briefs = await loadBriefs();
         const brief = {
           id: data.brief_id || `brief_${Date.now()}`,
           created_at: new Date().toISOString(),
@@ -2897,7 +2897,7 @@ Après le nom, sur une DEUXIÈME ligne, ajoute le mécanisme psychologique princ
           photo_nobg: null,
         };
         briefs.unshift(brief);
-        saveBriefs(briefs);
+        await saveBriefs(briefs);
         console.log(`[Brief] ✅ Reçu: ${brief.id} — ${brief.product.nom} (${brief.quantity} images)`);
         res.writeHead(200, {'Content-Type':'application/json'});
         res.end(JSON.stringify({ ok: true, id: brief.id }));
@@ -2911,11 +2911,11 @@ Après le nom, sur une DEUXIÈME ligne, ajoute le mécanisme psychologique princ
         }
         // Background removal en arrière-plan
         if (brief.product.photo_base64) {
-          processProductPhoto(brief.product.photo_base64, brief.id).then(nobg => {
+          processProductPhoto(brief.product.photo_base64, brief.id).then(async nobg => {
             if (nobg) {
-              const all = loadBriefs();
+              const all = await loadBriefs();
               const idx = all.findIndex(b => b.id === brief.id);
-              if (idx >= 0) { all[idx].photo_nobg = nobg; saveBriefs(all); }
+              if (idx >= 0) { all[idx].photo_nobg = nobg; await saveBriefs([all[idx]]); }
             }
           });
         }
@@ -2930,7 +2930,7 @@ Après le nom, sur une DEUXIÈME ligne, ajoute le mécanisme psychologique princ
 // GET /commandes — liste des tickets pour la vue Factory
   if (req.method === 'GET' && req.url === '/commandes') {
 
-    const briefs = loadBriefs();
+    const briefs = await loadBriefs();
     res.writeHead(200, {'Content-Type':'application/json'});
     res.end(JSON.stringify(briefs));
     return;
@@ -2940,12 +2940,12 @@ Après le nom, sur une DEUXIÈME ligne, ajoute le mécanisme psychologique princ
   if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/start$/)) {
 
     const id = req.url.split('/')[2];
-    const briefs = loadBriefs();
+    const briefs = await loadBriefs();
     const idx = briefs.findIndex(b => b.id === id);
     if (idx >= 0) {
       briefs[idx].status = 'in_production';
       briefs[idx].started_at = new Date().toISOString();
-      saveBriefs(briefs);
+      await saveBriefs([briefs[idx]]);
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true, brief: briefs[idx] }));
     } else {
@@ -3557,12 +3557,12 @@ if (req.method === 'GET' && req.url.startsWith('/chat/history/')) {
 // POST /commandes/:id/cancel — annulation depuis AdBoard
 if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/cancel$/)) {
   const id = req.url.split('/')[2];
-  const briefs = loadBriefs();
+  const briefs = await loadBriefs();
   const idx = briefs.findIndex(b => b.id === id);
   if (idx >= 0) {
     briefs[idx].status = 'cancelled';
     briefs[idx].cancelled_at = new Date().toISOString();
-    saveBriefs(briefs);
+    await saveBriefs([briefs[idx]]);
     res.writeHead(200, {'Content-Type':'application/json'});
     res.end(JSON.stringify({ ok: true }));
   } else {
@@ -3574,11 +3574,17 @@ if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/cancel$/)) {
 // POST /commandes/:id/delete — suppression depuis Factory
 if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/delete$/)) {
   const id = req.url.split('/')[2];
-  const briefs = loadBriefs();
-  const filtered = briefs.filter(b => b.id !== id);
-  saveBriefs(filtered);
-  res.writeHead(200, {'Content-Type':'application/json'});
-  res.end(JSON.stringify({ ok: true }));
+  // saveBriefs ne fait qu'un upsert — une vraie suppression nécessite un DELETE Supabase direct
+  try {
+    await fetch(`${SUPABASE_URL_INT}/rest/v1/commandes?id=eq.${id}`, {
+      method: 'DELETE',
+      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+    });
+    res.writeHead(200, {'Content-Type':'application/json'});
+    res.end(JSON.stringify({ ok: true }));
+  } catch(e) {
+    res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+  }
   return;
 }
 
@@ -4185,12 +4191,12 @@ if (req.method === 'POST' && req.url === '/save-form-response') {
   if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/done$/)) {
 
     const id = req.url.split('/')[2];
-    const briefs = loadBriefs();
+    const briefs = await loadBriefs();
     const idx = briefs.findIndex(b => b.id === id);
     if (idx >= 0) {
       briefs[idx].status = 'done';
       briefs[idx].done_at = new Date().toISOString();
-      saveBriefs(briefs);
+      await saveBriefs([briefs[idx]]);
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true }));
       // Notification push + trace persistante — livrables prêts
@@ -4423,15 +4429,43 @@ function fetchPageText(targetUrl, depth) {
 // SYSTÈME COMMANDES — AdBoard → Factory
 // ══════════════════════════════════════════════════════════════════════════
 
-const BRIEFS_FILE = path.join(__dirname, 'briefs_queue.json');
-
-function loadBriefs() {
-  try { return JSON.parse(fs.readFileSync(BRIEFS_FILE, 'utf8')); }
-  catch(e) { return []; }
+// Cause profonde corrigée : briefs_queue.json vivait sur le disque local Render — éphémère,
+// effacé à chaque redéploiement. Toute commande (photos, quantités, historique client) risquait
+// de disparaître silencieusement (loadBriefs() catchait l'échec et retournait [] sans avertir).
+// Migré vers Supabase (table commandes, clé service — jamais exposée, contourne RLS comme
+// pour prospects/demos).
+async function loadBriefs() {
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/commandes?order=created_at.desc`, {
+      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } catch(e) {
+    console.error('[Commandes] Lecture Supabase échouée :', e.message);
+    return [];
+  }
 }
 
-function saveBriefs(briefs) {
-  fs.writeFileSync(BRIEFS_FILE, JSON.stringify(briefs, null, 2));
+async function saveBriefs(briefs) {
+  try {
+    for (const b of briefs) {
+      const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/commandes`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal'
+        },
+        body: JSON.stringify({
+          id: b.id, created_at: b.created_at, status: b.status, client: b.client,
+          product: b.product, quantity: b.quantity, history: b.history, photo_nobg: b.photo_nobg
+        })
+      });
+      if (!r.ok) console.error('[Commandes] Sauvegarde échouée pour', b.id, ':', await r.text());
+    }
+  } catch(e) {
+    console.error('[Commandes] Sauvegarde Supabase échouée :', e.message);
+  }
 }
 
 function removeBackground(inputPath, outputPath) {
