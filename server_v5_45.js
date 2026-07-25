@@ -2384,7 +2384,7 @@ HARD LOCKS :
     req.on('data', chunk => body += chunk);
     req.on('end', async () => {
       try {
-        const { synthesis, ctList, count, mode } = JSON.parse(body);
+        const { synthesis, ctList, count, mode, excludeIds } = JSON.parse(body);
         console.log('\n🎯 SELECT-CTs [' + (mode || 'demo') + '] — Sélection de ' + count + ' CTs parmi ' + ctList.length + '...');
 
         const token = await getToken();
@@ -2402,6 +2402,13 @@ HARD LOCKS :
         if (count > 9 && count <= 18) toleranceTxt = 'Tolérance : jusqu\'à ~20% des CTs peuvent partager une structure proche (pas identique) si la galerie ne permet pas plus de diversité — mais priorise toujours la diversité maximale d\'abord.';
         else if (count > 18) toleranceTxt = 'Tolérance : jusqu\'à ~25-30% des CTs peuvent partager une structure proche (pas identique) si la galerie ne permet pas plus de diversité — mais priorise toujours la diversité maximale d\'abord.';
 
+        // Rotation CT pour les commandes de renouvellement — au moins 50-60% de nouveauté
+        // par rapport au lot précédent pour ce même produit, pour éviter la répétition visuelle.
+        let rotationTxt = '';
+        if (excludeIds && excludeIds.length) {
+          rotationTxt = `\n\nRÈGLE DE ROTATION (commande de renouvellement pour ce produit) : ces CT ont déjà été utilisés au lot précédent pour ce même produit : ${excludeIds.join(', ')}. Au moins 50 à 60% de ta sélection de ${count} CTs doit être composée de CT DIFFÉRENTS de cette liste — priorise la nouveauté visuelle. Tu peux réutiliser jusqu'à ~40-50% de ces CT si la galerie ne permet pas assez de diversité, jamais plus.`;
+        }
+
         let systemText, userText;
 
         if (mode === 'production') {
@@ -2409,7 +2416,7 @@ HARD LOCKS :
           // Le client doit résoudre les IDs retournés dans CET ordre exact : positions 0-2
           // = Angle 1 (Solution/Product/Most Aware), 3-5 = Angle 2, 6-8 = Angle 3, etc.
           systemText = `Tu es un expert en sélection de formats publicitaires Meta Ads.
-Tu reçois une synthèse de marché (3 angles marketing, chacun décliné en 3 niveaux de conscience : Solution Aware / Product Aware / Most Aware) et une liste de Creative Templates (CT).
+Tu reçois une synthèse de marché (${count/3} angles marketing, chacun décliné en 3 niveaux de conscience : Solution Aware / Product Aware / Most Aware) et une liste de Creative Templates (CT).
 
 Tu dois choisir exactement ${count} CTs, organisés en ${count/3} groupes de 3 — un groupe par angle. À l'intérieur de CHAQUE groupe, les 3 CTs doivent être adaptés respectivement à Solution Aware, Product Aware, puis Most Aware, DANS CET ORDRE.
 
@@ -2417,7 +2424,7 @@ RÈGLES DE DIVERSIFICATION (PRIORITÉ ABSOLUE) :
 1. ZÉRO DOUBLON : chaque CT sélectionné a un ID unique.
 2. ${toleranceTxt}
 3. COUVERTURE VARIÉE : couvre un maximum de structures différentes parmi : hero produit, split lifestyle, avant-après, grille bénéfices, screenshot témoignage, podcast 2-col, story narrative, comparatif, UGC, stats preuve sociale, etc.
-4. À l'intérieur d'un même groupe (même angle), les 3 CTs doivent être des approches visuelles complémentaires — jamais 2x le même concept.
+4. À l'intérieur d'un même groupe (même angle), les 3 CTs doivent être des approches visuelles complémentaires — jamais 2x le même concept.${rotationTxt}
 
 RÈGLES D'ADAPTATION PAR NIVEAU DE CONSCIENCE (à l'intérieur de chaque groupe de 3) :
 - Position 1 (Solution Aware) : storytelling, lifestyle, comparaison douce aux solutions connues — produit peu ou pas visible
@@ -3665,6 +3672,50 @@ if (req.method === 'GET' && req.url.startsWith('/users/search')) {
   return;
 }
 
+// GET /products/:id/renewal-context — tout le contexte nécessaire à Factory pour décider :
+// nouvelle commande ou renouvellement, même persona ou rotation, quels CT éviter.
+if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/)) {
+  try {
+    const productId = req.url.split('/')[2];
+    const SEUIL_ANGLES_AVANT_ROTATION = 18;
+
+    const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=derniere_synthese,deliveries,marche`, {
+      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+    });
+    const prRows = await prRes.json();
+    const product = prRows?.[0] || {};
+    const marche = product.marche || {};
+    const deliveries = product.deliveries || [];
+
+    // Angles du SEUL persona courant (ceux ajoutés depuis persona_started_at)
+    const personaStartedAt = marche.persona_started_at || null;
+    const anglesPersonaCourant = personaStartedAt
+      ? (marche.angles || []).filter(a => a.date_ajout && a.date_ajout >= personaStartedAt)
+      : (marche.angles || []);
+
+    // CT utilisés au dernier lot livré pour ce produit
+    const ctsUtilisesDernierLot = deliveries.length ? (deliveries[deliveries.length - 1].cts_utilises || []) : [];
+
+    // Une commande encore en cours pour ce même produit ailleurs ? (bloque le renouvellement)
+    const briefs = await loadBriefs();
+    const commandeActiveAilleurs = briefs.some(b => b.product?.id === productId && b.status === 'in_production');
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      estRenouvellement: !!product.derniere_synthese,
+      syntheseExistante: product.derniere_synthese || null,
+      personaActuel: marche.persona || null,
+      nbAnglesPersonaCourant: anglesPersonaCourant.length,
+      rotationNecessaire: anglesPersonaCourant.length >= SEUIL_ANGLES_AVANT_ROTATION,
+      ctsUtilisesDernierLot,
+      commandeActiveAilleurs,
+    }));
+  } catch(e) {
+    res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+  }
+  return;
+}
+
 // GET /users/:id/products — produits existants d'un compte, pour choisir où livrer manuellement
 if (req.method === 'GET' && req.url.match(/^\/users\/[^/]+\/products$/)) {
   try {
@@ -4705,7 +4756,7 @@ async function uploadCreativeImage(base64Data, mime, filename) {
 async function pushDeliverablesToProduct(productId, ticketId, deliverables) {
   if (!productId || !deliverables) return;
   try {
-    const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=creatives,deliveries`, {
+    const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=creatives,deliveries,marche`, {
       headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
     });
     if (!prRes.ok) throw new Error(`Lecture produit échouée : HTTP ${prRes.status}`);
@@ -4737,13 +4788,32 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables) {
       hooks: copy?.hooks || [], description: copy?.description || ''
     }));
 
+    // CT utilisés pour ce lot — nécessaire pour qu'un futur renouvellement puisse en éviter
+    // 50-60% et garantir de la variété visuelle plutôt que répéter les mêmes structures.
+    const ctsUtilisesCeLot = [...new Set((deliverables.creatives || []).map(c => c?.ct).filter(Boolean))];
+
     const patchBody = {
       creatives: [...existingCreatives, ...newCreatives],
-      deliveries: [...existingDeliveries, { semaine: weekLabel, date: dateLabel, angles: angleEntries }]
+      deliveries: [...existingDeliveries, { semaine: weekLabel, date: dateLabel, angles: angleEntries, cts_utilises: ctsUtilisesCeLot }],
+      // Dernière synthèse complète — nécessaire pour qu'une future commande sur ce même produit
+      // puisse reprendre le même persona (ajout d'angles) plutôt que de repartir de zéro.
+      derniere_synthese: deliverables.synthesis || undefined,
     };
     // Données Marché — calculées en brouillon à la génération (voir /livrable-marche), écrites
     // pour de vrai seulement maintenant, au moment où le client doit réellement les voir.
-    if (deliverables.marche) patchBody.marche = deliverables.marche;
+    if (deliverables.marche) {
+      const ancienPersonaNom = (existing.marche?.persona?.nom || '').toLowerCase().trim();
+      const nouveauPersonaNom = (deliverables.marche.persona?.nom || '').toLowerCase().trim();
+      const memePerson = ancienPersonaNom && ancienPersonaNom === nouveauPersonaNom;
+      patchBody.marche = {
+        ...deliverables.marche,
+        // Nécessaire pour compter les angles du SEUL persona courant (voir /products/:id/renewal-context) —
+        // un changement de persona (rotation après 18 angles) redémarre le compteur à zéro.
+        persona_started_at: memePerson
+          ? (existing.marche?.persona_started_at || new Date().toISOString())
+          : new Date().toISOString(),
+      };
+    }
 
     await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
       method: 'PATCH',
