@@ -251,7 +251,7 @@ function vertexRequestGlobal(token, model, body, timeoutMs = 120000, typeAppel =
             return;
           }
           const usage = parsed?.usageMetadata || {};
-          logCoutApi('demo', typeAppel, usage);
+          logCoutApi(categoriserAppel(typeAppel), typeAppel, usage);
           resolve(parsed);
         } catch(e) { reject(e); }
       });
@@ -285,6 +285,18 @@ async function vertexRequestGlobalAvecReessai(token, model, body, timeoutMs = 12
 const GEMINI_PRIX_IN        = 1.25 / 1_000_000;
 const GEMINI_PRIX_OUT       = 10.00 / 1_000_000;
 const GEMINI_PRIX_IMAGE_OUT = 120.0 / 1_000_000;
+
+// Catégorise chaque appel pour le dashboard "Dépenses API" — Cause profonde corrigée : source
+// était hardcodé à 'demo' pour TOUT appel, peu importe son origine réelle (test d'agent,
+// production réelle, démo...). Chaque typeAppel est maintenant classé explicitement.
+function categoriserAppel(typeAppel) {
+  if (!typeAppel) return 'autre';
+  if (typeAppel.endsWith('_test')) return 'agent_test';
+  if (typeAppel.startsWith('demo') || typeAppel.endsWith('_demo')) return 'demo';
+  if (typeAppel.endsWith('_prod')) return 'production';
+  if (typeAppel === 'remplissage_message_demo') return 'demo';
+  return 'autre';
+}
 
 function logCoutApi(source, typeAppel, usage) {
   // Jamais bloquant — une erreur ici ne doit jamais casser la génération en cours.
@@ -354,7 +366,7 @@ function vertexRequest(token, model, body, timeoutMs = 90000, typeAppel = 'texte
             return;
           }
           const usage = parsed?.usageMetadata || {};
-          logCoutApi('demo', typeAppel, usage);
+          logCoutApi(categoriserAppel(typeAppel), typeAppel, usage);
           resolve(parsed);
         } catch(e) { reject(new Error('Réponse Vertex invalide: ' + d.slice(0,200))); }
       });
@@ -391,7 +403,7 @@ async function callGeminiPro(systemPrompt, contentBlocks, maxOutputTokens, optio
   // demandées par les compétences (décodage CT étape A→G, compréhension persona/produit/angles avant écriture).
   // Défaut permissif (8192) appliqué à TOUT appelant qui ne précise rien — les endpoints critiques
   // (/creative-prod, /analyste-synthese) forcent explicitement une valeur plus haute à l'appel (voir plus bas).
-  const { temperature = 0.7, thinkingBudget = 8192, logLabel = 'Gemini 2.5 Pro', timeoutMs = 90000 } = options;
+  const { temperature = 0.7, thinkingBudget = 8192, logLabel = 'Gemini 2.5 Pro', timeoutMs = 90000, typeAppel = 'texte_gemini' } = options;
   const token = await getToken();
   const parts = (contentBlocks || []).map(b => {
     if (b.type === 'image' && b.source) {
@@ -416,7 +428,7 @@ async function callGeminiPro(systemPrompt, contentBlocks, maxOutputTokens, optio
     generationConfig
   };
 
-  const data = await vertexRequest(token, 'gemini-2.5-pro', geminiBody, timeoutMs);
+  const data = await vertexRequest(token, 'gemini-2.5-pro', geminiBody, timeoutMs, typeAppel);
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
   const cand = data.candidates?.[0];
   const text = (cand?.content?.parts || []).map(p => p.text).filter(Boolean).join('\n');
@@ -1690,7 +1702,7 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const reqBody = JSON.parse(body);
-        const { system, parts, maxOutputTokens } = reqBody;
+        const { system, parts, maxOutputTokens, isTest } = reqBody;
 
         console.log('\n' + '═'.repeat(60));
         console.log('✍️  COPYWRITER — Ad Copy 3 angles × (5 hooks + AIDA)');
@@ -1703,7 +1715,10 @@ const server = http.createServer(async (req, res) => {
         });
 
         console.log('→ Gemini 2.5 Pro (mode test) — génération des Ad Copy...');
-        const text = await callGeminiPro(system, claudeContent, maxOutputTokens || 8000, { temperature: 0.4, logLabel: 'Copywriter' });
+        const text = await callGeminiPro(system, claudeContent, maxOutputTokens || 8000, {
+          temperature: 0.4, logLabel: 'Copywriter',
+          typeAppel: isTest ? 'copywriter_test' : 'copywriter_prod'
+        });
 
         console.log(`✓ Ad Copy générés — ${text.length} chars`);
         console.log('═'.repeat(60) + '\n');
@@ -1727,7 +1742,7 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const reqBody = JSON.parse(body);
-        const { system, parts, maxOutputTokens, brief } = reqBody;
+        const { system, parts, maxOutputTokens, brief, isTest } = reqBody;
         const { marque = '', produit = '', pays = '', lien_page_produit = '' } = brief || {};
 
         console.log('\n' + '═'.repeat(60));
@@ -1796,7 +1811,7 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
             tools: [{ googleSearch: {} }],
             generationConfig: { temperature: 0.2, maxOutputTokens: 8000 }
           };
-          const data = await vertexRequest(token, 'gemini-2.5-flash', geminiBody, 150000);
+          const data = await vertexRequest(token, 'gemini-2.5-flash', geminiBody, 150000, isTest ? 'analyste_grounding_test' : 'analyste_grounding_prod');
           if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
           const cand = data.candidates?.[0];
@@ -2014,7 +2029,10 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
 
         // ── Synthèse finale — Gemini 2.5 Pro (mode test) ──
         console.log('\n→ Gemini 2.5 Pro (mode test) — synthèse S0→S7...');
-        const text = await callGeminiPro(system, claudeContent, maxOutputTokens || 32000, { temperature: 0.4, thinkingBudget: 24576, logLabel: 'Analyste Synthèse', timeoutMs: 180000 });
+        const text = await callGeminiPro(system, claudeContent, maxOutputTokens || 32000, {
+          temperature: 0.4, thinkingBudget: 24576, logLabel: 'Analyste Synthèse', timeoutMs: 180000,
+          typeAppel: isTest ? 'analyste_synthese_test' : 'analyste_synthese_prod'
+        });
 
         console.log(`✓ Synthèse reçue — ${text.length} chars`);
         console.log('═'.repeat(60) + '\n');
@@ -2157,7 +2175,7 @@ HARD LOCKS :
       try {
         const reqBody = JSON.parse(body);
         const { systemPrompt, synthese, brief = {}, angleInstruction = '',
-                ctBase64, ctMime, productBase64, productMime, logoBase64, logoMime } = reqBody;
+                ctBase64, ctMime, productBase64, productMime, logoBase64, logoMime, isTest } = reqBody;
 
         console.log('\n' + '═'.repeat(60));
         console.log(`🎨 CREATIVE IMAGE PROD — ${brief.marque || '?'} / ${brief.produit || '?'} (${brief.pays || '?'})`);
@@ -2258,7 +2276,10 @@ Marque "${nomMarque}" : intégrée en TEXTE à l'emplacement approprié selon la
         userParts.push({ type:'text', text: userText });
 
         console.log('→ Gemini 2.5 Pro (mode test) — compréhension persona/angles/CT, choix d\'angle, écriture du prompt...');
-        const geminiPrompt = await callGeminiPro(systemPrompt, userParts, 8000, { temperature: 0.4, thinkingBudget: 24576, logLabel: 'Creative Prod', timeoutMs: 150000 });
+        const geminiPrompt = await callGeminiPro(systemPrompt, userParts, 8000, {
+          temperature: 0.4, thinkingBudget: 24576, logLabel: 'Creative Prod', timeoutMs: 150000,
+          typeAppel: isTest ? 'creative_prod_texte_test' : 'creative_prod_texte_prod'
+        });
 
         // Parse les blocs ===META=== et ===PROMPT_GEMINI=== — séparation raisonnement interne / prompt propre
         const metaMatch = geminiPrompt.match(/===META===([\s\S]*?)===PROMPT_GEMINI===/);
@@ -2329,7 +2350,7 @@ HARD LOCKS :
           }
         };
 
-        const data = await vertexRequestGlobalAvecReessai(token, 'gemini-3-pro-image', vertexBody, 120000, 'creative_image_prod');
+        const data = await vertexRequestGlobalAvecReessai(token, 'gemini-3-pro-image', vertexBody, 120000, isTest ? 'creative_image_prod_test' : 'creative_image_prod');
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
         const responseParts = data.candidates?.[0]?.content?.parts || [];
@@ -3791,7 +3812,7 @@ if (req.method === 'POST' && req.url === '/livrable-marche') {
   req.on('data', c => body += c);
   req.on('end', async () => {
     try {
-      const { synthese, brief = {}, productId, systemPrompt } = JSON.parse(body);
+      const { synthese, brief = {}, productId, systemPrompt, isTest } = JSON.parse(body);
       if (!productId) { res.writeHead(400); res.end(JSON.stringify({ error: 'productId manquant' })); return; }
 
       console.log(`\n📊 LIVRABLE MARCHÉ — ${brief.marque || '?'} / ${brief.produit || '?'} (produit ${productId})`);
@@ -3806,7 +3827,10 @@ if (req.method === 'POST' && req.url === '/livrable-marche') {
 
       const prompt = `SYNTHÈSE S0→S7 COMPLÈTE ET FRAÎCHE :\n${synthese}\n\nBRIEF : marque=${brief.marque||''}, produit=${brief.produit||''}, pays=${brief.pays||''}\n\nExtrais TOUS les angles présents dans le S2 de cette synthèse, peu importe leur nombre.`;
 
-      const texteReponse = await callGeminiPro(systemPrompt, [{ type: 'text', text: prompt }], 6000, { temperature: 0.4, thinkingBudget: 16384, logLabel: 'Livrable Marché', timeoutMs: 150000 });
+      const texteReponse = await callGeminiPro(systemPrompt, [{ type: 'text', text: prompt }], 6000, {
+        temperature: 0.4, thinkingBudget: 16384, logLabel: 'Livrable Marché', timeoutMs: 150000,
+        typeAppel: isTest ? 'livrable_marche_test' : 'livrable_marche_prod'
+      });
 
       const raw = texteReponse.replace(/```json|```/g, '').trim();
       const a = raw.indexOf('{'), b = raw.lastIndexOf('}');
