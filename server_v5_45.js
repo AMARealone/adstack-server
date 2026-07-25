@@ -3457,6 +3457,22 @@ if (req.method === 'POST' && req.url === '/chat') {
       const userMarket = [...new Set(products.map(p => p.pays).filter(Boolean))].join(', ') || 'non précisé';
       const today = new Date().toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
 
+      // ── Résumé du contenu réel par produit — nécessaire pour qu'Ava puisse répondre à des
+      // questions factuelles ("combien de créatives j'ai", "quels angles pour ce produit") sans
+      // jamais voir les images elles-mêmes (juste les comptages et les textes déjà écrits). ──
+      const contentSummary = products.slice(0,5).map(p => {
+        const nbCreatives = (p.creatives || []).length;
+        const angleSource = (p.marche?.angles?.length ? p.marche.angles : null);
+        let anglesTxt = 'aucun angle livré pour l\'instant';
+        if (angleSource) {
+          anglesTxt = angleSource.map((a,i) => `  ${i+1}. "${a.nom}" — ${a.formulation_simple || a.moteur || 'sans détail'}`).join('\n');
+        } else if (p.deliveries?.length) {
+          const allAngles = p.deliveries.flatMap(d => d.angles || []);
+          anglesTxt = allAngles.map((a,i) => `  ${i+1}. "${a.nom}"`).join('\n');
+        }
+        return `PRODUIT "${p.nom}" :\n- ${nbCreatives} créative(s) dans la Galerie\n- Angles marketing livrés :\n${anglesTxt}`;
+      }).join('\n\n');
+
       const SYSTEM = `Tu es Ava, l'assistante d'AdStack — agence d'images publicitaires Meta Ads pour vendeurs en ligne.
 
 DATE DU JOUR : ${today}. Utilise toujours cette date comme référence — ne suppose jamais une autre année.
@@ -3467,6 +3483,14 @@ ${situationAction}
 Dès qu'on te demande "comment avoir mes images / comment ça marche / je fais quoi maintenant", c'est CETTE ligne
 qui donne la bonne réponse — pas une réponse générique sur les plans. Relis-la avant de répondre à ce type de question.
 ━━━━━━━━━━━━━━━
+
+CONTENU RÉEL DÉJÀ LIVRÉ PAR PRODUIT (pour répondre aux questions factuelles — "combien de créatives j'ai",
+"quels angles pour tel produit", etc.) :
+${contentSummary || 'Aucun produit avec du contenu livré pour l\'instant.'}
+
+⚠️ RÈGLE ABSOLUE SUR LES ANGLES MARKETING — À LIRE ATTENTIVEMENT :
+Tu peux UNIQUEMENT parler des angles listés ci-dessus, EXACTEMENT tels qu'ils sont écrits — jamais en inventer, jamais en deviner un qui n'y est pas. Si une personne te demande "pourquoi vous avez choisi tel angle pour moi" ET que cet angle existe dans la liste ci-dessus : tu peux expliquer brièvement, simplement, en t'appuyant sur ce qui est écrit (le "moteur"/la formulation fournie) — comme un résumé factuel, pas une improvisation d'expert.
+Si un produit n'a AUCUN angle livré pour l'instant ("aucun angle livré pour l'instant" ci-dessus) : ne dis JAMAIS "on va faire tel angle" ni ne propose de nom d'angle toi-même, comme si tu décidais ou anticipais un choix — ce n'est pas ton rôle, c'est l'équipe qui choisit les angles, et tu n'y as pas accès avant qu'ils soient réellement livrés. Dis simplement que les angles arriveront avec les prochains visuels.
 
 CONTEXTE UTILISATEUR (détails à l'appui de la situation ci-dessus)
 - Statut : ${isConnected ? 'Connecté (' + user?.email + ')' : 'Non connecté'}
@@ -3604,48 +3628,55 @@ if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/cancel$/)) {
   return;
 }
 
-// POST /commandes/:id/delete — suppression depuis Factory
+// POST /commandes/:id/delete — suppression depuis Factory (backend) OU auto-annulation client
 if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/delete$/)) {
   const id = req.url.split('/')[2];
-  try {
-    // Lire le ticket AVANT suppression — pour notifier le client et connaître son produit.
-    const briefs = await loadBriefs();
-    const brief = briefs.find(b => b.id === id);
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', async () => {
+    let source = null;
+    try { source = JSON.parse(body || '{}').source || null; } catch(e) {}
+    try {
+      // Lire le ticket AVANT suppression — pour notifier le client et connaître son produit.
+      const briefs = await loadBriefs();
+      const brief = briefs.find(b => b.id === id);
 
-    await fetch(`${SUPABASE_URL_INT}/rest/v1/commandes?id=eq.${id}`, {
-      method: 'DELETE',
-      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
-    });
-
-    if (brief) {
-      // Cause profonde corrigée : le ticket disparaissait de Factory ET d'AdBoard sans que le
-      // client soit prévenu — sa commande semblait juste s'évaporer. On utilise un statut dédié
-      // (pas "cancelled", qui est réservé aux annulations CLIENT et filtré du suivi actif côté
-      // AdBoard) pour que le suivi affiche clairement qu'un problème est survenu.
-      await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${id}`, {
-        method: 'PATCH',
-        headers: {
-          apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-          'Content-Type': 'application/json', Prefer: 'return=minimal'
-        },
-        body: JSON.stringify({ status: 'probleme_agence' })
+      await fetch(`${SUPABASE_URL_INT}/rest/v1/commandes?id=eq.${id}`, {
+        method: 'DELETE',
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
       });
-      const userId = brief.client?.user_id;
-      if (userId) {
-        await notifyUserBoth(userId, {
-          title: '⚠️ Un souci est survenu avec ta commande',
-          body: `On a rencontré un problème avec ta demande pour ${brief.product?.nom || 'ton produit'} — n'hésite pas à repasser une nouvelle demande, ou à nous contacter.`,
-          url: '/adboard/tracking',
-          type: 'brief',
-        });
-      }
-    }
 
-    res.writeHead(200, {'Content-Type':'application/json'});
-    res.end(JSON.stringify({ ok: true }));
-  } catch(e) {
-    res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
-  }
+      // Cause profonde corrigée : le client recevait DEUX notifications à sa propre annulation —
+      // la confirmation normale (déclenchée côté AdBoard) PUIS celle-ci ("un problème est survenu"),
+      // pensée uniquement pour le cas où NOUS supprimons un ticket en backend sans que le client le
+      // sache. Le client qui annule lui-même sait déjà pourquoi — on ne touche ni son statut
+      // (déjà mis à 'cancelled' côté AdBoard) ni ne lui envoie cette notification dans ce cas.
+      if (brief && source !== 'client_cancel') {
+        await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${id}`, {
+          method: 'PATCH',
+          headers: {
+            apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+            'Content-Type': 'application/json', Prefer: 'return=minimal'
+          },
+          body: JSON.stringify({ status: 'probleme_agence' })
+        });
+        const userId = brief.client?.user_id;
+        if (userId) {
+          await notifyUserBoth(userId, {
+            title: '⚠️ Un souci est survenu avec ta commande',
+            body: `On a rencontré un problème avec ta demande pour ${brief.product?.nom || 'ton produit'} — n'hésite pas à repasser une nouvelle demande, ou à nous contacter.`,
+            url: '/adboard/tracking',
+            type: 'brief',
+          });
+        }
+      }
+
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok: true }));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+  });
   return;
 }
 
@@ -3713,6 +3744,38 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
   } catch(e) {
     res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
   }
+  return;
+}
+
+// POST /products/:id/delete-creatives — suppression de créatives depuis la Galerie AdBoard
+if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/delete-creatives$/)) {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', async () => {
+    try {
+      const productId = req.url.split('/')[2];
+      const { creativeIds } = JSON.parse(body);
+      if (!Array.isArray(creativeIds) || !creativeIds.length) { res.writeHead(400); res.end(JSON.stringify({error:'creativeIds requis'})); return; }
+
+      const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=creatives`, {
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+      });
+      const prRows = await prRes.json();
+      const existing = prRows?.[0]?.creatives || [];
+      const remaining = existing.filter(c => !creativeIds.includes(c.id));
+
+      await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
+        method: 'PATCH',
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ creatives: remaining })
+      });
+
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok: true, removed: existing.length - remaining.length }));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+  });
   return;
 }
 
