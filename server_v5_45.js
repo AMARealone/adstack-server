@@ -2912,6 +2912,8 @@ Après le nom, sur une DEUXIÈME ligne, ajoute le mécanisme psychologique princ
             couleurs: [data.product.couleur1, data.product.couleur2, data.product.couleur3].filter(Boolean),
             photo_url: data.product.photo_url,
             photo_base64: data.product.photo_base64 || null,
+            lien_page_produit: data.product.lien_page_produit || null,
+            marque: data.product.marque || null,
           },
           quantity: data.quantity || 9,
           history: data.history || { angles_used: [], personas_used: [], batches_count: 0 },
