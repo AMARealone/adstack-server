@@ -3931,7 +3931,10 @@ if (req.method === 'POST' && req.url === '/livrable-marche') {
 
       console.log(`\n📊 LIVRABLE MARCHÉ — ${brief.marque || '?'} / ${brief.produit || '?'} (produit ${productId})`);
 
-      // Lire l'état actuel AVANT d'appeler l'agent, pour connaître les angles déjà stockés
+      // Lire l'état actuel — juste pour savoir quels angles sont déjà connus (fusion), PAS
+      // d'écriture ici. Cause profonde évitée : écrire products.marche à la génération enverrait
+      // la donnée au client avant validation — cette étape reste "brouillon" côté Factory tant que
+      // "Envoyer au client" n'a pas été cliqué (même principe que creatives/copies).
       const rProd = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=marche`, {
         headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
       });
@@ -3958,7 +3961,7 @@ if (req.method === 'POST' && req.url === '/livrable-marche') {
         ...nouveauxAngles.map(ang => ({ ...ang, id: `angle_${Date.now()}_${Math.random().toString(36).slice(2,7)}`, date_ajout: new Date().toISOString() })),
       ];
 
-      const marcheMisAJour = {
+      const marcheCalcule = {
         positionnement: livrable.positionnement,
         persona: livrable.persona,
         insights: livrable.insights,
@@ -3966,24 +3969,9 @@ if (req.method === 'POST' && req.url === '/livrable-marche') {
         derniere_maj: new Date().toISOString(),
       };
 
-      const rWrite = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': SUPABASE_SERVICE_KEY,
-          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-          'Prefer': 'return=minimal',
-        },
-        body: JSON.stringify({ marche: marcheMisAJour })
-      });
-      if (!rWrite.ok) {
-        const errText = await rWrite.text();
-        throw new Error(`Écriture Supabase échouée : ${errText.slice(0,300)}`);
-      }
-
-      console.log(`✅ Livrable marché écrit — ${nouveauxAngles.length} nouvel(aux) angle(s), ${anglesFusionnes.length} au total pour ce produit`);
+      console.log(`✅ Livrable marché calculé (brouillon, pas encore écrit) — ${nouveauxAngles.length} nouvel(aux) angle(s), ${anglesFusionnes.length} au total pour ce produit`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, marche: marcheMisAJour, nouveaux_angles: nouveauxAngles.length }));
+      res.end(JSON.stringify({ ok: true, marche: marcheCalcule, nouveaux_angles: nouveauxAngles.length }));
     } catch(e) {
       console.error('✗ livrable-marche error:', e.message);
       res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -4749,15 +4737,20 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables) {
       hooks: copy?.hooks || [], description: copy?.description || ''
     }));
 
+    const patchBody = {
+      creatives: [...existingCreatives, ...newCreatives],
+      deliveries: [...existingDeliveries, { semaine: weekLabel, date: dateLabel, angles: angleEntries }]
+    };
+    // Données Marché — calculées en brouillon à la génération (voir /livrable-marche), écrites
+    // pour de vrai seulement maintenant, au moment où le client doit réellement les voir.
+    if (deliverables.marche) patchBody.marche = deliverables.marche;
+
     await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
       method: 'PATCH',
       headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-      body: JSON.stringify({
-        creatives: [...existingCreatives, ...newCreatives],
-        deliveries: [...existingDeliveries, { semaine: weekLabel, date: dateLabel, angles: angleEntries }]
-      })
+      body: JSON.stringify(patchBody)
     });
-    console.log(`[Deliver] ✅ ${newCreatives.length} créative(s) + ${angleEntries.length} angle(s) poussés vers products/${productId}`);
+    console.log(`[Deliver] ✅ ${newCreatives.length} créative(s) + ${angleEntries.length} angle(s)${deliverables.marche ? ' + données marché' : ''} poussés vers products/${productId}`);
   } catch(e) {
     console.error('[Deliver] Push vers products échoué :', e.message);
   }
