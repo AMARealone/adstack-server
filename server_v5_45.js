@@ -3598,17 +3598,129 @@ if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/cancel$/)) {
 // POST /commandes/:id/delete — suppression depuis Factory
 if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/delete$/)) {
   const id = req.url.split('/')[2];
-  // saveBriefs ne fait qu'un upsert — une vraie suppression nécessite un DELETE Supabase direct
   try {
+    // Lire le ticket AVANT suppression — pour notifier le client et connaître son produit.
+    const briefs = await loadBriefs();
+    const brief = briefs.find(b => b.id === id);
+
     await fetch(`${SUPABASE_URL_INT}/rest/v1/commandes?id=eq.${id}`, {
       method: 'DELETE',
       headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
     });
+
+    if (brief) {
+      // Cause profonde corrigée : le ticket disparaissait de Factory ET d'AdBoard sans que le
+      // client soit prévenu — sa commande semblait juste s'évaporer. On utilise un statut dédié
+      // (pas "cancelled", qui est réservé aux annulations CLIENT et filtré du suivi actif côté
+      // AdBoard) pour que le suivi affiche clairement qu'un problème est survenu.
+      await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: {
+          apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'Content-Type': 'application/json', Prefer: 'return=minimal'
+        },
+        body: JSON.stringify({ status: 'probleme_agence' })
+      });
+      const userId = brief.client?.user_id;
+      if (userId) {
+        await notifyUserBoth(userId, {
+          title: '⚠️ Un souci est survenu avec ta commande',
+          body: `On a rencontré un problème avec ta demande pour ${brief.product?.nom || 'ton produit'} — n'hésite pas à repasser une nouvelle demande, ou à nous contacter.`,
+          url: '/adboard/tracking',
+          type: 'brief',
+        });
+      }
+    }
+
     res.writeHead(200, {'Content-Type':'application/json'});
     res.end(JSON.stringify({ ok: true }));
   } catch(e) {
     res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
   }
+  return;
+}
+
+// GET /users/search?q=... — recherche par email (sous-chaîne), pour l'envoi manuel de livrables
+// depuis la vue Production. Fonctionne même pour un compte sans forfait (juste email connecté).
+if (req.method === 'GET' && req.url.startsWith('/users/search')) {
+  try {
+    const q = new URL(req.url, 'http://x').searchParams.get('q') || '';
+    if (q.trim().length < 2) { res.writeHead(200,{'Content-Type':'application/json'}); res.end('[]'); return; }
+    const r = await fetch(`${SUPABASE_URL_INT}/auth/v1/admin/users?per_page=1000`, {
+      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+    });
+    const data = await r.json();
+    const needle = q.trim().toLowerCase();
+    const results = (data?.users || [])
+      .filter(u => (u.email || '').toLowerCase().includes(needle))
+      .slice(0, 20)
+      .map(u => ({ id: u.id, email: u.email }));
+    res.writeHead(200, {'Content-Type':'application/json'});
+    res.end(JSON.stringify(results));
+  } catch(e) {
+    res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+  }
+  return;
+}
+
+// GET /users/:id/products — produits existants d'un compte, pour choisir où livrer manuellement
+if (req.method === 'GET' && req.url.match(/^\/users\/[^/]+\/products$/)) {
+  try {
+    const userId = req.url.split('/')[2];
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?user_id=eq.${userId}&select=id,nom`, {
+      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+    });
+    const products = await r.json();
+    res.writeHead(200, {'Content-Type':'application/json'});
+    res.end(JSON.stringify(products));
+  } catch(e) {
+    res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+  }
+  return;
+}
+
+// POST /manual-deliver — envoi manuel des livrables d'une production vers un compte choisi,
+// indépendamment du ticket/de la commande d'origine. Crée le produit chez le client si besoin
+// (compte sans forfait encore pris — cas explicitement demandé).
+if (req.method === 'POST' && req.url === '/manual-deliver') {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', async () => {
+    try {
+      const { userId, productId, newProductName, deliverables, ticketId } = JSON.parse(body);
+      if (!userId || !deliverables) { res.writeHead(400); res.end(JSON.stringify({error:'userId et deliverables requis'})); return; }
+
+      let targetProductId = productId;
+      if (!targetProductId) {
+        if (!newProductName) { res.writeHead(400); res.end(JSON.stringify({error:'productId ou newProductName requis'})); return; }
+        const createRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products`, {
+          method: 'POST',
+          headers: {
+            apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+            'Content-Type': 'application/json', Prefer: 'return=representation'
+          },
+          body: JSON.stringify({ user_id: userId, nom: newProductName, creatives: [], deliveries: [] })
+        });
+        const created = await createRes.json();
+        targetProductId = created?.[0]?.id;
+        if (!targetProductId) throw new Error('Création du produit échouée côté AdBoard');
+      }
+
+      await pushDeliverablesToProduct(targetProductId, ticketId || ('manuel-' + Date.now()), deliverables);
+
+      await notifyUserBoth(userId, {
+        title: '🎉 Nouveaux visuels disponibles',
+        body: 'De nouveaux visuels viennent d\'être ajoutés à ton compte — va y jeter un œil.',
+        url: '/adboard/gallery',
+        type: 'brief',
+      });
+
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok: true, productId: targetProductId }));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+  });
   return;
 }
 
