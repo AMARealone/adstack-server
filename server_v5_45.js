@@ -431,7 +431,12 @@ async function callGeminiPro(systemPrompt, contentBlocks, maxOutputTokens, optio
   const data = await vertexRequest(token, 'gemini-2.5-pro', geminiBody, timeoutMs, typeAppel);
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
   const cand = data.candidates?.[0];
-  const text = (cand?.content?.parts || []).map(p => p.text).filter(Boolean).join('\n');
+  // Cause profonde corrigée (texte dupliqué/tronqué au milieu d'une phrase dans les Ad Copies) :
+  // avec thinkingConfig activé, Gemini peut renvoyer plusieurs "parts" dans le même candidat — le
+  // brouillon de raisonnement interne (part.thought === true) ET la réponse finale. Les joindre
+  // toutes sans distinction concatène le brouillon (souvent une quasi-répétition du texte final)
+  // avec la réponse elle-même. On ne garde désormais que les parts qui ne sont PAS du thinking.
+  const text = (cand?.content?.parts || []).filter(p => !p.thought).map(p => p.text).filter(Boolean).join('\n');
 
   // ── Log diagnostic (Vague 1.3) — visibilité sur le raisonnement réel de Gemini, absente jusqu'ici ──
   const finishReason = cand?.finishReason || 'inconnu';
@@ -1815,7 +1820,7 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
           if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
           const cand = data.candidates?.[0];
-          const text = (cand?.content?.parts || []).map(p => p.text).filter(Boolean).join('\n');
+          const text = (cand?.content?.parts || []).filter(p => !p.thought).map(p => p.text).filter(Boolean).join('\n');
           const queries = cand?.groundingMetadata?.webSearchQueries || [];
           const sources = (cand?.groundingMetadata?.groundingChunks || [])
             .map(c => c.web?.uri).filter(Boolean);
@@ -2479,7 +2484,7 @@ Format exact (copie exactement ce style) : ["ct_xxx", "ct_yyy", "ct_zzz"]`;
         const data = await vertexRequest(token, 'gemini-2.5-flash', geminiBody);
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
-        const raw = (data.candidates?.[0]?.content?.parts || []).map(p => p.text).join('').trim();
+        const raw = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).join('').trim();
         console.log('  → Réponse brute (' + raw.length + ' chars) : ' + raw.slice(0, 200));
 
         // ── Parsing multi-tentatives ──────────────────────────────────────────
@@ -2613,7 +2618,7 @@ Après le nom, sur une DEUXIÈME ligne, ajoute le mécanisme psychologique princ
         const data = await vertexRequest(token, 'gemini-2.5-flash', geminiBody);
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
-        const raw = (data.candidates?.[0]?.content?.parts || []).map(p => p.text).join('').trim();
+        const raw = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).join('').trim();
         const lignes = raw.split('\n').map(l => l.trim()).filter(Boolean);
         const clean = (lignes[0] || '').replace(/^["'«»\-]|["'«»]$/g, '').substring(0, 70);
         const meta = (lignes[1] || '').replace(/^["'«»\-]|["'«»]$/g, '').substring(0, 60);
