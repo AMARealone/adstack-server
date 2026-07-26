@@ -2987,6 +2987,27 @@ Après le nom, sur une DEUXIÈME ligne, ajoute le mécanisme psychologique princ
     return;
   }
 
+  // POST /commandes/:id/generation-started — marque le VRAI démarrage de la génération (appelé
+  // depuis prodv2Launch, au moment où les appels API partent réellement), distinct de /start qui
+  // se déclenche dès l'OUVERTURE du ticket dans Factory (même sans jamais cliquer "Lancer").
+  // Cause profonde corrigée : le contrôle "commande active ailleurs" se basait sur /start, donc un
+  // ticket simplement ouvert puis abandonné bloquait indéfiniment tout renouvellement futur sur ce
+  // produit, alors qu'aucune génération n'avait jamais réellement tourné.
+  if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/generation-started$/)) {
+    const id = req.url.split('/')[2];
+    const briefs = await loadBriefs();
+    const idx = briefs.findIndex(b => b.id === id);
+    if (idx >= 0) {
+      briefs[idx].generation_started_at = new Date().toISOString();
+      await saveBriefs([briefs[idx]]);
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok: true }));
+    } else {
+      res.writeHead(404); res.end(JSON.stringify({ error: 'Brief not found' }));
+    }
+    return;
+  }
+
 // POST /create-checkout — crée une session Chariow et retourne l'URL
 if (req.method === 'POST' && req.url === '/create-checkout') {
   let body = '';
@@ -3743,7 +3764,16 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
 
     // Une commande encore en cours pour ce même produit ailleurs ? (bloque le renouvellement)
     const briefs = await loadBriefs();
-    const commandeActiveAilleurs = briefs.some(b => b.product?.id === productId && b.status === 'in_production');
+    // Fenêtre de sécurité : une génération réellement en cours dure au maximum ~15-20min pour un
+    // gros batch. Au-delà, on considère que c'est une génération interrompue (crash navigateur,
+    // fermeture d'onglet) plutôt que de bloquer indéfiniment un renouvellement légitime.
+    const FENETRE_GENERATION_ACTIVE_MS = 25 * 60 * 1000;
+    const commandeActiveAilleurs = briefs.some(b =>
+      b.product?.id === productId &&
+      b.status === 'in_production' &&
+      b.generation_started_at &&
+      (Date.now() - new Date(b.generation_started_at).getTime()) < FENETRE_GENERATION_ACTIVE_MS
+    );
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
