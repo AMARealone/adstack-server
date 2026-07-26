@@ -3704,7 +3704,9 @@ if (req.method === 'GET' && req.url.startsWith('/users/search')) {
 }
 
 // GET /products/:id/renewal-context — tout le contexte nécessaire à Factory pour décider :
-// nouvelle commande ou renouvellement, même persona ou rotation, quels CT éviter.
+// nouvelle commande ou renouvellement, même cible ou rotation, quels CT éviter, quels angles
+// ne jamais répéter. Recalculé entièrement depuis `deliveries` (source de vérité chronologique)
+// plutôt que depuis `marche.angles`, qui ne reflète plus que le dernier lot en mode remplacement.
 if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/)) {
   try {
     const productId = req.url.split('/')[2];
@@ -3718,14 +3720,26 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
     const marche = product.marche || {};
     const deliveries = product.deliveries || [];
 
-    // Angles du SEUL persona courant (ceux ajoutés depuis persona_started_at)
-    const personaStartedAt = marche.persona_started_at || null;
-    const anglesPersonaCourant = personaStartedAt
-      ? (marche.angles || []).filter(a => a.date_ajout && a.date_ajout >= personaStartedAt)
-      : (marche.angles || []);
+    // Historique COMPLET des noms d'angles, toutes cibles confondues, depuis le tout début —
+    // c'est cette liste que l'Analyste ne doit jamais reproduire, même après une rotation de cible.
+    const anglesHistorique = deliveries.flatMap(d => (d.angles || []).map(a => a.nom).filter(Boolean));
+
+    // Cible utilisée au DERNIER lot livré (nom du persona) — sert de référence pour savoir si la
+    // prochaine commande reste sur la même cible ou si le client en a imposé une nouvelle.
+    const derniereLivraison = deliveries.length ? deliveries[deliveries.length - 1] : null;
+    const cibleActuelle = derniereLivraison?.cible || marche.persona?.nom || null;
+
+    // Compteur d'angles pour la cible COURANTE uniquement : on remonte les livraisons les plus
+    // récentes tant qu'elles partagent le même nom de cible que la dernière.
+    let nbAnglesCibleCourante = 0;
+    for (let i = deliveries.length - 1; i >= 0; i--) {
+      const d = deliveries[i];
+      if ((d.cible || null) !== cibleActuelle) break;
+      nbAnglesCibleCourante += (d.angles || []).length;
+    }
 
     // CT utilisés au dernier lot livré pour ce produit
-    const ctsUtilisesDernierLot = deliveries.length ? (deliveries[deliveries.length - 1].cts_utilises || []) : [];
+    const ctsUtilisesDernierLot = derniereLivraison?.cts_utilises || [];
 
     // Une commande encore en cours pour ce même produit ailleurs ? (bloque le renouvellement)
     const briefs = await loadBriefs();
@@ -3735,9 +3749,10 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
     res.end(JSON.stringify({
       estRenouvellement: !!product.derniere_synthese,
       syntheseExistante: product.derniere_synthese || null,
-      personaActuel: marche.persona || null,
-      nbAnglesPersonaCourant: anglesPersonaCourant.length,
-      rotationNecessaire: anglesPersonaCourant.length >= SEUIL_ANGLES_AVANT_ROTATION,
+      cibleActuelle,
+      anglesHistorique,
+      nbAnglesCibleCourante,
+      rotationNecessaire: nbAnglesCibleCourante >= SEUIL_ANGLES_AVANT_ROTATION,
       ctsUtilisesDernierLot,
       commandeActiveAilleurs,
     }));
@@ -4860,7 +4875,11 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables) {
 
     const patchBody = {
       creatives: [...existingCreatives, ...newCreatives],
-      deliveries: [...existingDeliveries, { semaine: weekLabel, date: dateLabel, angles: angleEntries, cts_utilises: ctsUtilisesCeLot }],
+      // created_at (ISO, fiable pour comparaison chronologique) + cible (nom du persona utilisé
+      // pour ce lot) — nécessaires pour calculer, à la demande, le compteur d'angles de la cible
+      // COURANTE uniquement, et la liste complète d'angles à exclure (mode remplacement, plus
+      // d'accumulation dans la synthèse elle-même).
+      deliveries: [...existingDeliveries, { semaine: weekLabel, date: dateLabel, created_at: new Date().toISOString(), cible: deliverables.marche?.persona?.nom || null, angles: angleEntries, cts_utilises: ctsUtilisesCeLot }],
       // Dernière synthèse complète — nécessaire pour qu'une future commande sur ce même produit
       // puisse reprendre le même persona (ajout d'angles) plutôt que de repartir de zéro.
       derniere_synthese: deliverables.synthesis || undefined,
