@@ -4804,7 +4804,10 @@ async function uploadCreativeImage(base64Data, mime, filename) {
   const objPath = `creatives/${filename}.${ext}`;
   const r = await fetch(`${SUPABASE_URL_INT}/storage/v1/object/demos/${objPath}`, {
     method: 'POST',
-    headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': mime, 'x-upsert': 'true' },
+    // Cause profonde corrigée (rechargement perçu de la Galerie) : sans cache-control explicite,
+    // Supabase applique sa valeur par défaut (courte) — le navigateur doit re-télécharger l'image
+    // après expiration. Ces créatives ne changent jamais une fois générées : cache long + immutable.
+    headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': mime, 'x-upsert': 'true', 'Cache-Control': 'public, max-age=31536000, immutable' },
     body: buffer
   });
   if (!r.ok) throw new Error(`Upload créative échoué : HTTP ${r.status}`);
