@@ -952,7 +952,12 @@ async function findUserByEmail(email) {
 const server = http.createServer(async (req, res) => {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  // Cause profonde corrigée ("Failed to fetch" sur la suppression d'une carte démo dans
+  // Factory) : DELETE n'était pas dans la liste des méthodes autorisées — le navigateur
+  // rejette la requête au niveau CORS avant même qu'elle atteigne le serveur, quel que soit
+  // l'état du serveur (endormi ou non). PATCH ajouté aussi par précaution, déjà utilisé
+  // ailleurs (CRM, AdBoard) et sujet au même risque.
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS, DELETE, PATCH');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, ngrok-skip-browser-warning, Authorization, X-Api-Key');
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
@@ -4077,73 +4082,6 @@ if (req.method === 'GET' && req.url === '/crm/utilisateurs') {
   return;
 }
 
-// POST /livrable-marche — 4e agent production : réécrit la synthèse S0→S7 en langage simple
-// pour le client, et l'écrit directement dans son compte AdBoard (produits.marche).
-// L'agent lit TOUTE la synthèse fraîche et en extrait TOUS les angles qui s'y trouvent (peu
-// importe le nombre — 3, 6, 12...). La fusion avec ce qui existe déjà se fait ICI, en code
-// (comparaison de noms), jamais par l'IA qui n'a pas de mémoire fiable d'un appel à l'autre :
-// un angle dont le nom correspond déjà à un angle stocké est ignoré (déjà connu), les autres
-// sont ajoutés. Positionnement et persona sont remplacés à chaque fois (dernière compréhension,
-// potentiellement affinée par une synthèse plus récente).
-if (req.method === 'POST' && req.url === '/livrable-marche') {
-  let body = '';
-  req.on('data', c => body += c);
-  req.on('end', async () => {
-    try {
-      const { synthese, brief = {}, productId, systemPrompt, isTest } = JSON.parse(body);
-      if (!productId) { res.writeHead(400); res.end(JSON.stringify({ error: 'productId manquant' })); return; }
-
-      console.log(`\n📊 LIVRABLE MARCHÉ — ${brief.marque || '?'} / ${brief.produit || '?'} (produit ${productId})`);
-
-      // Lire l'état actuel — juste pour savoir quels angles sont déjà connus (fusion), PAS
-      // d'écriture ici. Cause profonde évitée : écrire products.marche à la génération enverrait
-      // la donnée au client avant validation — cette étape reste "brouillon" côté Factory tant que
-      // "Envoyer au client" n'a pas été cliqué (même principe que creatives/copies).
-      const rProd = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=marche`, {
-        headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
-      });
-      const prodRows = await rProd.json();
-      const marcheActuel = prodRows?.[0]?.marche || { angles: [] };
-      const nomsAnglesConnus = (marcheActuel.angles || []).map(a => (a.nom || '').toLowerCase().trim());
-
-      const prompt = `SYNTHÈSE S0→S7 COMPLÈTE ET FRAÎCHE :\n${synthese}\n\nBRIEF : marque=${brief.marque||''}, produit=${brief.produit||''}, pays=${brief.pays||''}\n\nExtrais TOUS les angles présents dans le S2 de cette synthèse, peu importe leur nombre.`;
-
-      const texteReponse = await callGeminiPro(systemPrompt, [{ type: 'text', text: prompt }], 6000, {
-        temperature: 0.4, thinkingBudget: 16384, logLabel: 'Livrable Marché', timeoutMs: 150000,
-        typeAppel: isTest ? 'livrable_marche_test' : 'livrable_marche_prod'
-      });
-
-      const raw = texteReponse.replace(/```json|```/g, '').trim();
-      const a = raw.indexOf('{'), b = raw.lastIndexOf('}');
-      const livrable = JSON.parse(raw.slice(a, b + 1));
-
-      // Fusion des angles — en code, jamais laissé à la mémoire de l'IA
-      const anglesExtraits = livrable.angles || [];
-      const nouveauxAngles = anglesExtraits.filter(ang => !nomsAnglesConnus.includes((ang.nom || '').toLowerCase().trim()));
-      const anglesFusionnes = [
-        ...(marcheActuel.angles || []),
-        ...nouveauxAngles.map(ang => ({ ...ang, id: `angle_${Date.now()}_${Math.random().toString(36).slice(2,7)}`, date_ajout: new Date().toISOString() })),
-      ];
-
-      const marcheCalcule = {
-        positionnement: livrable.positionnement,
-        persona: livrable.persona,
-        insights: livrable.insights,
-        angles: anglesFusionnes,
-        derniere_maj: new Date().toISOString(),
-      };
-
-      console.log(`✅ Livrable marché calculé (brouillon, pas encore écrit) — ${nouveauxAngles.length} nouvel(aux) angle(s), ${anglesFusionnes.length} au total pour ce produit`);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, marche: marcheCalcule, nouveaux_angles: nouveauxAngles.length }));
-    } catch(e) {
-      console.error('✗ livrable-marche error:', e.message);
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: e.message }));
-    }
-  });
-  return;
-}
 
 // GET /setup-templates — remplit la table templates avec le contenu actuel (emails + notifications),
 // à lancer UNE SEULE FOIS pour migrer ce qui était codé en dur vers un espace modifiable par le CRM.
