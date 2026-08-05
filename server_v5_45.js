@@ -2737,10 +2737,13 @@ Après le nom, sur une DEUXIÈME ligne, ajoute le mécanisme psychologique princ
         } catch(e) { niche = produit.split(' ')[0] || ''; }
 
         // Remplissage local du template — 100% fiable, zéro hallucination
+        // Astérisques autour de [lien_demo] retirées avant insertion : une URL entourée de
+        // *...* (gras WhatsApp) sans espace de séparation perturbe l'auto-détection de lien —
+        // même cause identifiée côté relances du CRM (caractères parasites, lien tronqué).
         const message = (tpl || '')
           .replace(/\[Niche\]/gi, niche)
           .replace(/\[Pays(?:[^\]]*)\]/gi, paysAdj)
-          .replace(/\[lien_demo\]/gi, lien_demo)
+          .replace(/\*?\[lien_demo\]\*?/gi, lien_demo)
           .replace(/\[Produit\]/gi, produit || '[Produit]')
           .replace(/\[nom marque\]/gi, marque || '')
           .replace(/\\n/g, '\n');
