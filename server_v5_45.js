@@ -2628,7 +2628,13 @@ Sur une QUATRIÈME ligne, ajoute 1 à 3 balises de style/émotion pertinentes s�
             { inlineData: { mimeType: mime || 'image/jpeg', data: b64 } },
             { text: 'Génère le nom précis de ce Creative Template (ligne 1), son mécanisme psychologique principal (ligne 2), ses niveaux de conscience compatibles (ligne 3), puis ses balises de style/émotion (ligne 4). Sois très descriptif et spécifique.' }
           ]}],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 500 }
+          // Cause profonde corrigée (meta/awareness/style toujours vides, nom parfois tronqué
+          // en plein mot) : aucun thinkingConfig n'était fixé — Gemini consommait une partie du
+          // budget de sortie (500 tokens) pour "réfléchir" en interne avant de répondre, ne
+          // laissant presque rien pour écrire les 4 lignes demandées. Tâche de classification
+          // simple, la réflexion n'apporte rien ici — désactivée, comme pour les autres appels
+          // légers du même type dans ce fichier (Quality Check Photo, filtres langue, etc.).
+          generationConfig: { temperature: 0.2, maxOutputTokens: 400, thinkingConfig: { thinkingBudget: 0 } }
         };
 
         const data = await vertexRequest(token, 'gemini-2.5-flash', geminiBody);
