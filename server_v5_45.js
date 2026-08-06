@@ -2399,10 +2399,15 @@ HARD LOCKS :
 
         const token = await getToken();
         // Inclut les méta-tags/description si présents — sinon juste le nom (rétrocompatible
-        // avec les CT pas encore enrichis).
-        const ctListText = ctList.map((ct, i) =>
-          `${i+1}. ID: ${ct.id} → "${ct.name}"${ct.meta ? ` — ${ct.meta}` : ''}`
-        ).join('\n');
+        // avec les CT pas encore enrichis). Les balises explicites (niveau de conscience,
+        // style) priment sur la déduction visuelle quand elles existent — plus fiable qu'un
+        // jugement refait à chaque sélection.
+        const ctListText = ctList.map((ct, i) => {
+          let ligne = `${i+1}. ID: ${ct.id} → "${ct.name}"${ct.meta ? ` — ${ct.meta}` : ''}`;
+          if (ct.awareness && ct.awareness.length) ligne += ` [conscience balisée: ${ct.awareness.join('/')}]`;
+          if (ct.styleTags && ct.styleTags.length) ligne += ` [style: ${ct.styleTags.join(',')}]`;
+          return ligne;
+        }).join('\n');
         const synthExcerpt = (synthesis || '').substring(0, 3500);
 
         // Tolérance de redondance par volume — préparation pour les futurs batchs 18/36.
@@ -2440,6 +2445,8 @@ RÈGLES D'ADAPTATION PAR NIVEAU DE CONSCIENCE (à l'intérieur de chaque groupe 
 - Position 1 (Solution Aware) : storytelling, lifestyle, comparaison douce aux solutions connues — produit peu ou pas visible
 - Position 2 (Product Aware) : comparatifs, témoignages, preuves sociales, screenshots, produit visible
 - Position 3 (Most Aware) : hero produit, offre/prix, urgence, CTA direct
+
+PRIORITÉ AUX BALISES EXPLICITES : si un CT porte une balise "[conscience balisée: ...]", respecte-la STRICTEMENT plutôt que de rejuger visuellement — c'est une donnée pré-établie, plus fiable qu'une déduction refaite à chaque sélection. Un CT balisé "most" seul (sans "solution" ni "product") ne doit JAMAIS être choisi pour les positions 1 ou 2. Un CT balisé "product,most" peut aller en position 2 ou 3. Pour les CT sans balise de conscience (pas encore enrichis), continue à juger visuellement comme avant.
 
 RÈGLES DE CONTEXTUALISATION (après diversification) :
 - Adapte au TYPE DE PRODUIT identifié dans la synthèse (santé, beauté, fitness, food, tech, mode...)
@@ -2609,13 +2616,17 @@ EXEMPLES PARFAITS (modèle à suivre) :
 "Plein-cadre produit vert/blanc — flacon centré grand format + liste 4 bénéfices gauche + marque haut"
 "Grille 3 vignettes blanc — 3 photos usage quotidien + légende sous chaque + CTA bas centre"
 
-Après le nom, sur une DEUXIÈME ligne, ajoute le mécanisme psychologique principal que ce CT semble utiliser pour convaincre — en 3-6 mots maximum, parmi (ou proche de) : preuve sociale, comparaison concurrentielle, aspiration lifestyle, urgence/offre, autorité/expertise, transformation avant-après, dramatisation du problème, réassurance/garantie.` }] };
+Après le nom, sur une DEUXIÈME ligne, ajoute le mécanisme psychologique principal que ce CT semble utiliser pour convaincre — en 3-6 mots maximum, parmi (ou proche de) : preuve sociale, comparaison concurrentielle, aspiration lifestyle, urgence/offre, autorité/expertise, transformation avant-après, dramatisation du problème, réassurance/garantie.
+
+Sur une TROISIÈME ligne, indique à quel(s) niveau(x) de conscience ce CT est structurellement adapté — un ou plusieurs parmi : solution, product, most. Règle importante (asymétrique) : un CT "most" (très agressif, promotionnel, prix/urgence/CTA direct visible) est RAREMENT réutilisable pour solution/product — n'indique "most" seul que si c'est clairement le cas. À l'inverse, un CT "product" (preuve/comparatif/produit visible mais pas agressif) peut souvent AUSSI convenir à "most" — indique les deux si pertinent. Un CT "solution" (storytelling, lifestyle, produit peu visible) reste généralement seul. Réponds avec les valeurs séparées par une virgule, sans autre texte (ex : "product,most" ou "solution" ou "most").
+
+Sur une QUATRIÈME ligne, ajoute 1 à 3 balises de style/émotion pertinentes séparées par une virgule, parmi (ou proche de) : luxe, humour, presse, urgence, chaleureux, minimaliste, audacieux, scientifique, communautaire, aspirationnel — ou tout autre mot précis si aucun de ceux-là ne convient vraiment. Pas de dièse, juste les mots séparés par virgule.` }] };
 
         const geminiBody = {
           systemInstruction,
           contents: [{ role: 'user', parts: [
             { inlineData: { mimeType: mime || 'image/jpeg', data: b64 } },
-            { text: 'Génère le nom précis de ce Creative Template (ligne 1), puis son mécanisme psychologique principal (ligne 2). Sois très descriptif et spécifique.' }
+            { text: 'Génère le nom précis de ce Creative Template (ligne 1), son mécanisme psychologique principal (ligne 2), ses niveaux de conscience compatibles (ligne 3), puis ses balises de style/émotion (ligne 4). Sois très descriptif et spécifique.' }
           ]}],
           generationConfig: { temperature: 0.2, maxOutputTokens: 500 }
         };
@@ -2627,9 +2638,12 @@ Après le nom, sur une DEUXIÈME ligne, ajoute le mécanisme psychologique princ
         const lignes = raw.split('\n').map(l => l.trim()).filter(Boolean);
         const clean = (lignes[0] || '').replace(/^["'«»\-]|["'«»]$/g, '').substring(0, 70);
         const meta = (lignes[1] || '').replace(/^["'«»\-]|["'«»]$/g, '').substring(0, 60);
-        console.log('  → "' + clean + '" · méta: ' + meta);
+        const AWARENESS_VALIDES = ['solution', 'product', 'most'];
+        const awareness = (lignes[2] || '').toLowerCase().split(',').map(s => s.trim()).filter(s => AWARENESS_VALIDES.includes(s));
+        const styleTags = (lignes[3] || '').split(',').map(s => s.trim().toLowerCase().replace(/^#/, '')).filter(Boolean).slice(0, 3);
+        console.log('  → "' + clean + '" · méta: ' + meta + ' · conscience: ' + awareness.join('/') + ' · style: ' + styleTags.join(','));
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ name: clean, meta: meta }));
+        res.end(JSON.stringify({ name: clean, meta: meta, awareness: awareness, styleTags: styleTags }));
       } catch(e) {
         console.error('✗ NAME-CT error:', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
