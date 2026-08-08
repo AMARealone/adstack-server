@@ -639,7 +639,7 @@ async function notifyUserBoth(userId, { title, body, url = '/adboard', type = 'i
 }
 
 // Génère une facture PDF en mémoire (Buffer)
-function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, cycle, creditsPerWeek, prixImg, priceFcfa, paymentDate, expiresAt }) {
+function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, cycle, creditsPerWeek, totalCredits, isPack, prixImg, priceFcfa, paymentDate, expiresAt }) {
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({ size: 'A4', margin: 50 });
@@ -648,9 +648,9 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      const cycleLabel = cycle === 'annual' ? 'Abonnement annuel' : 'Abonnement mensuel';
+      const cycleLabel = isPack ? 'Achat unique' : (cycle === 'annual' ? 'Abonnement annuel' : 'Abonnement mensuel');
       const weeksInPeriod = Math.round((expiresAt.getTime() - paymentDate.getTime()) / (7*24*60*60*1000));
-      const totalImages = weeksInPeriod * (creditsPerWeek || 0);
+      const totalImages = isPack ? (totalCredits || 0) : weeksInPeriod * (creditsPerWeek || 0);
 
       // Header
       doc.fontSize(22).fillColor('#5B8DEF').font('Helvetica-Bold').text('AdStack', 50, 50);
@@ -678,7 +678,7 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
       // Table row
       const rowY = tableTop + 32;
       doc.fontSize(11).fillColor('#111111').font('Helvetica-Bold').text(PLAN_LABELS[plan] || plan, 50, rowY);
-      doc.fontSize(9).fillColor('#888888').font('Helvetica').text(`${cycleLabel} — livraisons hebdomadaires`, 50, rowY + 15);
+      doc.fontSize(9).fillColor('#888888').font('Helvetica').text(isPack ? `${cycleLabel} — sans engagement` : `${cycleLabel} — livraisons hebdomadaires`, 50, rowY + 15);
       doc.fontSize(10).fillColor('#333333').text(
         `${paymentDate.toLocaleDateString('fr-FR')} → ${expiresAt.toLocaleDateString('fr-FR')}`, 320, rowY
       );
@@ -686,11 +686,16 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
         `${priceFcfa.toLocaleString('fr-FR')} FCFA`, 470, rowY, { align: 'right' }
       );
 
-      // Détail : ce que couvre cet abonnement
+      // Détail : ce que couvre cet achat/abonnement
       const detailTop = rowY + 45;
       doc.moveTo(50, detailTop - 8).lineTo(545, detailTop - 8).strokeColor('#F0F0F0').stroke();
-      doc.fontSize(9).fillColor('#666666').font('Helvetica-Bold').text('Ce que couvre cet abonnement :', 50, detailTop);
-      const detailLines = [
+      doc.fontSize(9).fillColor('#666666').font('Helvetica-Bold').text(isPack ? 'Ce que comprend cet achat :' : 'Ce que couvre cet abonnement :', 50, detailTop);
+      const detailLines = isPack ? [
+        `${totalImages} images publicitaires incluses (angles et concepts variés)`,
+        `Utilisables librement jusqu'à expiration, sur 2 produits maximum`,
+        prixImg ? `Prix moyen par image : ${prixImg.toLocaleString('fr-FR')} FCFA` : null,
+        'Analyse de marché (cibles, concurrents, tendances)',
+      ].filter(Boolean) : [
         `${creditsPerWeek || 0} images publicitaires livrées chaque semaine`,
         `Soit environ ${weeksInPeriod} semaine${weeksInPeriod>1?'s':''} sur cette période — ${totalImages} images au total`,
         prixImg ? `Prix moyen par image : ${prixImg.toLocaleString('fr-FR')} FCFA` : null,
@@ -730,7 +735,7 @@ async function sendPaymentConfirmationEmail({ email, name, plan, cycle, creditsP
 
   let pdfBuffer;
   try {
-    pdfBuffer = await generateInvoicePDF({ invoiceNumber, customerEmail: email, customerName: name, plan, cycle, creditsPerWeek, prixImg, priceFcfa, paymentDate, expiresAt });
+    pdfBuffer = await generateInvoicePDF({ invoiceNumber, customerEmail: email, customerName: name, plan, cycle, creditsPerWeek, totalCredits, isPack, prixImg, priceFcfa, paymentDate, expiresAt });
   } catch(e) {
     console.error('[Invoice] Erreur génération PDF:', e.message);
   }
@@ -912,7 +917,7 @@ async function activateSubscription(userId, planInfo, email, name) {
     payload.type = 'subscription';
     payload.credits_per_week = creditsPerWeek;
   }
-  const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions`, {
+  const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?on_conflict=user_id`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -3155,7 +3160,7 @@ if (req.method === 'POST' && req.url === '/create-checkout') {
         // Produit déjà acheté ou gratuit → activer directement
         if (user_id && plan) {
           const planInfo = PLAN_MAP[product_id] || { plan, cycle: 'monthly', credits_per_week: 9, price_fcfa: 0, prix_img: 0 };
-          await activateSubscription(user_id, planInfo.plan, planInfo.cycle, planInfo.credits_per_week, planInfo.price_fcfa, planInfo.prix_img, email);
+          await activateSubscription(user_id, planInfo, email);
         }
         res.writeHead(200, {'Content-Type':'application/json'});
         res.end(JSON.stringify({ checkout_url: null, already_active: true }));
