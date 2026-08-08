@@ -3629,14 +3629,26 @@ Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`
       // Save to Supabase if service key available
       if (SUPABASE_SERVICE_KEY && session_id) {
         const saveMsg = async (role, content) => {
-          await fetch(`${SUPABASE_URL_INT}/rest/v1/chat_messages`, {
+          const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/chat_messages`, {
             method: 'POST',
             headers: { 'Content-Type':'application/json', apikey:SUPABASE_SERVICE_KEY, Authorization:`Bearer ${SUPABASE_SERVICE_KEY}` },
             body: JSON.stringify({ session_id, role, content })
           });
+          // Cause profonde corrigée (aucune donnée du chatbot dans le CRM, aucune trace nulle
+          // part) : l'erreur était avalée silencieusement (.catch(()=>{})) — impossible de
+          // savoir si l'insertion échouait et pourquoi. On log maintenant le vrai code HTTP et
+          // le corps de la réponse en cas d'échec.
+          if (!r.ok) {
+            const errText = await r.text().catch(()=>'(corps illisible)');
+            console.error(`[Ava] chat_messages HTTP ${r.status} (${role}):`, errText.slice(0,300));
+          }
         };
-        saveMsg('user', message).catch(()=>{});
-        saveMsg('model', reply).catch(()=>{});
+        saveMsg('user', message).catch(e => console.error('[Ava] chat_messages save error (user):', e.message));
+        saveMsg('model', reply).catch(e => console.error('[Ava] chat_messages save error (model):', e.message));
+      } else if (!SUPABASE_SERVICE_KEY) {
+        console.error('[Ava] chat_messages non sauvegardé : SUPABASE_SERVICE_KEY absente côté serveur');
+      } else if (!session_id) {
+        console.error('[Ava] chat_messages non sauvegardé : aucun session_id reçu du client');
       }
 
       res.writeHead(200, {'Content-Type':'application/json'});
