@@ -848,17 +848,18 @@ async function notifierAdmin(sujet, html) {
 }
 
 // Email client — livrables prêts, en complément du push déjà existant (au cas où il ne soit
-// pas activé ou pas vu). ⚠️ TEXTE BROUILLON — à valider avant envoi réel en production.
+// pas activé ou pas vu). Lit le template depuis la table `templates` (éditable dans le CRM,
+// section Templates → Livraison) plutôt qu'un texte en dur — modifiable sans redéploiement.
 async function sendDeliverablesReadyEmail({ email, produit }) {
   const RESEND_KEY = process.env.RESEND_API_KEY;
   if (!RESEND_KEY) { console.warn('[Email] RESEND_API_KEY manquante — email livrables non envoyé'); return; }
-  const html = `
-    <div style="font-family:-apple-system,Arial,sans-serif;max-width:520px;margin:0 auto;color:#222;font-size:15px;line-height:1.65;">
-      <h2 style="color:#5B8DEF;">Tes visuels sont prêts 🎉</h2>
-      <p>Les images pour <strong>${produit}</strong> viennent d'être livrées.</p>
-      <p><a href="https://adstackofficial.com/adboard/gallery" style="color:#5B8DEF;">Va les récupérer sur AdBoard →</a></p>
-      <p style="color:#999;font-size:12px;margin-top:30px;">AdStack — Dakar, Sénégal</p>
-    </div>`;
+  const tpl = await chargerTemplate('email_livrables_prets');
+  if (!tpl) { console.warn('[Email] Template email_livrables_prets introuvable en base — email non envoyé'); return; }
+
+  const variables = { produit, lien: 'https://adstackofficial.com/adboard/gallery' };
+  const html = `<div style="font-family:-apple-system,Arial,sans-serif;max-width:520px;margin:0 auto;color:#222;font-size:15px;line-height:1.65;">${interpoler(tpl.contenu, variables)}</div>`;
+  const subject = interpoler(tpl.sujet, variables);
+
   try {
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -866,7 +867,7 @@ async function sendDeliverablesReadyEmail({ email, produit }) {
       body: JSON.stringify({
         from: 'AdStack <contact@adstackofficial.com>',
         to: [email],
-        subject: `🎉 Tes visuels pour ${produit} sont prêts`,
+        subject,
         html,
       })
     });
