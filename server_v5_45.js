@@ -3154,6 +3154,14 @@ if (req.method === 'GET' && req.url.startsWith('/cron/clarity-snapshot')) {
       return;
     }
     const data = await r.json();
+    // Diagnostic : la réponse Clarity a une réponse confirmée pour "Traffic" (docs officielles),
+    // mais AUCUNE pour les autres métriques (rage/dead/scroll/engagement) — les noms de champs
+    // utilisés plus bas pour celles-ci étaient une supposition, jamais vérifiée contre une vraie
+    // réponse. On logue tout, une fois, pour corriger avec certitude au lieu de re-deviner.
+    console.log('[Clarity] RAW response (diagnostic):', JSON.stringify(data).slice(0, 3000));
+    (data || []).forEach(bloc => {
+      console.log(`[Clarity] Bloc "${bloc.metricName}" — 1er élément :`, JSON.stringify((bloc.information||[])[0] || {}));
+    });
 
     // La réponse groupe par nom de métrique ("Rage Click Count", "Dead Click Count", etc.),
     // chaque groupe contenant un tableau par URL. On reconstruit une ligne par URL.
