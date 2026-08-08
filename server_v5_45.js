@@ -817,7 +817,71 @@ async function sendWelcomeEmail({ email, name }) {
   }
 }
 
-// Activer un abonnement dans Supabase (upsert)
+// Email à l'admin (toi) — nouvelle demande, annulation, ou pending 12h écoulées. Volontairement
+// séparé des emails clients (sendPaymentConfirmationEmail, sendWelcomeEmail) : contenu 100%
+// opérationnel, pas besoin de validation de copywriting, juste de l'information utile vite lue.
+const ADMIN_EMAIL = process.env.ADMIN_NOTIF_EMAIL || '';
+async function notifierAdmin(sujet, html) {
+  const RESEND_KEY = process.env.RESEND_API_KEY;
+  if (!RESEND_KEY) { console.warn('[Admin Email] RESEND_API_KEY manquante — email non envoyé'); return; }
+  if (!ADMIN_EMAIL) { console.warn('[Admin Email] ADMIN_NOTIF_EMAIL manquante — email non envoyé'); return; }
+  try {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'AdStack <contact@adstackofficial.com>',
+        to: [ADMIN_EMAIL],
+        subject: sujet,
+        html: `<div style="font-family:-apple-system,Arial,sans-serif;max-width:520px;margin:0 auto;color:#222;font-size:14px;line-height:1.6;">${html}</div>`,
+      })
+    });
+    if (!r.ok) {
+      const errText = await r.text();
+      console.error('[Admin Email] Échec envoi:', r.status, errText.slice(0,200));
+    } else {
+      console.log(`[Admin Email] ✅ "${sujet}" envoyé`);
+    }
+  } catch(e) {
+    console.error('[Admin Email] Erreur envoi:', e.message);
+  }
+}
+
+// Email client — livrables prêts, en complément du push déjà existant (au cas où il ne soit
+// pas activé ou pas vu). ⚠️ TEXTE BROUILLON — à valider avant envoi réel en production.
+async function sendDeliverablesReadyEmail({ email, produit }) {
+  const RESEND_KEY = process.env.RESEND_API_KEY;
+  if (!RESEND_KEY) { console.warn('[Email] RESEND_API_KEY manquante — email livrables non envoyé'); return; }
+  const html = `
+    <div style="font-family:-apple-system,Arial,sans-serif;max-width:520px;margin:0 auto;color:#222;font-size:15px;line-height:1.65;">
+      <h2 style="color:#5B8DEF;">Tes visuels sont prêts 🎉</h2>
+      <p>Les images pour <strong>${produit}</strong> viennent d'être livrées.</p>
+      <p><a href="https://adstackofficial.com/adboard/gallery" style="color:#5B8DEF;">Va les récupérer sur AdBoard →</a></p>
+      <p style="color:#999;font-size:12px;margin-top:30px;">AdStack — Dakar, Sénégal</p>
+    </div>`;
+  try {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'AdStack <contact@adstackofficial.com>',
+        to: [email],
+        subject: `🎉 Tes visuels pour ${produit} sont prêts`,
+        html,
+      })
+    });
+    if (!r.ok) {
+      const errText = await r.text();
+      console.error('[Email] Échec email livrables:', r.status, errText.slice(0,200));
+    } else {
+      console.log(`[Email] ✅ Email livrables envoyé à ${email}`);
+    }
+  } catch(e) {
+    console.error('[Email] Erreur email livrables:', e.message);
+  }
+}
+
+
 async function activateSubscription(userId, plan, cycle, creditsPerWeek, priceFcfa, prixImg, email, name) {
   const now = new Date();
   const dureeJours = cycle === 'annual' ? 365 : 30;
@@ -2972,6 +3036,13 @@ Sur une QUATRIÈME ligne, ajoute 1 à 3 balises de style/émotion pertinentes s�
             url: '/adboard/tracking'
           }).catch(()=>{});
         }
+        // Notification admin #1 — nouvelle demande initiée, pour savoir qu'il faut produire.
+        notifierAdmin(
+          `📦 Nouvelle demande — ${brief.product.nom}`,
+          `<p><strong>${brief.quantity} images</strong> pour <strong>${brief.product.nom}</strong> (${brief.product.pays || 'pays non renseigné'}).</p>
+           <p>Client : ${brief.client.email || 'email non renseigné'} — Plan ${brief.client.plan}</p>
+           <p style="color:#888;font-size:12px">Reçue le ${new Date(brief.created_at).toLocaleString('fr-FR')} — id ${brief.id}</p>`
+        ).catch(()=>{});
         // Background removal en arrière-plan + analyse qualité (log seulement, voir checkPhotoQuality)
         if (brief.product.photo_base64) {
           checkPhotoQuality(brief.product.photo_base64).then(q => {
@@ -3127,6 +3198,42 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
   });
   return;
 }
+
+// GET /cron/check-pending — déclenché toutes les 30-60 min par un cron externe (cron-job.org).
+// Détecte les demandes encore "pending" depuis plus de 12h et jamais encore signalées — pour
+// savoir que la production peut démarrer, sans avoir à surveiller Factory en continu.
+if (req.method === 'GET' && req.url.startsWith('/cron/check-pending')) {
+  const urlObj = new URL(req.url, `http://${req.headers.host}`);
+  const key = urlObj.searchParams.get('key');
+  if (key !== process.env.SEQUENCE_CRON_SECRET) {
+    res.writeHead(403); res.end(JSON.stringify({ error: 'Clé invalide' })); return;
+  }
+  res.writeHead(200, {'Content-Type':'application/json'});
+  res.end(JSON.stringify({ ok: true, message: 'Vérification pending en cours' }));
+
+  try {
+    const briefs = await loadBriefs();
+    const seuil = Date.now() - 12 * 60 * 60 * 1000;
+    const aAlerter = briefs.filter(b =>
+      b.status === 'pending' && !b.pending_alert_sent && new Date(b.created_at).getTime() <= seuil
+    );
+    for (const b of aAlerter) {
+      await notifierAdmin(
+        `⏰ Pending 12h écoulées — ${b.product?.nom || 'produit'}`,
+        `<p><strong>${b.product?.nom || 'Produit'}</strong> — les 12h de pending sont passées, la production peut démarrer.</p>
+         <p>Client : ${b.client?.email || 'email non renseigné'} — ${b.quantity} images</p>
+         <p style="color:#888;font-size:12px">Reçue le ${new Date(b.created_at).toLocaleString('fr-FR')} — id ${b.id}</p>`
+      );
+      b.pending_alert_sent = true;
+      await saveBriefs([b]);
+    }
+    console.log(`[Pending Check] ${aAlerter.length} demande(s) signalée(s)`);
+  } catch(e) {
+    console.error('[Pending Check] Erreur:', e.message);
+  }
+  return;
+}
+
 
 // GET /cron/clarity-snapshot — déclenché 1x/jour par un cron externe (cron-job.org).
 // Récupère les métriques comportementales AdBoard (clics de rage, clics morts, etc.)
@@ -3693,6 +3800,13 @@ if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/cancel$/)) {
     await saveBriefs([briefs[idx]]);
     res.writeHead(200, {'Content-Type':'application/json'});
     res.end(JSON.stringify({ ok: true }));
+    // Notification admin #2 — demande annulée pendant le pending.
+    notifierAdmin(
+      `❌ Demande annulée — ${briefs[idx].product?.nom || 'produit'}`,
+      `<p><strong>${briefs[idx].product?.nom || 'Produit'}</strong> — annulée par le client avant production.</p>
+       <p>Client : ${briefs[idx].client?.email || 'email non renseigné'}</p>
+       <p style="color:#888;font-size:12px">Annulée le ${new Date(briefs[idx].cancelled_at).toLocaleString('fr-FR')} — id ${id}</p>`
+    ).catch(()=>{});
   } else {
     res.writeHead(404); res.end(JSON.stringify({ error: 'Brief not found' }));
   }
@@ -4508,6 +4622,14 @@ if (req.method === 'POST' && req.url === '/save-form-response') {
           type: 'brief',
         }).catch(()=>{});
       }
+      // Email en complément du push (au cas où le push ne soit pas activé/vu) — texte à
+      // valider, voir sendDeliverablesReadyEmail ci-dessous pour le contenu exact.
+      if (briefs[idx].client?.email) {
+        sendDeliverablesReadyEmail({
+          email: briefs[idx].client.email,
+          produit: briefs[idx].product?.nom || 'ton produit',
+        }).catch(()=>{});
+      }
     } else {
       res.writeHead(404); res.end(JSON.stringify({ error: 'Brief not found' }));
     }
@@ -4782,7 +4904,8 @@ async function saveBriefs(briefs) {
         body: JSON.stringify({
           id: b.id, created_at: b.created_at, status: b.status, client: b.client,
           product: b.product, quantity: b.quantity, history: b.history, photo_nobg: b.photo_nobg,
-          deliverables: b.deliverables, started_at: b.started_at, done_at: b.done_at
+          deliverables: b.deliverables, started_at: b.started_at, done_at: b.done_at,
+          pending_alert_sent: b.pending_alert_sent || false,
         })
       });
       if (!r.ok) console.error('[Commandes] Sauvegarde échouée pour', b.id, ':', await r.text());
