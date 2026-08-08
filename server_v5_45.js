@@ -461,6 +461,7 @@ const SUPABASE_URL_INT = process.env.SUPABASE_URL || 'https://mifljhsusidgzelnsw
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 
 const PLAN_MAP = {
+  'prd_ywk7ik14': { plan: 'discovery', cycle: 'once',    type: 'pack', total_credits: 18, price_fcfa: 24900,  prix_img: 1383 },
   'prd_ljowq8':   { plan: 'starter', cycle: 'monthly', credits_per_week: 9,  price_fcfa: 39900,  prix_img: 1108 },
   'prd_wdya3v9h': { plan: 'starter', cycle: 'annual',  credits_per_week: 9,  price_fcfa: 29900,  prix_img: 830 },
   'prd_34w031':   { plan: 'pro',     cycle: 'monthly', credits_per_week: 18, price_fcfa: 69900,  prix_img: 970 },
@@ -469,7 +470,7 @@ const PLAN_MAP = {
   'prd_dn4fb72l': { plan: 'scale',   cycle: 'annual',  credits_per_week: 36, price_fcfa: 79900,  prix_img: 554 },
 };
 
-const PLAN_LABELS = { starter: 'Conversion Starter', pro: 'Conversion Pro', scale: 'Conversion Scale' };
+const PLAN_LABELS = { discovery: 'Conversion Discovery', starter: 'Conversion Starter', pro: 'Conversion Pro', scale: 'Conversion Scale' };
 
 // ── Séquence email de conversion J1/J5/J12/J21 ─────────────────────────────
 const SEQUENCE_PRICES = { starter: { price: 39900 } }; // Starter mensuel, référence pour les prix cités dans les emails
@@ -721,7 +722,7 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
 }
 
 // Envoie un email via Resend avec la facture en pièce jointe
-async function sendPaymentConfirmationEmail({ email, name, plan, cycle, creditsPerWeek, prixImg, priceFcfa, paymentDate, expiresAt }) {
+async function sendPaymentConfirmationEmail({ email, name, plan, cycle, creditsPerWeek, totalCredits, prixImg, priceFcfa, paymentDate, expiresAt, isPack }) {
   const RESEND_KEY = process.env.RESEND_API_KEY;
   if (!RESEND_KEY) { console.warn('[Email] RESEND_API_KEY manquante — email non envoyé'); return; }
 
@@ -735,15 +736,18 @@ async function sendPaymentConfirmationEmail({ email, name, plan, cycle, creditsP
   }
 
   const planLabel = PLAN_LABELS[plan] || plan;
-  const cycleLabel = cycle === 'annual' ? 'annuel' : 'mensuel';
+  const cycleLabel = isPack ? 'achat unique' : (cycle === 'annual' ? 'annuel' : 'mensuel');
+  const ligneImages = isPack
+    ? `<p style="margin:4px 0;"><strong>Images incluses :</strong> ${totalCredits || 0} au total (utilisables librement jusqu'à expiration)</p>`
+    : `<p style="margin:4px 0;"><strong>Images livrées :</strong> ${creditsPerWeek || 0} / semaine</p>`;
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;">
       <h2 style="color:#5B8DEF;">Paiement confirmé ✅</h2>
       <p>Bonjour${name ? ' ' + name : ''},</p>
-      <p>Merci pour ton abonnement <strong>${planLabel}</strong> (${cycleLabel}) ! Ton paiement a bien été reçu.</p>
+      <p>Merci pour ${isPack ? 'ton achat' : 'ton abonnement'} <strong>${planLabel}</strong> (${cycleLabel}) ! Ton paiement a bien été reçu.</p>
       <div style="background:#F5F8FF;border-radius:10px;padding:16px 20px;margin:20px 0;">
-        <p style="margin:4px 0;"><strong>Plan :</strong> ${planLabel} — ${cycleLabel}</p>
-        <p style="margin:4px 0;"><strong>Images livrées :</strong> ${creditsPerWeek || 0} / semaine</p>
+        <p style="margin:4px 0;"><strong>Offre :</strong> ${planLabel} — ${cycleLabel}</p>
+        ${ligneImages}
         <p style="margin:4px 0;"><strong>Montant :</strong> ${priceFcfa.toLocaleString('fr-FR')} FCFA</p>
         <p style="margin:4px 0;"><strong>Valide jusqu'au :</strong> ${expiresAt.toLocaleDateString('fr-FR')}</p>
       </div>
@@ -883,10 +887,31 @@ async function sendDeliverablesReadyEmail({ email, produit }) {
 }
 
 
-async function activateSubscription(userId, plan, cycle, creditsPerWeek, priceFcfa, prixImg, email, name) {
+async function activateSubscription(userId, planInfo, email, name) {
+  const { plan, cycle, credits_per_week: creditsPerWeek, price_fcfa: priceFcfa, prix_img: prixImg, type, total_credits: totalCredits } = planInfo;
+  const isPack = type === 'pack';
   const now = new Date();
-  const dureeJours = cycle === 'annual' ? 365 : 30;
+  // Cause profonde évitée (pack traité comme abonnement) : un pack n'a pas de cycle hebdomadaire
+  // récurrent — 3 mois fixes pour Discovery, pas de logique "credits_per_week × semaines" qui
+  // continuerait à générer de nouvelles images chaque semaine indéfiniment.
+  const dureeJours = isPack ? 90 : (cycle === 'annual' ? 365 : 30);
   const expiresAt = new Date(now.getTime() + dureeJours * 24 * 60 * 60 * 1000);
+  const payload = {
+    user_id: userId,
+    plan: plan,
+    cycle: cycle,
+    active: true,
+    started_at: now.toISOString(),
+    expires_at: expiresAt.toISOString(),
+  };
+  if (isPack) {
+    payload.type = 'pack';
+    payload.total_credits = totalCredits;
+    payload.credits_per_week = 0; // jamais utilisé en mode pack, mais gardé à 0 par sécurité si du code ancien le lit encore
+  } else {
+    payload.type = 'subscription';
+    payload.credits_per_week = creditsPerWeek;
+  }
   const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions`, {
     method: 'POST',
     headers: {
@@ -895,18 +920,10 @@ async function activateSubscription(userId, plan, cycle, creditsPerWeek, priceFc
       'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
       'Prefer': 'resolution=merge-duplicates,return=representation',
     },
-    body: JSON.stringify({
-      user_id: userId,
-      plan: plan,
-      cycle: cycle,
-      credits_per_week: creditsPerWeek,
-      active: true,
-      started_at: now.toISOString(),
-      expires_at: expiresAt.toISOString(),
-    })
+    body: JSON.stringify(payload)
   });
   const data = await r.json();
-  console.log(`[Chariow] ✅ Abonnement activé: ${userId} → ${plan} (${cycle}, expire le ${expiresAt.toISOString()})`);
+  console.log(`[Chariow] ✅ ${isPack ? 'Pack activé' : 'Abonnement activé'}: ${userId} → ${plan} (${cycle}, expire le ${expiresAt.toISOString()})`);
 
   // Log permanent de CE paiement précis — jamais écrasé, contrairement à "subscriptions" qui ne
   // garde que l'état courant. Nécessaire pour calculer LTV et fréquence d'achat par client.
@@ -934,7 +951,7 @@ async function activateSubscription(userId, plan, cycle, creditsPerWeek, priceFc
 
   // Envoi email + facture (non bloquant, ne casse pas l'activation si ça échoue)
   if (email && priceFcfa) {
-    sendPaymentConfirmationEmail({ email, name, plan, cycle, creditsPerWeek, prixImg, priceFcfa, paymentDate: now, expiresAt }).catch(e => {
+    sendPaymentConfirmationEmail({ email, name, plan, cycle, creditsPerWeek, totalCredits, prixImg, priceFcfa, paymentDate: now, expiresAt, isPack }).catch(e => {
       console.error('[Email] Échec non bloquant:', e.message);
     });
   }
@@ -3179,7 +3196,7 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
       // Si on a le user_id → activer directement
       if (userId) {
         console.log(`[Pulse] user_id trouvé directement dans custom_fields: ${userId}`);
-        await activateSubscription(userId, planInfo.plan, planInfo.cycle, planInfo.credits_per_week, planInfo.price_fcfa, planInfo.prix_img, email, customer?.name);
+        await activateSubscription(userId, planInfo, email, customer?.name);
         await traiterAttributionCRM(userId);
         return;
       }
@@ -3189,7 +3206,7 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
         const user = await findUserByEmail(email);
         if (user) {
           console.log(`[Pulse] Fallback email: match trouvé → user_id=${user.id} pour email="${email}"`);
-          await activateSubscription(user.id, planInfo.plan, planInfo.cycle, planInfo.credits_per_week, planInfo.price_fcfa, planInfo.prix_img, email, user.user_metadata?.full_name || customer?.name);
+          await activateSubscription(user.id, planInfo, email, user.user_metadata?.full_name || customer?.name);
           await traiterAttributionCRM(user.id);
         } else {
           console.warn(`[Pulse] User introuvable pour email: ${email} — abonnement en attente`);
@@ -3597,6 +3614,7 @@ if (req.method === 'POST' && req.url === '/chat') {
       const hasSubscription = subscription?.active;
       const isConnected = !!user;
       const planActive = subscription?.plan || 'none';
+      const isPackClient = subscription?.type === 'pack';
 
       // ── Situation calculée en code, pas laissée à l'appréciation du modèle ──
       // C'est la cause profonde des incohérences passées : donner des faits épars et
@@ -3606,11 +3624,13 @@ if (req.method === 'POST' && req.url === '/chat') {
       if (!isConnected) {
         situationAction = "Pas encore connecté → priorité : proposer de se connecter avec Google (bouton login).";
       } else if (!hasSubscription) {
-        situationAction = "Aucun abonnement actif en ce moment (jamais pris, ou expiré) → proposer un plan adapté à son besoin, avec le bouton checkout correspondant.";
+        situationAction = "Aucune offre active en ce moment (jamais pris, ou expirée) → proposer Conversion Discovery (achat unique, 18 images, 24 900 FCFA, aucun engagement) si c'est un nouveau visiteur hésitant, sinon un plan classique adapté à son besoin, avec le bouton checkout correspondant.";
       } else if (products.length === 0) {
-        situationAction = "Abonné actif mais AUCUN produit créé → dire d'aller créer un produit (bouton openProductForm). C'est la seule étape qui manque avant de pouvoir demander des images. Ne JAMAIS proposer un plan, il en a déjà un actif.";
+        situationAction = `${isPackClient ? 'A pris Conversion Discovery' : 'Abonné actif'} mais AUCUN produit créé → dire d'aller créer un produit (bouton openProductForm). C'est la seule étape qui manque avant de pouvoir demander des images. Ne JAMAIS proposer un plan, il en a déjà un actif.`;
       } else if ((credits.available||0) >= 9) {
-        situationAction = `Abonné actif, ${products.length} produit(s) créé(s), ${credits.available} images DISPONIBLES MAINTENANT → dire d'aller sur "Mes Produits" et cliquer "Demander mes images" sur le produit concerné, livraison sous 48h. NE JAMAIS proposer un plan ni un renouvellement, il en a déjà un actif avec des images disponibles.`;
+        situationAction = `${isPackClient ? 'A pris Conversion Discovery' : 'Abonné actif'}, ${products.length} produit(s) créé(s), ${credits.available} images DISPONIBLES MAINTENANT → dire d'aller sur "Mes Produits" et cliquer "Demander mes images" sur le produit concerné, livraison sous 48h. NE JAMAIS proposer un plan ni un renouvellement, il en a déjà des images disponibles.`;
+      } else if (isPackClient) {
+        situationAction = `A pris Conversion Discovery (pack ponctuel, 18 images), mais les a toutes utilisées (0 disponible) → contrairement à un abonnement classique, ce pack ne se recharge JAMAIS automatiquement. Proposer de passer à un vrai abonnement (Starter/Pro/Scale selon son besoin) pour continuer à recevoir des images chaque semaine. NE JAMAIS dire d'attendre un rechargement — ça n'existe pas pour ce pack.`;
       } else {
         situationAction = `Abonné actif, ${products.length} produit(s) créé(s), mais crédits de la semaine épuisés (0 disponible) → c'est normal et temporaire (l'abonnement lui-même reste actif, ce n'est qu'une pause hebdomadaire). Dire que les prochaines images arrivent au rechargement hebdomadaire${credits.nextCreditDate ? ' (' + new Date(credits.nextCreditDate).toLocaleDateString('fr-FR',{day:'numeric',month:'long'}) + ')' : ''}. NE JAMAIS proposer de reprendre un plan ou de "renouveler" — l'abonnement n'a pas expiré, c'est juste le cycle hebdomadaire normal.`;
       }
