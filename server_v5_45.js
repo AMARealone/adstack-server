@@ -3154,33 +3154,30 @@ if (req.method === 'GET' && req.url.startsWith('/cron/clarity-snapshot')) {
       return;
     }
     const data = await r.json();
-    // Diagnostic : la réponse Clarity a une réponse confirmée pour "Traffic" (docs officielles),
-    // mais AUCUNE pour les autres métriques (rage/dead/scroll/engagement) — les noms de champs
-    // utilisés plus bas pour celles-ci étaient une supposition, jamais vérifiée contre une vraie
-    // réponse. On logue tout, une fois, pour corriger avec certitude au lieu de re-deviner.
-    console.log('[Clarity] RAW response (diagnostic):', JSON.stringify(data).slice(0, 3000));
-    (data || []).forEach(bloc => {
-      console.log(`[Clarity] Bloc "${bloc.metricName}" — 1er élément :`, JSON.stringify((bloc.information||[])[0] || {}));
-    });
 
-    // La réponse groupe par nom de métrique ("Rage Click Count", "Dead Click Count", etc.),
-    // chaque groupe contenant un tableau par URL. On reconstruit une ligne par URL.
+    // La réponse groupe par nom de métrique, chaque groupe contenant un tableau par page.
+    // Noms de champs confirmés par une capture de la vraie réponse brute (voir logs du
+    // 2026-08-08) — les précédents ("Dead Click Count" avec espace, "distantUserCount",
+    // "averageEngagementTime", etc.) ne correspondaient à RIEN de ce que Clarity renvoie
+    // réellement, d'où les métriques à 0 malgré des données existantes.
     const parPage = {};
     (data || []).forEach(bloc => {
       const nomMetrique = bloc.metricName;
       (bloc.information || []).forEach(info => {
-        const url = info.URL || info.url || 'inconnue';
+        const url = info.Url || 'session sans page identifiée';
         if (!parPage[url]) parPage[url] = { url };
-        if (nomMetrique === 'Rage Click Count')    parPage[url].rage_click_count    = parseInt(info.rageClickCount    || info.count || 0);
-        if (nomMetrique === 'Dead Click Count')     parPage[url].dead_click_count     = parseInt(info.deadClickCount     || info.count || 0);
-        if (nomMetrique === 'Quickback Click')      parPage[url].quickback_click      = parseInt(info.quickbackCount     || info.count || 0);
-        if (nomMetrique === 'Excessive Scroll')     parPage[url].excessive_scroll     = parseInt(info.excessiveScrollCount || info.count || 0);
+        // subTotal = nombre réel d'incidents (pas sessionsCount, qui compte les sessions
+        // observées, ni sessionsWithMetricPercentage, qui est un taux).
+        if (nomMetrique === 'DeadClickCount')    parPage[url].dead_click_count    = parseInt(info.subTotal || 0);
+        if (nomMetrique === 'RageClickCount')    parPage[url].rage_click_count    = parseInt(info.subTotal || 0);
+        if (nomMetrique === 'QuickbackClick')    parPage[url].quickback_click     = parseInt(info.subTotal || 0);
+        if (nomMetrique === 'ExcessiveScroll')   parPage[url].excessive_scroll    = parseInt(info.subTotal || 0);
         if (nomMetrique === 'Traffic') {
-          parPage[url].traffic_sessions = parseInt(info.totalSessionCount || 0);
-          parPage[url].visiteurs_uniques = parseInt(info.distantUserCount || 0);
+          parPage[url].traffic_sessions  = parseInt(info.totalSessionCount || 0);
+          parPage[url].visiteurs_uniques = parseInt(info.distinctUserCount || 0);
         }
-        if (nomMetrique === 'Scroll Depth')          parPage[url].scroll_depth         = parseFloat(info.averageScrollDepth || info.scrollDepth || 0);
-        if (nomMetrique === 'Engagement Time')      parPage[url].engagement_time      = parseFloat(info.averageEngagementTime || info.engagementTime || 0);
+        if (nomMetrique === 'ScrollDepth')     parPage[url].scroll_depth      = parseFloat(info.averageScrollDepth || 0);
+        if (nomMetrique === 'EngagementTime')  parPage[url].engagement_time   = parseFloat(info.activeTime || info.totalTime || 0);
       });
     });
 
