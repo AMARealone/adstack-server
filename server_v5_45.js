@@ -3084,6 +3084,7 @@ Sur une QUATRIÈME ligne, ajoute 1 à 3 balises de style/émotion pertinentes s�
             nom: data.product.nom,
             pricing: data.product.pricing,
             pays: data.product.pays,
+            promo: data.product.promo || '',
             cible: data.product.cible,
             utilite: data.product.utilite,
             couleurs: [data.product.couleur1, data.product.couleur2, data.product.couleur3].filter(Boolean),
