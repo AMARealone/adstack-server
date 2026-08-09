@@ -927,6 +927,16 @@ async function activateSubscription(userId, planInfo, email, name) {
     },
     body: JSON.stringify(payload)
   });
+  // Cause profonde corrigée (achat confirmé par notification mais jamais reflété dans l'app) :
+  // le code affichait "✅ Pack activé" inconditionnellement, sans jamais vérifier que Supabase
+  // avait réellement accepté la requête. Si l'upsert échouait (ex : contrainte unique manquante
+  // sur user_id, requise pour que on_conflict fonctionne), l'erreur restait invisible et le log
+  // trompeur affirmait un succès qui n'avait jamais eu lieu.
+  if (!r.ok) {
+    const errText = await r.text();
+    console.error(`[Chariow] ❌ ÉCHEC activation ${isPack ? 'pack' : 'abonnement'} pour ${userId} → ${plan}:`, r.status, errText.slice(0, 500));
+    return; // ne pas continuer (email, push, etc.) sur un état non confirmé en base
+  }
   const data = await r.json();
   console.log(`[Chariow] ✅ ${isPack ? 'Pack activé' : 'Abonnement activé'}: ${userId} → ${plan} (${cycle}, expire le ${expiresAt.toISOString()})`);
 
