@@ -5093,14 +5093,32 @@ async function saveBriefs(briefs) {
   }
 }
 
-function removeBackground(inputPath, outputPath) {
-  return new Promise((resolve, reject) => {
-    const { exec } = require('child_process');
-    exec(`rembg i "${inputPath}" "${outputPath}"`, { timeout: 60000 }, (err, stdout, stderr) => {
-      if (err) { reject(new Error(stderr || err.message)); }
-      else { resolve(outputPath); }
-    });
-  });
+// ── Effacement de fond — via Gemini (gemini-3-pro-image), pas rembg ──
+// Cause profonde évitée : rembg est un outil Python en ligne de commande, jamais installé sur
+// Render (environnement Node.js standard, sans Python) — chaque appel échouait silencieusement
+// depuis le début. Remplacé par la même infrastructure de génération d'image déjà utilisée et
+// confirmée fiable pour les créatives (Vertex AI, gemini-3-pro-image) — aucune dépendance
+// système supplémentaire à installer.
+// Fond BLANC uni demandé plutôt qu'une vraie transparence : les modèles de génération d'image
+// ne produisent pas de canal alpha fiable, un fond blanc propre est un résultat solide et
+// directement exploitable pour des créatives publicitaires.
+async function removeBackground(photoBase64, mime) {
+  const token = await getToken();
+  const base64Only = photoBase64.replace(/^data:image\/\w+;base64,/, '');
+  const vertexBody = {
+    system_instruction: { parts: [{ text: 'Tu isoles UNIQUEMENT le produit (ou l\'ensemble des éléments s\'il s\'agit d\'un kit/pack) présent sur la photo fournie, sur un fond blanc pur et uniforme (#FFFFFF), sans ombre parasite ni élément de décor. Fidélité photographique ABSOLUE au produit d\'origine : ne change jamais sa forme, ses proportions, ses couleurs, son étiquette, ses textes, ses reflets — uniquement le fond change. Ne recadre pas de façon agressive, garde le produit entièrement visible tel qu\'il apparaît sur la photo source.' }] },
+    contents: [{ role: 'user', parts: [
+      { inlineData: { mimeType: mime || 'image/jpeg', data: base64Only } },
+      { text: 'Isole le produit (ou l\'ensemble du pack) de cette photo sur un fond blanc pur, propre, sans rien d\'autre.' }
+    ]}],
+    generationConfig: { responseModalities: ['TEXT', 'IMAGE'], temperature: 0.3 }
+  };
+  const data = await vertexRequestGlobalAvecReessai(token, 'gemini-3-pro-image', vertexBody, 60000, 'background_removal');
+  if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  const imgPart = parts.find(p => p.inlineData?.mimeType?.startsWith('image/'));
+  if (!imgPart) throw new Error('Pas d\'image dans la réponse Gemini — ' + JSON.stringify(parts).slice(0,200));
+  return `data:${imgPart.inlineData.mimeType};base64,${imgPart.inlineData.data}`;
 }
 
 // ── Recherche d'une meilleure photo du MÊME produit exact, via recherche d'image inversée ──
@@ -5182,7 +5200,7 @@ async function checkPhotoQuality(photoBase64) {
       'Tu évalues UNIQUEMENT la qualité technique d\'une photo produit e-commerce (netteté, résolution, cadrage, éclairage, présence de watermark/texte parasite) — jamais son contenu marketing. Réponds UNIQUEMENT par un JSON strict, sans texte autour : {"qualite":"bonne","raison":"..."} ou {"qualite":"mauvaise","raison":"..."} — raison en une phrase courte.',
       [{ type: 'image', source: { media_type: m[1], data: m[2] } }, { type: 'text', text: 'Évalue la qualité technique de cette photo produit.' }],
       200,
-      { temperature: 0.2, thinkingBudget: 0, logLabel: 'Quality Check Photo', timeoutMs: 30000 }
+      { temperature: 0.2, thinkingBudget: 128, logLabel: 'Quality Check Photo', timeoutMs: 30000 }
     );
     const parsed = JSON.parse(result.replace(/```json|```/g, '').trim());
     return { ok: parsed.qualite === 'bonne', note: parsed.raison || '' };
@@ -5293,18 +5311,8 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables) {
 async function processProductPhoto(photoBase64, briefId) {
   if (!photoBase64 || !photoBase64.startsWith('data:')) return null;
   try {
-    const tmpDir = path.join(__dirname, 'tmp_briefs');
-    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir);
-    const ext = photoBase64.match(/data:image\/(\w+);/)?.[1] || 'jpg';
-    const inputPath  = path.join(tmpDir, `${briefId}_input.${ext}`);
-    const outputPath = path.join(tmpDir, `${briefId}_nobg.png`);
-    const base64Data = photoBase64.replace(/^data:image\/\w+;base64,/, '');
-    fs.writeFileSync(inputPath, Buffer.from(base64Data, 'base64'));
-    await removeBackground(inputPath, outputPath);
-    const pngBuffer = fs.readFileSync(outputPath);
-    const pngBase64 = 'data:image/png;base64,' + pngBuffer.toString('base64');
-    fs.unlinkSync(inputPath);
-    fs.unlinkSync(outputPath);
+    const mime = photoBase64.match(/^data:(image\/\w+);/)?.[1] || 'image/jpeg';
+    const pngBase64 = await removeBackground(photoBase64, mime);
     console.log(`[ReBG] ✅ Background supprimé pour brief ${briefId}`);
     return pngBase64;
   } catch(e) {
