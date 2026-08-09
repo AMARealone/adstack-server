@@ -3293,13 +3293,33 @@ if (req.method === 'GET' && req.url.startsWith('/cron/check-pending')) {
     for (const b of aAlerter) {
       await notifierAdmin(
         `⏰ Pending 12h écoulées — ${b.product?.nom || 'produit'}`,
-        `<p><strong>${b.product?.nom || 'Produit'}</strong> — les 12h de pending sont passées, la production peut démarrer.</p>
+        `<p><strong>${b.product?.nom || 'Produit'}</strong> — les 12h de pending sont passées, le client ne peut plus annuler. La production peut démarrer.</p>
          <p>Client : ${b.client?.email || 'email non renseigné'} — ${b.quantity} images</p>
+         <p><a href="https://www.adstackofficial.com/factory.html" style="color:#5B8DEF;">Ouvrir Factory pour lancer la production →</a></p>
          <p style="color:#888;font-size:12px">Reçue le ${new Date(b.created_at).toLocaleString('fr-FR')} — id ${b.id}</p>`
       );
       b.pending_alert_sent = true;
       await saveBriefs([b]);
     }
+
+    // ── Rappel 36h — livraison prévue à 48h, marge de 12h pour ne jamais oublier d'envoyer ──
+    const seuil36h = Date.now() - 36 * 60 * 60 * 1000;
+    const aRappeler = briefs.filter(b =>
+      b.status !== 'done' && b.status !== 'cancelled' && b.status !== 'probleme_agence' &&
+      !b.delivery_reminder_sent && new Date(b.created_at).getTime() <= seuil36h
+    );
+    for (const b of aRappeler) {
+      await notifierAdmin(
+        `📬 36h écoulées — envoie les livrables pour ${b.product?.nom || 'produit'}`,
+        `<p><strong>${b.product?.nom || 'Produit'}</strong> — 36h se sont écoulées depuis la demande. Encore 12h avant l'échéance des 48h — envoie les livrables au client.</p>
+         <p>Client : ${b.client?.email || 'email non renseigné'} — ${b.quantity} images</p>
+         <p><a href="https://www.adstackofficial.com/factory.html" style="color:#5B8DEF;">Ouvrir Factory pour envoyer les livrables →</a></p>
+         <p style="color:#888;font-size:12px">Reçue le ${new Date(b.created_at).toLocaleString('fr-FR')} — id ${b.id}</p>`
+      );
+      b.delivery_reminder_sent = true;
+      await saveBriefs([b]);
+    }
+    console.log(`[Pending Check] ${aRappeler.length} rappel(s) 36h envoyé(s)`);
     console.log(`[Pending Check] ${aAlerter.length} demande(s) signalée(s)`);
   } catch(e) {
     console.error('[Pending Check] Erreur:', e.message);
@@ -3930,6 +3950,19 @@ if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/delete$/)) {
             type: 'brief',
           });
         }
+      }
+
+      // Notification admin — annulation du CLIENT lui-même, pendant la fenêtre des 12h.
+      // Jusqu'ici la seule notification d'annulation branchée était celle du CRM (jamais
+      // utilisée par le client) — la vraie annulation client, via ce endpoint-ci, ne
+      // remontait donc jamais rien.
+      if (brief && source === 'client_cancel') {
+        notifierAdmin(
+          `❌ Demande annulée par le client — ${brief.product?.nom || 'produit'}`,
+          `<p><strong>${brief.product?.nom || 'Produit'}</strong> — annulée par le client lui-même, pendant la fenêtre des 12h.</p>
+           <p>Client : ${brief.client?.email || 'email non renseigné'}</p>
+           <p style="color:#888;font-size:12px">Reçue le ${new Date(brief.created_at).toLocaleString('fr-FR')} — id ${id}</p>`
+        ).catch(()=>{});
       }
 
       res.writeHead(200, {'Content-Type':'application/json'});
@@ -4986,6 +5019,7 @@ async function saveBriefs(briefs) {
           product: b.product, quantity: b.quantity, history: b.history, photo_nobg: b.photo_nobg,
           deliverables: b.deliverables, started_at: b.started_at, done_at: b.done_at,
           pending_alert_sent: b.pending_alert_sent || false,
+          delivery_reminder_sent: b.delivery_reminder_sent || false,
         })
       });
       if (!r.ok) console.error('[Commandes] Sauvegarde échouée pour', b.id, ':', await r.text());
