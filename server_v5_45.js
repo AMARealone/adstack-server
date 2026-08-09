@@ -976,7 +976,7 @@ async function activateSubscription(userId, planInfo, email, name) {
   if (priceFcfa) {
     const commission = Math.round(priceFcfa * 0.15);
     try {
-      await fetch(`${SUPABASE_URL_INT}/rest/v1/transactions`, {
+      const rTx = await fetch(`${SUPABASE_URL_INT}/rest/v1/transactions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -992,6 +992,15 @@ async function activateSubscription(userId, planInfo, email, name) {
           montant_net_fcfa: priceFcfa - commission,
         })
       });
+      // Cause profonde corrigée (section Transactions du CRM toujours vide malgré des achats
+      // réels) : le succès n'était jamais vérifié — une erreur Supabase (colonne manquante,
+      // contrainte, etc.) restait totalement invisible.
+      if (!rTx.ok) {
+        const errTx = await rTx.text();
+        console.error('[Transactions] ❌ ÉCHEC écriture:', rTx.status, errTx.slice(0, 500));
+      } else {
+        console.log(`[Transactions] ✅ Loguée : ${plan} (${cycle}) — ${priceFcfa} FCFA`);
+      }
     } catch(e) { console.error('[Transactions] Erreur log:', e.message); }
   }
 
