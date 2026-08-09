@@ -4763,7 +4763,7 @@ if (req.method === 'POST' && req.url === '/save-form-response') {
       // Pousser les livrables vers la table `briefs` d'AdBoard (statut visible pour le client)
       if (briefs[idx].deliverables) {
         try {
-          await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${id}`, {
+          const rPatch = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${id}`, {
             method: 'PATCH',
             headers: {
               apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
@@ -4777,6 +4777,17 @@ if (req.method === 'POST' && req.url === '/save-form-response') {
               market_data: briefs[idx].deliverables.synthesis || null,
             })
           });
+          // Cause profonde corrigée (minuteur/bouton annuler qui restent affichés côté client
+          // malgré une livraison marquée "faite" dans Factory) : le succès de ce PATCH n'était
+          // jamais vérifié — si Supabase le refusait (policy RLS manquante, contrainte, mauvais
+          // nom de colonne), le statut ne passait jamais à 'done' dans la table que le CLIENT
+          // lit, et rien ne le signalait nulle part.
+          if (!rPatch.ok) {
+            const errText = await rPatch.text();
+            console.error(`[Deliver] ❌ ÉCHEC PATCH briefs (id=${id}) — statut jamais mis à jour côté client:`, rPatch.status, errText.slice(0,500));
+          } else {
+            console.log(`[Deliver] ✅ Statut 'done' confirmé dans briefs pour ${id}`);
+          }
         } catch(e) {
           console.error('[Deliver] Push vers briefs (AdBoard) échoué :', e.message);
         }
