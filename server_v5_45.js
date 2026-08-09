@@ -639,6 +639,13 @@ async function notifyUserBoth(userId, { title, body, url = '/adboard', type = 'i
 }
 
 // Génère une facture PDF en mémoire (Buffer)
+// Formatage de nombre pour le PDF — jamais toLocaleString('fr-FR'), dont l'espace insécable
+// n'est pas correctement rendue par la police par défaut de PDFKit (affichée comme un symbole
+// cassé). Point comme séparateur de milliers, à la place — lisible et sans risque de rendu.
+function formatFCFA(n) {
+  return Math.round(n).toLocaleString('en-US').replace(/,/g, '.');
+}
+
 function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, cycle, creditsPerWeek, totalCredits, isPack, prixImg, priceFcfa, paymentDate, expiresAt }) {
   return new Promise((resolve, reject) => {
     try {
@@ -683,7 +690,7 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
         `${paymentDate.toLocaleDateString('fr-FR')} → ${expiresAt.toLocaleDateString('fr-FR')}`, 320, rowY
       );
       doc.fontSize(11).fillColor('#111111').font('Helvetica-Bold').text(
-        `${priceFcfa.toLocaleString('fr-FR')} FCFA`, 470, rowY, { align: 'right' }
+        `${formatFCFA(priceFcfa)} FCFA`, 470, rowY, { align: 'right' }
       );
 
       // Détail : ce que couvre cet achat/abonnement
@@ -692,13 +699,13 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
       doc.fontSize(9).fillColor('#666666').font('Helvetica-Bold').text(isPack ? 'Ce que comprend cet achat :' : 'Ce que couvre cet abonnement :', 50, detailTop);
       const detailLines = isPack ? [
         `${totalImages} images publicitaires incluses (angles et concepts variés)`,
-        `Utilisables librement jusqu'à expiration, sur 2 produits maximum`,
-        prixImg ? `Prix moyen par image : ${prixImg.toLocaleString('fr-FR')} FCFA` : null,
+        `Utilisables librement jusqu'à expiration, sur 1 produit`,
+        prixImg ? `Prix moyen par image : ${formatFCFA(prixImg)} FCFA` : null,
         'Analyse de marché (cibles, concurrents, tendances)',
       ].filter(Boolean) : [
         `${creditsPerWeek || 0} images publicitaires livrées chaque semaine`,
         `Soit environ ${weeksInPeriod} semaine${weeksInPeriod>1?'s':''} sur cette période — ${totalImages} images au total`,
-        prixImg ? `Prix moyen par image : ${prixImg.toLocaleString('fr-FR')} FCFA` : null,
+        prixImg ? `Prix moyen par image : ${formatFCFA(prixImg)} FCFA` : null,
         'Données marché hebdomadaires (cibles, concurrents, tendances)',
       ].filter(Boolean);
       doc.fontSize(9).fillColor('#444444').font('Helvetica');
@@ -711,7 +718,7 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
 
       // Total
       doc.fontSize(13).fillColor('#5B8DEF').font('Helvetica-Bold').text(
-        `Total payé : ${priceFcfa.toLocaleString('fr-FR')} FCFA`, 320, afterDetailY + 15, { align: 'right', width: 225 }
+        `Total payé : ${formatFCFA(priceFcfa)} FCFA`, 320, afterDetailY + 15, { align: 'right', width: 225 }
       );
 
       // Footer
@@ -753,7 +760,7 @@ async function sendPaymentConfirmationEmail({ email, name, plan, cycle, creditsP
       <div style="background:#F5F8FF;border-radius:10px;padding:16px 20px;margin:20px 0;">
         <p style="margin:4px 0;"><strong>Offre :</strong> ${planLabel} — ${cycleLabel}</p>
         ${ligneImages}
-        <p style="margin:4px 0;"><strong>Montant :</strong> ${priceFcfa.toLocaleString('fr-FR')} FCFA</p>
+        <p style="margin:4px 0;"><strong>Montant :</strong> ${formatFCFA(priceFcfa)} FCFA</p>
         <p style="margin:4px 0;"><strong>Valide jusqu'au :</strong> ${expiresAt.toLocaleDateString('fr-FR')}</p>
       </div>
       <p>Ta facture détaillée est jointe à cet email. Tu peux dès maintenant demander tes premiers visuels depuis <a href="https://adstackofficial.com/adboard/products">AdBoard</a>.</p>
@@ -893,14 +900,38 @@ async function sendDeliverablesReadyEmail({ email, produit }) {
 
 
 async function activateSubscription(userId, planInfo, email, name) {
-  const { plan, cycle, credits_per_week: creditsPerWeek, price_fcfa: priceFcfa, prix_img: prixImg, type, total_credits: totalCredits } = planInfo;
+  const { plan, cycle, credits_per_week: creditsPerWeek, price_fcfa: priceFcfa, prix_img: prixImg, type, total_credits: totalCreditsAchat } = planInfo;
   const isPack = type === 'pack';
   const now = new Date();
   // Cause profonde évitée (pack traité comme abonnement) : un pack n'a pas de cycle hebdomadaire
   // récurrent — 3 mois fixes pour Discovery, pas de logique "credits_per_week × semaines" qui
   // continuerait à générer de nouvelles images chaque semaine indéfiniment.
   const dureeJours = isPack ? 90 : (cycle === 'annual' ? 365 : 30);
-  const expiresAt = new Date(now.getTime() + dureeJours * 24 * 60 * 60 * 1000);
+  let expiresAt = new Date(now.getTime() + dureeJours * 24 * 60 * 60 * 1000);
+  let totalCredits = totalCreditsAchat;
+
+  // Empilement des packs Discovery : si un pack du même type est déjà actif et non expiré,
+  // on ADDITIONNE les nouvelles images plutôt que d'écraser (achat = complément, jamais une
+  // perte des images déjà payées et non utilisées), et on garde la date d'expiration la plus
+  // tardive entre l'ancienne et la nouvelle — jamais raccourcie par un nouvel achat.
+  if (isPack) {
+    try {
+      const rExisting = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?user_id=eq.${userId}&select=type,total_credits,expires_at,active`, {
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+      });
+      const existingRows = await rExisting.json();
+      const existing = existingRows[0];
+      if (existing?.type === 'pack' && existing.active && existing.expires_at && new Date(existing.expires_at) > now) {
+        totalCredits = (existing.total_credits || 0) + totalCreditsAchat;
+        const existingExpiry = new Date(existing.expires_at);
+        if (existingExpiry > expiresAt) expiresAt = existingExpiry;
+        console.log(`[Chariow] 📦 Pack Discovery déjà actif — empilement : ${existing.total_credits} + ${totalCreditsAchat} = ${totalCredits} images, expire le ${expiresAt.toISOString()}`);
+      }
+    } catch(e) {
+      console.error('[Chariow] Erreur vérification pack existant (empilement ignoré, achat traité comme neuf) :', e.message);
+    }
+  }
+
   const payload = {
     user_id: userId,
     plan: plan,
