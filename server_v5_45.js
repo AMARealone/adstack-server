@@ -5260,11 +5260,14 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables) {
       } catch(eUp) { console.error('[Deliver] Upload créative échoué :', eUp.message); }
     }
 
-    const angleEntries = (deliverables.copies || []).map((copy, i) => ({
-      numero: i + 1,
-      nom: (deliverables.angles && deliverables.angles[i]) || `Angle ${i + 1}`,
-      hooks: copy?.hooks || [], description: copy?.description || ''
-    }));
+    const angleEntries = (deliverables.copies || []).map((copy, i) => {
+      // Cause profonde corrigée (nom d'angle affiché avec tout le détail technique "* Moteur
+      // dominant : ..." dans AdBoard) : le nom brut extrait de la synthèse contient ce suffixe
+      // interne, jamais destiné au client — on ne garde que la partie avant le premier "*".
+      const nomBrut = (deliverables.angles && deliverables.angles[i]) || `Angle ${i + 1}`;
+      const nom = nomBrut.split('*')[0].trim() || `Angle ${i + 1}`;
+      return { numero: i + 1, nom, hooks: copy?.hooks || [], description: copy?.description || '' };
+    });
 
     // CT utilisés pour ce lot — nécessaire pour qu'un futur renouvellement puisse en éviter
     // 50-60% et garantir de la variété visuelle plutôt que répéter les mêmes structures.
