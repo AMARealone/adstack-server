@@ -3156,6 +3156,69 @@ Sur une QUATRIÈME ligne, ajoute 1 à 3 balises de style/émotion pertinentes s�
     if (idx >= 0) {
       briefs[idx].status = 'in_production';
       briefs[idx].started_at = new Date().toISOString();
+
+      // ── Pipeline photo produit — se déclenche à chaque "Lancer"/"Relancer" tant que le fond
+      // n'a jamais été retiré pour cette commande. Volontairement SYNCHRONE (le clic attend la
+      // fin du pipeline) : si on répondait tout de suite en laissant tourner en arrière-plan,
+      // Factory pourrait charger la photo AVANT que le nettoyage soit prêt — exactement le
+      // risque qu'on veut éviter.
+      //
+      // Ordre exact voulu :
+      // 1. Fond déjà retiré ? → rien à faire, on garde tel quel.
+      // 2. Sinon, qualité de la photo originale : bonne → nettoyage direct.
+      // 3. Qualité mauvaise → recherche d'une meilleure photo du MÊME produit ailleurs sur le
+      //    web (recherche par image, pas par mots-clés — garantit le même produit exact).
+      //    Trouvée et validée → nettoyage de CELLE-LÀ. Rien de trouvé → on nettoie quand même
+      //    l'originale plutôt que de bloquer la production.
+      if (!briefs[idx].photo_nobg) {
+        const photoOriginale = briefs[idx].product?.photo_base64 || briefs[idx].product?.photo_url;
+        let photoBase64Source = null;
+        if (photoOriginale && photoOriginale.startsWith('data:')) {
+          photoBase64Source = photoOriginale;
+        } else if (briefs[idx].product?.photo_url) {
+          try {
+            const imgResp = await fetch(briefs[idx].product.photo_url, { signal: AbortSignal.timeout(15000) });
+            if (imgResp.ok) {
+              const ct = imgResp.headers.get('content-type') || 'image/jpeg';
+              const buf = Buffer.from(await imgResp.arrayBuffer());
+              photoBase64Source = `data:${ct};base64,${buf.toString('base64')}`;
+            }
+          } catch(e) {
+            console.warn('[Photo Pipeline] Récupération photo_url échouée :', e.message);
+          }
+        }
+
+        if (photoBase64Source) {
+          console.log(`[Photo Pipeline] Démarrage pour commande ${id}...`);
+          let photoAUtiliser = photoBase64Source;
+          try {
+            const quality = await checkPhotoQuality(photoBase64Source);
+            console.log(`[Photo Pipeline] Qualité originale : ${quality.ok ? '✓ bonne' : '⚠️ insuffisante'} — ${quality.note}`);
+            if (!quality.ok) {
+              const meilleure = await chercherMeilleurePhotoProduit(photoBase64Source, null);
+              if (meilleure) {
+                photoAUtiliser = meilleure;
+                console.log('[Photo Pipeline] → Remplacement par la photo trouvée en ligne.');
+              } else {
+                console.log('[Photo Pipeline] → Aucune meilleure photo trouvée, on garde l\'originale malgré sa qualité.');
+              }
+            }
+          } catch(e) {
+            console.warn('[Photo Pipeline] Vérification qualité échouée, on continue avec l\'originale :', e.message);
+          }
+
+          const nobg = await processProductPhoto(photoAUtiliser, id);
+          if (nobg) {
+            briefs[idx].photo_nobg = nobg;
+            console.log(`[Photo Pipeline] ✅ Terminé pour commande ${id}.`);
+          } else {
+            console.warn(`[Photo Pipeline] ⚠️ Effacement de fond échoué pour ${id} — photo originale conservée telle quelle.`);
+          }
+        } else {
+          console.warn(`[Photo Pipeline] ⚠️ Aucune photo exploitable pour la commande ${id}.`);
+        }
+      }
+
       await saveBriefs([briefs[idx]]);
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true, brief: briefs[idx] }));
@@ -5040,12 +5103,77 @@ function removeBackground(inputPath, outputPath) {
   });
 }
 
+// ── Recherche d'une meilleure photo du MÊME produit exact, via recherche d'image inversée ──
+// Contrairement à une recherche par mots-clés (qui risque de ramener un produit similaire mais
+// différent), Vision API "Web Detection" part de l'IMAGE elle-même pour trouver où EXACTEMENT
+// cette même photo (ou le même produit) apparaît ailleurs sur le web — c'est la seule approche
+// qui garantit "le même produit, au pixel près", comme demandé. Réutilise le même compte de
+// service que Vertex AI (scope cloud-platform déjà couvert) — nécessite juste que l'API Cloud
+// Vision soit activée sur le projet Google Cloud.
+async function chercherMeilleurePhotoProduit(photoBase64, mime) {
+  try {
+    const token = await getToken();
+    const base64Only = photoBase64.replace(/^data:image\/\w+;base64,/, '');
+    const r = await fetch('https://vision.googleapis.com/v1/images:annotate', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requests: [{
+          image: { content: base64Only },
+          features: [{ type: 'WEB_DETECTION', maxResults: 15 }]
+        }]
+      }),
+      signal: AbortSignal.timeout(20000)
+    });
+    if (!r.ok) {
+      console.warn('[Photo Finder] Vision API a répondu HTTP', r.status, '— API probablement pas activée sur le projet GCP.');
+      return null;
+    }
+    const data = await r.json();
+    const web = data.responses?.[0]?.webDetection;
+    if (!web) { console.log('[Photo Finder] Aucune détection web renvoyée.'); return null; }
+
+    // fullMatchingImages = copies EXACTES de cette image trouvées ailleurs (souvent en
+    // meilleure résolution) — c'est la garantie "même produit, au pixel près" demandée.
+    // partialMatchingImages en filet de sécurité seulement si aucune correspondance exacte.
+    const candidats = [
+      ...(web.fullMatchingImages || []),
+      ...(web.partialMatchingImages || []),
+    ].map(x => x.url).filter(Boolean);
+
+    if (!candidats.length) {
+      console.log('[Photo Finder] Aucune image correspondante trouvée ailleurs sur le web.');
+      return null;
+    }
+
+    console.log(`[Photo Finder] ${candidats.length} candidat(e)s trouvé(e)s — vérification qualité de chacune...`);
+    for (const url of candidats.slice(0, 8)) { // limite raisonnable, évite de scanner indéfiniment
+      try {
+        const imgResp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+        if (!imgResp.ok) continue;
+        const contentType = imgResp.headers.get('content-type') || '';
+        if (!contentType.startsWith('image/')) continue;
+        const buffer = Buffer.from(await imgResp.arrayBuffer());
+        if (buffer.length < 5000 || buffer.length > 15 * 1024 * 1024) continue; // trop petite ou trop lourde, suspect
+        const candidatBase64 = `data:${contentType};base64,${buffer.toString('base64')}`;
+        const quality = await checkPhotoQuality(candidatBase64);
+        if (quality.ok) {
+          console.log(`[Photo Finder] ✅ Meilleure photo trouvée et validée : ${url}`);
+          return candidatBase64;
+        }
+      } catch(e) { continue; } // ce candidat a échoué, on essaie le suivant
+    }
+    console.log('[Photo Finder] Candidats trouvés mais aucun ne passe le contrôle qualité — on garde l\'originale.');
+    return null;
+  } catch(e) {
+    console.warn('[Photo Finder] Erreur recherche :', e.message);
+    return null;
+  }
+}
+
 // ── Analyse qualité photo produit (Gemini Vision) ──
-// Ne fait QUE signaler une qualité insuffisante (netteté/résolution/cadrage) — ne remplace
-// PAS automatiquement l'image. Une vraie recherche "trouve-moi une photo plus propre du même
-// produit" nécessiterait une API de recherche d'image inversée ; Google Custom Search Image
-// est fermée aux nouveaux projets GCP (déjà rencontré sur ce projet, cf. Analyste de Marché) —
-// pas de solution fiable identifiée pour l'instant. À traiter séparément si besoin réel.
+// Sert de déclencheur au pipeline photo complet (voir /commandes/:id/start) : une qualité
+// jugée mauvaise déclenche chercherMeilleurePhotoProduit() avant l'effacement de fond.
 async function checkPhotoQuality(photoBase64) {
   try {
     const m = photoBase64.match(/^data:(image\/[a-z]+);base64,(.+)$/);
