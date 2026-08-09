@@ -51,7 +51,7 @@ const TARGET_DOMAINS_HINT = [
 ].join('\n   • ');
 
 // ── Mindmap hosting ──
-const PUBLIC_URL = process.env.PUBLIC_URL || 'https://adstackofficial.com';
+const PUBLIC_URL = process.env.PUBLIC_URL || 'https://www.adstackofficial.com';
 const MINDMAPS_DIR = path.join(__dirname, 'mindmaps');
 if (!fs.existsSync(MINDMAPS_DIR)) fs.mkdirSync(MINDMAPS_DIR, { recursive: true });
 
@@ -872,7 +872,7 @@ async function sendDeliverablesReadyEmail({ email, produit }) {
   const tpl = await chargerTemplate('email_livrables_prets');
   if (!tpl) { console.warn('[Email] Template email_livrables_prets introuvable en base — email non envoyé'); return; }
 
-  const variables = { produit, lien: 'https://adstackofficial.com/adboard/gallery' };
+  const variables = { produit, lien: 'https://www.adstackofficial.com/adboard/gallery' };
   const html = `<div style="font-family:-apple-system,Arial,sans-serif;max-width:520px;margin:0 auto;color:#222;font-size:15px;line-height:1.65;">${interpoler(tpl.contenu, variables)}</div>`;
   const subject = interpoler(tpl.sujet, variables);
 
@@ -4468,8 +4468,12 @@ if (req.method === 'POST' && req.url === '/shorten') {
         console.error('[Shorten] Échec insertion:', insertRes.status, errText.slice(0,300));
         res.writeHead(500); res.end(JSON.stringify({ error: 'insert_failed' })); return;
       }
+      // Cause profonde corrigée (miniatures qui n'apparaissent jamais sur WhatsApp dans les
+      // vrais messages envoyés, alors que tous les tests isolés passaient) : le lien était
+      // construit sans "www.", ce qui déclenche une redirection 308 (Vercel) avant d'atteindre
+      // les vraies balises OG — WhatsApp ne suit pas cette redirection pour générer l'aperçu.
       res.writeHead(200, {'Content-Type':'application/json'});
-      res.end(JSON.stringify({ short_url: `https://adstackofficial.com/s/${code}` }));
+      res.end(JSON.stringify({ short_url: `https://www.adstackofficial.com/s/${code}` }));
     } catch(e) {
       console.error('[Shorten] Erreur:', e.message);
       res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
