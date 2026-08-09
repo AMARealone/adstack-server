@@ -461,13 +461,13 @@ const SUPABASE_URL_INT = process.env.SUPABASE_URL || 'https://mifljhsusidgzelnsw
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 
 const PLAN_MAP = {
-  'prd_ywk7ik14': { plan: 'discovery', cycle: 'once',    type: 'pack', total_credits: 18, price_fcfa: 24900,  prix_img: 1383 },
-  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly', credits_per_week: 9,  price_fcfa: 39900,  prix_img: 1108 },
-  'prd_wdya3v9h': { plan: 'starter', cycle: 'annual',  credits_per_week: 9,  price_fcfa: 29900,  prix_img: 830 },
-  'prd_34w031':   { plan: 'pro',     cycle: 'monthly', credits_per_week: 18, price_fcfa: 69900,  prix_img: 970 },
-  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'annual',  credits_per_week: 18, price_fcfa: 54900,  prix_img: 762 },
-  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly', credits_per_week: 36, price_fcfa: 109900, prix_img: 763 },
-  'prd_dn4fb72l': { plan: 'scale',   cycle: 'annual',  credits_per_week: 36, price_fcfa: 79900,  prix_img: 554 },
+  'prd_ywk7ik14': { plan: 'discovery', cycle: 'once',    type: 'pack', total_credits: 9,  price_fcfa: 9900,   prix_img: 1100 },
+  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly', credits_per_week: 9,  price_fcfa: 29900,  prix_img: 830 },
+  'prd_wdya3v9h': { plan: 'starter', cycle: 'annual',  credits_per_week: 9,  price_fcfa: 24900,  prix_img: 691 },
+  'prd_34w031':   { plan: 'pro',     cycle: 'monthly', credits_per_week: 18, price_fcfa: 54900,  prix_img: 762 },
+  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'annual',  credits_per_week: 18, price_fcfa: 44900,  prix_img: 623 },
+  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly', credits_per_week: 36, price_fcfa: 79900,  prix_img: 554 },
+  'prd_dn4fb72l': { plan: 'scale',   cycle: 'annual',  credits_per_week: 36, price_fcfa: 64900,  prix_img: 450 },
 };
 
 const PLAN_LABELS = { discovery: 'Conversion Discovery', starter: 'Conversion Starter', pro: 'Conversion Pro', scale: 'Conversion Scale' };
