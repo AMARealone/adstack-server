@@ -4088,10 +4088,16 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
     // c'est cette liste que l'Analyste ne doit jamais reproduire, même après une rotation de cible.
     const anglesHistorique = deliveries.flatMap(d => (d.angles || []).map(a => a.nom).filter(Boolean));
 
-    // Cible utilisée au DERNIER lot livré (nom du persona) — sert de référence pour savoir si la
-    // prochaine commande reste sur la même cible ou si le client en a imposé une nouvelle.
+    // Cible utilisée au DERNIER lot livré — sert de référence pour savoir si la prochaine
+    // commande reste sur la même cible ou si le client en a imposé une nouvelle.
+    // Cause profonde corrigée (changement de cible jamais détecté, ex: "prof d'EPS" → "professionnelle
+    // active" traité comme identique) : cette référence n'était que le PRÉNOM du persona (ex:
+    // "Aïssatou") — rien de comparable à une description de cible ("femme professionnelle active
+    // souffrant de discrimination..."). Un prénom seul ne permet aucune comparaison de sens.
+    // On construit maintenant une vraie description (rôle, âge, ville) à partir du persona complet.
     const derniereLivraison = deliveries.length ? deliveries[deliveries.length - 1] : null;
-    const cibleActuelle = derniereLivraison?.cible || marche.persona?.nom || null;
+    const descrPersona = (p) => p ? [p.nom, p.role, p.age ? `${p.age} ans` : null, p.ville].filter(Boolean).join(', ') : null;
+    const cibleActuelle = descrPersona(marche.persona) || derniereLivraison?.cible || null;
 
     // Compteur d'angles pour la cible COURANTE uniquement : on remonte les livraisons les plus
     // récentes tant qu'elles partagent le même nom de cible que la dernière.
@@ -5304,7 +5310,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables) {
       // pour ce lot) — nécessaires pour calculer, à la demande, le compteur d'angles de la cible
       // COURANTE uniquement, et la liste complète d'angles à exclure (mode remplacement, plus
       // d'accumulation dans la synthèse elle-même).
-      deliveries: [...existingDeliveries, { semaine: weekLabel, date: dateLabel, created_at: new Date().toISOString(), cible: deliverables.marche?.persona?.nom || null, angles: angleEntries, cts_utilises: ctsUtilisesCeLot }],
+      deliveries: [...existingDeliveries, { semaine: weekLabel, date: dateLabel, created_at: new Date().toISOString(), cible: [deliverables.marche?.persona?.nom, deliverables.marche?.persona?.role, deliverables.marche?.persona?.age ? `${deliverables.marche.persona.age} ans` : null, deliverables.marche?.persona?.ville].filter(Boolean).join(', ') || null, angles: angleEntries, cts_utilises: ctsUtilisesCeLot }],
       // Dernière synthèse complète — nécessaire pour qu'une future commande sur ce même produit
       // puisse reprendre le même persona (ajout d'angles) plutôt que de repartir de zéro.
       derniere_synthese: deliverables.synthesis || undefined,
