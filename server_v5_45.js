@@ -5254,7 +5254,10 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables) {
     const existing = prRows[0];
     const existingCreatives = existing.creatives || [];
     const existingDeliveries = existing.deliveries || [];
-    const weekLabel = `S${existingDeliveries.length + 1}`;
+    // "Batch" plutôt que "Semaine" — un client peut recharger ses demandes n'importe quand,
+    // un calendrier hebdomadaire n'a jamais de sens réel ici. Déjà comptabilisé PAR PRODUIT
+    // (existingDeliveries vient de la fiche de CE produit précis), juste le libellé change.
+    const weekLabel = `B${existingDeliveries.length + 1}`;
     const dateLabel = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
 
     const newCreatives = [];
@@ -5263,9 +5266,14 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables) {
       if (!c || !c.imgB64) continue;
       try {
         const url = await uploadCreativeImage(c.imgB64, c.mime || 'image/png', `${ticketId}_${i}`);
+        // Même correctif que pour angleEntries plus bas — ce champ est CONSTRUIT SÉPARÉMENT et
+        // avait été oublié lors du premier correctif, d'où le texte technique complet encore
+        // visible dans la légende de chaque créative de la Galerie.
+        const angleBrutCreative = (deliverables.angles && deliverables.angles[c.angleIdx]) || `Angle ${((c.angleIdx || 0) + 1)}`;
+        const angleCreative = angleBrutCreative.split('*')[0].trim() || `Angle ${((c.angleIdx || 0) + 1)}`;
         newCreatives.push({
           id: `${ticketId}_${i}`, productId,
-          angle: (deliverables.angles && deliverables.angles[c.angleIdx]) || `Angle ${((c.angleIdx || 0) + 1)}`,
+          angle: angleCreative,
           week: weekLabel, imageUrl: url
         });
       } catch(eUp) { console.error('[Deliver] Upload créative échoué :', eUp.message); }
