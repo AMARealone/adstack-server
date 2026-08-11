@@ -3462,7 +3462,22 @@ if (req.method === 'GET' && req.url.startsWith('/cron/clarity-snapshot')) {
       });
     });
 
-    const lignes = Object.values(parPage);
+    const lignes = Object.values(parPage).map(page => ({
+      // Cause profonde corrigée (PGRST102 "All object keys must match") : chaque page ne
+      // recevait un champ QUE si Clarity avait vraiment renvoyé cette métrique pour elle (ex:
+      // une page sans aucun rage click n'avait tout simplement pas la clé rage_click_count) —
+      // des objets aux formes différentes dans un même lot, que Supabase refuse en bloc.
+      // Normalisation ici : les mêmes clés partout, 0 par défaut plutôt qu'une absence.
+      url: page.url,
+      dead_click_count: page.dead_click_count ?? 0,
+      rage_click_count: page.rage_click_count ?? 0,
+      quickback_click: page.quickback_click ?? 0,
+      excessive_scroll: page.excessive_scroll ?? 0,
+      traffic_sessions: page.traffic_sessions ?? 0,
+      visiteurs_uniques: page.visiteurs_uniques ?? 0,
+      scroll_depth: page.scroll_depth ?? 0,
+      engagement_time: page.engagement_time ?? 0,
+    }));
     if (lignes.length) {
       const rInsert = await fetch(`${SUPABASE_URL_INT}/rest/v1/clarity_snapshots`, {
         method: 'POST',
