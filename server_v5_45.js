@@ -4940,6 +4940,68 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
     return;
   }
 
+  // ── SESSIONS DÉMO — persistance de la génération démo (avant : rien n'était sauvegardé, un
+  // rafraîchissement de page pendant ou après une génération effaçait tout, y compris le lien
+  // vers un HTML déjà uploadé sur Supabase Storage). Table dédiée `demo_sessions`, indépendante
+  // de la table `demos` existante (qui gère la file d'attente prospection CRM, pas la génération).
+
+  // POST /demo-sessions — crée une nouvelle session démo, retourne son id
+  if (req.method === 'POST' && req.url === '/demo-sessions') {
+    try {
+      const id = crypto.randomUUID();
+      const rInsert = await fetch(`${SUPABASE_URL_INT}/rest/v1/demo_sessions`, {
+        method: 'POST',
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ id, status: 'in_progress', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), state: {} })
+      });
+      if (!rInsert.ok) { res.writeHead(500); res.end(JSON.stringify({ error: await rInsert.text() })); return; }
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok: true, id }));
+    } catch(e) { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // POST /demo-sessions/:id/save — écriture ciblée de l'état courant (mêmes principes que
+  // save-deliverables : ne réécrit QUE ce qui change, jamais toute la ligne).
+  if (req.method === 'POST' && req.url.match(/^\/demo-sessions\/[^/]+\/save$/)) {
+    const id = req.url.split('/')[2];
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { state, status, finalUrl } = JSON.parse(body);
+        const patchBody = { updated_at: new Date().toISOString() };
+        if (state !== undefined) patchBody.state = state;
+        if (status) patchBody.status = status;
+        if (finalUrl !== undefined) patchBody.final_url = finalUrl;
+        const rPatch = await fetch(`${SUPABASE_URL_INT}/rest/v1/demo_sessions?id=eq.${id}`, {
+          method: 'PATCH',
+          headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify(patchBody)
+        });
+        if (!rPatch.ok) { const t = await rPatch.text(); console.error('[Demo Session] Sauvegarde échouée:', t.slice(0,300)); res.writeHead(500); res.end(JSON.stringify({ error: t })); return; }
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ ok: true }));
+      } catch(e) { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); }
+    });
+    return;
+  }
+
+  // GET /demo-sessions/:id — récupère l'état sauvegardé, pour la reprise au rechargement
+  if (req.method === 'GET' && req.url.match(/^\/demo-sessions\/[^/]+$/)) {
+    const id = req.url.split('/')[2];
+    try {
+      const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/demo_sessions?id=eq.${id}&select=*`, {
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+      });
+      const rows = await r.json();
+      if (!rows.length) { res.writeHead(404); res.end(JSON.stringify({ error: 'Session introuvable' })); return; }
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify(rows[0]));
+    } catch(e) { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
   // POST /commandes/:id/save-deliverables — appelé automatiquement dès qu'une production
   // se termine (si lancée depuis un ticket), pour que "Envoyer au client" trouve toujours
   // les livrables même après avoir quitté la page.
