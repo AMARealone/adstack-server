@@ -269,13 +269,25 @@ function vertexRequestGlobal(token, model, body, timeoutMs = 120000, typeAppel =
 // d'avant (120s+120s max), sinon on risque de dépasser la limite de temps que Render impose à
 // une requête HTTP — ce qui provoquait justement un "Failed to fetch" côté navigateur.
 async function vertexRequestGlobalAvecReessai(token, model, body, timeoutMs = 120000, typeAppel = 'generation_image') {
-  try {
-    return await vertexRequestGlobal(token, model, body, timeoutMs, typeAppel);
-  } catch(e) {
-    console.log(`⚠️  Échec 1ère tentative (${e.message})${e.isRateLimit ? ' — limite de débit détectée, courte attente...' : ' — nouvel essai...'}`);
-    if (e.isRateLimit) await new Promise(r => setTimeout(r, 8000));
-    return await vertexRequestGlobal(token, model, body, timeoutMs, typeAppel);
+  // Cause profonde corrigée (échec persistant sur des 429 malgré un "retry" déjà en place) :
+  // seulement 2 tentatives au total (1 essai + 1 réessai après 8s fixe) — trop fragile pour une
+  // erreur de limite de débit, qui a souvent besoin de plusieurs secondes de plus pour se libérer.
+  // 4 tentatives maintenant, avec un recul exponentiel (8s/16s/32s) sur les erreurs de débit
+  // spécifiquement — recommandation standard de Google pour ce type d'erreur précis.
+  let derniereErreur;
+  for (let tentative = 1; tentative <= 4; tentative++) {
+    try {
+      return await vertexRequestGlobal(token, model, body, timeoutMs, typeAppel);
+    } catch(e) {
+      derniereErreur = e;
+      if (tentative < 4) {
+        const attente = e.isRateLimit ? 8000 * Math.pow(2, tentative - 1) : 3000;
+        console.log(`⚠️  Échec tentative ${tentative}/4 (${e.message})${e.isRateLimit ? ` — limite de débit détectée, attente ${attente/1000}s...` : ' — nouvel essai...'}`);
+        await new Promise(r => setTimeout(r, attente));
+      }
+    }
   }
+  throw derniereErreur;
 }
 
 // ── Vertex AI Request ──────────────────────────
@@ -382,13 +394,22 @@ function vertexRequest(token, model, body, timeoutMs = 90000, typeAppel = 'texte
 // débit passagère). 1 réessai immédiat pour une panne réseau/timeout ; pour une limite de
 // débit (429), courte attente (8s) avant de réessayer pour ne pas retomber instantanément dessus.
 async function vertexRequestAvecReessai(token, model, body, timeoutMs = 90000, typeAppel = 'texte_gemini') {
-  try {
-    return await vertexRequest(token, model, body, timeoutMs, typeAppel);
-  } catch(e) {
-    console.log(`⚠️  Échec 1ère tentative (${e.message})${e.isRateLimit ? ' — limite de débit détectée, courte attente...' : ' — nouvel essai...'}`);
-    if (e.isRateLimit) await new Promise(r => setTimeout(r, 8000));
-    return await vertexRequest(token, model, body, timeoutMs, typeAppel);
+  // Même correctif que vertexRequestGlobalAvecReessai — 2 tentatives fixes était trop fragile
+  // pour une erreur de limite de débit.
+  let derniereErreur;
+  for (let tentative = 1; tentative <= 4; tentative++) {
+    try {
+      return await vertexRequest(token, model, body, timeoutMs, typeAppel);
+    } catch(e) {
+      derniereErreur = e;
+      if (tentative < 4) {
+        const attente = e.isRateLimit ? 8000 * Math.pow(2, tentative - 1) : 3000;
+        console.log(`⚠️  Échec tentative ${tentative}/4 (${e.message})${e.isRateLimit ? ` — limite de débit détectée, attente ${attente/1000}s...` : ' — nouvel essai...'}`);
+        await new Promise(r => setTimeout(r, attente));
+      }
+    }
   }
+  throw derniereErreur;
 }
 
 // ── HTML (inline fallback) ─────────────────────
