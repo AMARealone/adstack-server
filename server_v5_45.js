@@ -4048,6 +4048,22 @@ if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/delete$/)) {
       const briefs = await loadBriefs();
       const brief = briefs.find(b => b.id === id);
 
+      // Cause profonde corrigée (client recevant "un problème est survenu" malgré des livrables
+      // déjà bien envoyés) : le statut vérifié plus bas venait de `commandes` (table de travail
+      // interne), pas de `briefs` (celle qu'AdBoard/le client lit réellement) — si la sauvegarde
+      // du statut "done" vers `commandes` avait échoué à cause d'un timeout (déjà observé
+      // plusieurs fois sur cette table), `commandes.status` restait périmé alors que
+      // `briefs.status`, lui, était correctement à 'done'. Lecture directe et fraîche de la
+      // vraie source de vérité, indépendamment de ce que `commandes` pense être l'état actuel.
+      let statutReelBriefs = brief?.status || null;
+      try {
+        const rStatut = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${id}&select=status`, {
+          headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+        });
+        const rowsStatut = await rStatut.json();
+        if (rowsStatut.length) statutReelBriefs = rowsStatut[0].status;
+      } catch(e) { console.warn('[Delete] Lecture statut briefs échouée, repli sur commandes :', e.message); }
+
       await fetch(`${SUPABASE_URL_INT}/rest/v1/commandes?id=eq.${id}`, {
         method: 'DELETE',
         headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
@@ -4062,7 +4078,7 @@ if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/delete$/)) {
       // nettoyage, le client a déjà tout reçu) déclenchait quand même cette même notification
       // "un problème est survenu, refais une demande" — complètement fausse dans ce cas précis,
       // et ça écrasait à tort son statut 'done' par 'probleme_agence'.
-      if (brief && source !== 'client_cancel' && brief.status !== 'done') {
+      if (brief && source !== 'client_cancel' && statutReelBriefs !== 'done') {
         await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${id}`, {
           method: 'PATCH',
           headers: {
