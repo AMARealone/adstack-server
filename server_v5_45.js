@@ -4002,7 +4002,11 @@ if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/delete$/)) {
       // pensée uniquement pour le cas où NOUS supprimons un ticket en backend sans que le client le
       // sache. Le client qui annule lui-même sait déjà pourquoi — on ne touche ni son statut
       // (déjà mis à 'cancelled' côté AdBoard) ni ne lui envoie cette notification dans ce cas.
-      if (brief && source !== 'client_cancel') {
+      // Cause profonde corrigée (2e cas) : supprimer un ticket DÉJÀ LIVRÉ depuis Factory (simple
+      // nettoyage, le client a déjà tout reçu) déclenchait quand même cette même notification
+      // "un problème est survenu, refais une demande" — complètement fausse dans ce cas précis,
+      // et ça écrasait à tort son statut 'done' par 'probleme_agence'.
+      if (brief && source !== 'client_cancel' && brief.status !== 'done') {
         await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${id}`, {
           method: 'PATCH',
           headers: {
@@ -4761,6 +4765,72 @@ if (req.method === 'POST' && req.url === '/save-form-response') {
   return;
 }
 
+// POST /products/:id/dedupe-creatives — nettoyage ponctuel des doublons créés par l'ancien bug
+// d'envoi partiel (créatives avec un ID strictement identique dans le tableau, entrées de batch
+// dupliquées, noms d'angle non tronqués). Garde la première occurrence de chaque ID/ticket,
+// retire les autres. À usage unique par produit affecté — le nouveau mécanisme d'envoi (voir
+// /commandes/:id/done) empêche ce problème de se reproduire.
+if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives$/)) {
+  const productId = req.url.split('/')[2];
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=creatives,deliveries`, {
+      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+    });
+    const rows = await r.json();
+    if (!rows.length) { res.writeHead(404); res.end(JSON.stringify({ error: 'Produit introuvable' })); return; }
+    const creatives = rows[0].creatives || [];
+    const vusIds = new Set();
+    const nettoyees = [];
+    let doublonsRetires = 0;
+    let anglesNormalises = 0;
+    for (const c of creatives) {
+      if (c.id && vusIds.has(c.id)) { doublonsRetires++; continue; }
+      if (c.id) vusIds.add(c.id);
+      // Anciennes créatives (avant le fix de troncature) : le nom d'angle complet avec tout le
+      // détail technique était encore stocké tel quel — les nouvelles ont la version tronquée,
+      // donc les deux coexistaient comme des chaînes différentes, jamais fusionnées dans les
+      // filtres. On normalise ici aussi, rétroactivement.
+      if (c.angle && c.angle.includes('*')) {
+        const propre = c.angle.split('*')[0].trim();
+        if (propre) { c.angle = propre; anglesNormalises++; }
+      }
+      nettoyees.push(c);
+    }
+    // Même nettoyage sur deliveries : entrées de batch dupliquées (mêmes tickets sans ticketId
+    // avant ce fix) et noms d'angle non tronqués dans l'historique / Ad Copies.
+    const deliveries = rows[0].deliveries || [];
+    const vusTickets = new Set();
+    const deliveriesNettoyees = [];
+    let batchsRetires = 0;
+    for (const d of deliveries) {
+      if (d.ticketId && vusTickets.has(d.ticketId)) { batchsRetires++; continue; }
+      if (d.ticketId) vusTickets.add(d.ticketId);
+      if (Array.isArray(d.angles)) {
+        d.angles = d.angles.map(a => {
+          if (a?.nom && a.nom.includes('*')) {
+            const propre = a.nom.split('*')[0].trim();
+            if (propre) { anglesNormalises++; return { ...a, nom: propre }; }
+          }
+          return a;
+        });
+      }
+      deliveriesNettoyees.push(d);
+    }
+    const rPatch = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
+      method: 'PATCH',
+      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ creatives: nettoyees, deliveries: deliveriesNettoyees })
+    });
+    if (!rPatch.ok) { res.writeHead(500); res.end(JSON.stringify({ error: 'Écriture échouée', detail: await rPatch.text() })); return; }
+    console.log(`[Dedupe] ${doublonsRetires} créative(s) doublon(s) + ${batchsRetires} batch(s) doublon(s) retirés, ${anglesNormalises} angle(s) normalisé(s) pour products/${productId}`);
+    res.writeHead(200, {'Content-Type':'application/json'});
+    res.end(JSON.stringify({ ok: true, doublonsRetires, batchsRetires, anglesNormalises, totalRestant: nettoyees.length }));
+  } catch(e) {
+    res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+  }
+  return;
+}
+
 // POST /commandes/:id/done — "Envoyer au client" : marque livré + pousse vers AdBoard (table briefs)
   if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/done$/)) {
 
@@ -5389,7 +5459,13 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
     // Si le PATCH a échoué, rien n'a réellement été écrit — ne jamais tracer ces indices comme
     // "livrés" sur le brief dans ce cas, sinon un futur renvoi croirait à tort qu'ils sont déjà
     // passés et ne les repousserait jamais, alors qu'ils manquent toujours réellement.
-    return { expectedCount, pushedCount: totalMaintenant, patchOk: rPatch.ok, newlyPushedIndices: rPatch.ok ? newlyPushedIndices : [], batchCree: rPatch.ok ? true : dejaCree };
+    return {
+      expectedCount, pushedCount: totalMaintenant, patchOk: rPatch.ok,
+      newlyPushedIndices: rPatch.ok ? newlyPushedIndices : [], batchCree: rPatch.ok ? true : dejaCree,
+      adCopiesOk: rPatch.ok && angleEntries.length === (deliverables.copies || []).length && angleEntries.length > 0,
+      adCopiesCount: angleEntries.length, adCopiesAttendu: (deliverables.copies || []).length,
+      marcheOk: rPatch.ok && !!deliverables.marche,
+    };
   } catch(e) {
     console.error('[Deliver] Push vers products échoué :', e.message);
     return { expectedCount: (deliverables.creatives || []).filter(c => c?.imgB64).length, pushedCount: 0, patchOk: false, newlyPushedIndices: [], batchCree: false, error: e.message };
