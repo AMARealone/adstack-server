@@ -3464,7 +3464,7 @@ if (req.method === 'GET' && req.url.startsWith('/cron/clarity-snapshot')) {
 
     const lignes = Object.values(parPage);
     if (lignes.length) {
-      await fetch(`${SUPABASE_URL_INT}/rest/v1/clarity_snapshots`, {
+      const rInsert = await fetch(`${SUPABASE_URL_INT}/rest/v1/clarity_snapshots`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -3474,7 +3474,16 @@ if (req.method === 'GET' && req.url.startsWith('/cron/clarity-snapshot')) {
         },
         body: JSON.stringify(lignes)
       });
-      console.log(`[Clarity] ✅ Snapshot enregistré — ${lignes.length} page(s)`);
+      // Cause profonde corrigée (plus aucune donnée dans Comportement Utilisateur depuis le
+      // dernier fix) : cette écriture ne vérifiait jamais son propre succès — si Supabase la
+      // refusait (colonne introuvable après le changement de noms de champs, contrainte, etc.),
+      // le log affichait quand même "✅ enregistré" alors que rien n'était jamais écrit.
+      if (!rInsert.ok) {
+        const errText = await rInsert.text();
+        console.error(`[Clarity] ❌ ÉCHEC insertion snapshot — statut ${rInsert.status}:`, errText.slice(0,500));
+      } else {
+        console.log(`[Clarity] ✅ Snapshot enregistré — ${lignes.length} page(s)`);
+      }
     } else {
       console.log('[Clarity] Snapshot vide (aucune donnée retournée)');
     }
