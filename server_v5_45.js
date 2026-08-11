@@ -4770,7 +4770,6 @@ if (req.method === 'POST' && req.url === '/save-form-response') {
     if (idx >= 0) {
       briefs[idx].status = 'done';
       briefs[idx].done_at = new Date().toISOString();
-      await saveBriefs([briefs[idx]]);
 
       // Pousser les livrables vers la table `briefs` d'AdBoard (statut visible pour le client)
       if (briefs[idx].deliverables) {
@@ -4803,15 +4802,29 @@ if (req.method === 'POST' && req.url === '/save-form-response') {
         } catch(e) {
           console.error('[Deliver] Push vers briefs (AdBoard) échoué :', e.message);
         }
-        // Vraie liaison : pousser créatives (upload Storage) + ad copies dans products,
-        // au format que la Galerie Créatives et les Ad Copies lisent déjà.
-        await pushDeliverablesToProduct(briefs[idx].product?.id, id, briefs[idx].deliverables);
+
+        // Cause profonde corrigée (clic répété sur "Envoyer au client" → créatives ET ad copies
+        // doublés dans AdBoard, au lieu de compléter ce qui manquait) : l'ancienne version
+        // vérifiait les doublons en RE-LISANT la table products juste avant de pousser — une
+        // lecture séparée, sujette à un décalage de synchronisation, qui pouvait rater les
+        // créatives tout juste écrites par un appel précédent. Le suivi se fait maintenant
+        // directement SUR LE BRIEF lui-même (déjà chargé de façon fiable, pas de lecture
+        // croisée) : on ne pousse plus jamais que les indices pas encore confirmés livrés.
+        const dejaPousses = new Set(briefs[idx].pushed_creative_indices || []);
+        var pushResult = await pushDeliverablesToProduct(briefs[idx].product?.id, id, briefs[idx].deliverables, dejaPousses, !!briefs[idx].batch_deja_cree);
+        if (pushResult?.newlyPushedIndices?.length) {
+          briefs[idx].pushed_creative_indices = [...dejaPousses, ...pushResult.newlyPushedIndices];
+        }
+        if (pushResult?.batchCree) {
+          briefs[idx].batch_deja_cree = true;
+        }
       } else {
         console.warn(`[Deliver] Aucun livrable sauvegardé pour ${id} — statut poussé à AdBoard sans contenu.`);
       }
 
+      await saveBriefs([briefs[idx]]);
       res.writeHead(200, {'Content-Type':'application/json'});
-      res.end(JSON.stringify({ ok: true }));
+      res.end(JSON.stringify({ ok: true, push: pushResult || null }));
       // Notification push + trace persistante — livrables prêts
       const userId = briefs[idx].client?.user_id;
       if (userId) {
@@ -5107,6 +5120,8 @@ async function saveBriefs(briefs) {
           deliverables: b.deliverables, started_at: b.started_at, done_at: b.done_at,
           pending_alert_sent: b.pending_alert_sent || false,
           delivery_reminder_sent: b.delivery_reminder_sent || false,
+          pushed_creative_indices: b.pushed_creative_indices || [],
+          batch_deja_cree: b.batch_deja_cree || false,
         })
       });
       if (!r.ok) console.error('[Commandes] Sauvegarde échouée pour', b.id, ':', await r.text());
@@ -5254,7 +5269,7 @@ async function uploadCreativeImage(base64Data, mime, filename) {
 // (vérifié dans Platform.jsx). Cumulatif — n'écrase jamais les livraisons précédentes du
 // même produit. Données Marché volontairement absent : l'agent qui produit ce format n'est
 // pas encore câblé dans le pipeline de production (voir note dans le code).
-async function pushDeliverablesToProduct(productId, ticketId, deliverables) {
+async function pushDeliverablesToProduct(productId, ticketId, deliverables, alreadyPushedIndices = new Set(), batchDejaCree = false) {
   if (!productId || !deliverables) return;
   try {
     const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=creatives,deliveries,marche`, {
@@ -5266,28 +5281,40 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables) {
     const existing = prRows[0];
     const existingCreatives = existing.creatives || [];
     const existingDeliveries = existing.deliveries || [];
+    // Sur un renvoi (après un envoi partiel précédent), ce ticket a déjà sa propre entrée de
+    // batch — on reprend son même label, jamais un nouveau numéro, pour rester cohérent.
+    const livraisonExistante = existingDeliveries.find(d => d.ticketId === ticketId);
     // "Batch" plutôt que "Semaine" — un client peut recharger ses demandes n'importe quand,
     // un calendrier hebdomadaire n'a jamais de sens réel ici. Déjà comptabilisé PAR PRODUIT
     // (existingDeliveries vient de la fiche de CE produit précis), juste le libellé change.
-    const weekLabel = `B${existingDeliveries.length + 1}`;
-    const dateLabel = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+    const weekLabel = livraisonExistante ? livraisonExistante.semaine : `B${existingDeliveries.length + 1}`;
+    const dateLabel = livraisonExistante ? livraisonExistante.date : new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
 
+    // Double protection : le suivi fiable vient du BRIEF (alreadyPushedIndices, passé par
+    // l'appelant) — la vérification des IDs déjà présents dans products reste en filet de
+    // sécurité supplémentaire, mais n'est plus la SEULE ligne de défense contre les doublons.
+    const existingIds = new Set(existingCreatives.map(c => c.id));
     const newCreatives = [];
+    const newlyPushedIndices = [];
     for (let i = 0; i < (deliverables.creatives || []).length; i++) {
       const c = deliverables.creatives[i];
       if (!c || !c.imgB64) continue;
+      if (alreadyPushedIndices.has(i)) continue; // déjà confirmé livré pour CE ticket — jamais repoussé
+      const idCandidat = `${ticketId}_${i}`;
+      if (existingIds.has(idCandidat)) { newlyPushedIndices.push(i); continue; } // déjà là mais pas encore tracé sur le brief — on le trace sans le repousser
       try {
-        const url = await uploadCreativeImage(c.imgB64, c.mime || 'image/png', `${ticketId}_${i}`);
+        const url = await uploadCreativeImage(c.imgB64, c.mime || 'image/png', idCandidat);
         // Même correctif que pour angleEntries plus bas — ce champ est CONSTRUIT SÉPARÉMENT et
         // avait été oublié lors du premier correctif, d'où le texte technique complet encore
         // visible dans la légende de chaque créative de la Galerie.
         const angleBrutCreative = (deliverables.angles && deliverables.angles[c.angleIdx]) || `Angle ${((c.angleIdx || 0) + 1)}`;
         const angleCreative = angleBrutCreative.split('*')[0].trim() || `Angle ${((c.angleIdx || 0) + 1)}`;
         newCreatives.push({
-          id: `${ticketId}_${i}`, productId,
+          id: idCandidat, productId,
           angle: angleCreative,
           week: weekLabel, imageUrl: url
         });
+        newlyPushedIndices.push(i);
       } catch(eUp) { console.error('[Deliver] Upload créative échoué :', eUp.message); }
     }
 
@@ -5304,13 +5331,22 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables) {
     // 50-60% et garantir de la variété visuelle plutôt que répéter les mêmes structures.
     const ctsUtilisesCeLot = [...new Set((deliverables.creatives || []).map(c => c?.ct).filter(Boolean))];
 
+    // Sur un renvoi (après un envoi partiel précédent), ce ticket a déjà sa propre entrée de
+    // batch — ne jamais en recréer une deuxième, juste garder celle qui existe déjà. Double
+    // protection : batchDejaCree vient du brief (fiable, pas de lecture croisée), livraisonExistante
+    // reste en filet de sécurité supplémentaire sur la lecture fraîche de products.
+    const dejaCree = batchDejaCree || !!livraisonExistante;
+    const deliveriesFinal = dejaCree
+      ? existingDeliveries
+      : [...existingDeliveries, { ticketId, semaine: weekLabel, date: dateLabel, created_at: new Date().toISOString(), cible: [deliverables.marche?.persona?.nom, deliverables.marche?.persona?.role, deliverables.marche?.persona?.age ? `${deliverables.marche.persona.age} ans` : null, deliverables.marche?.persona?.ville].filter(Boolean).join(', ') || null, angles: angleEntries, cts_utilises: ctsUtilisesCeLot }];
+
     const patchBody = {
       creatives: [...existingCreatives, ...newCreatives],
       // created_at (ISO, fiable pour comparaison chronologique) + cible (nom du persona utilisé
       // pour ce lot) — nécessaires pour calculer, à la demande, le compteur d'angles de la cible
       // COURANTE uniquement, et la liste complète d'angles à exclure (mode remplacement, plus
       // d'accumulation dans la synthèse elle-même).
-      deliveries: [...existingDeliveries, { semaine: weekLabel, date: dateLabel, created_at: new Date().toISOString(), cible: [deliverables.marche?.persona?.nom, deliverables.marche?.persona?.role, deliverables.marche?.persona?.age ? `${deliverables.marche.persona.age} ans` : null, deliverables.marche?.persona?.ville].filter(Boolean).join(', ') || null, angles: angleEntries, cts_utilises: ctsUtilisesCeLot }],
+      deliveries: deliveriesFinal,
       // Dernière synthèse complète — nécessaire pour qu'une future commande sur ce même produit
       // puisse reprendre le même persona (ajout d'angles) plutôt que de repartir de zéro.
       derniere_synthese: deliverables.synthesis || undefined,
@@ -5331,14 +5367,32 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables) {
       };
     }
 
-    await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
+    const rPatch = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
       method: 'PATCH',
       headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
       body: JSON.stringify(patchBody)
     });
-    console.log(`[Deliver] ✅ ${newCreatives.length} créative(s) + ${angleEntries.length} angle(s)${deliverables.marche ? ' + données marché' : ''} poussés vers products/${productId}`);
+    // Cause profonde corrigée (bouton "Envoyer au client" verrouillé sur un envoi partiel, sans
+    // aucun moyen de renvoyer les créatives manquantes) : ce PATCH final ne vérifiait jamais son
+    // propre succès, ET rien ne comparait le nombre de créatives réellement poussées au nombre
+    // attendu — un envoi partiel (ex: échec d'upload sur certaines images) semblait "réussi" du
+    // point de vue de Factory. On retourne maintenant ces deux compteurs pour que le client
+    // puisse comparer et proposer de renvoyer si un écart est détecté.
+    if (!rPatch.ok) {
+      const errText = await rPatch.text();
+      console.error('[Deliver] ❌ ÉCHEC PATCH products:', rPatch.status, errText.slice(0,400));
+    }
+    const expectedCount = (deliverables.creatives || []).filter(c => c?.imgB64).length;
+    const dejaPresentesCeTicket = existingCreatives.filter(c => c.id && c.id.startsWith(`${ticketId}_`)).length;
+    const totalMaintenant = dejaPresentesCeTicket + newCreatives.length;
+    console.log(`[Deliver] ✅ ${newCreatives.length} nouvelle(s) créative(s) (${totalMaintenant}/${expectedCount} au total pour ce ticket) + ${angleEntries.length} angle(s)${deliverables.marche ? ' + données marché' : ''} poussés vers products/${productId}`);
+    // Si le PATCH a échoué, rien n'a réellement été écrit — ne jamais tracer ces indices comme
+    // "livrés" sur le brief dans ce cas, sinon un futur renvoi croirait à tort qu'ils sont déjà
+    // passés et ne les repousserait jamais, alors qu'ils manquent toujours réellement.
+    return { expectedCount, pushedCount: totalMaintenant, patchOk: rPatch.ok, newlyPushedIndices: rPatch.ok ? newlyPushedIndices : [], batchCree: rPatch.ok ? true : dejaCree };
   } catch(e) {
     console.error('[Deliver] Push vers products échoué :', e.message);
+    return { expectedCount: (deliverables.creatives || []).filter(c => c?.imgB64).length, pushedCount: 0, patchOk: false, newlyPushedIndices: [], batchCree: false, error: e.message };
   }
 }
 
