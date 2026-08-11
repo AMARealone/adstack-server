@@ -2341,12 +2341,19 @@ HARD LOCKS :
         if (ctBase64) userParts.push({ type:'image', source:{ type:'base64', media_type: ctMime || 'image/jpeg', data: ctBase64 } });
         // Pas de logo image — le nom de marque est injecté en texte
 
-        const nomMarque = brief.marque || 'la marque';
+        // Cause profonde corrigée ("la marque" affiché littéralement comme texte sur les
+        // créatives, malgré un avertissement explicite plus bas dans le prompt) : cette valeur
+        // de repli injectait la CHAÎNE LITTÉRALE "la marque" dans le texte d'entrée lu par
+        // Gemini — qui la traitait alors comme une vraie donnée de brief à potentiellement
+        // afficher, pas comme un simple placeholder de code. On omet maintenant complètement
+        // la ligne marque quand elle est vide, au lieu d'y substituer un texte qui ressemble à
+        // une vraie valeur.
+        const nomMarque = brief.marque || null;
         const nomProduit = brief.produit || 'le produit';
 
         const briefSummary = [
           'BRIEF :',
-          `- Marque : ${nomMarque}`,
+          nomMarque ? `- Marque : ${nomMarque}` : null,
           `- Produit : ${nomProduit}`,
           `- Pays : ${brief.pays || 'n/a'}`,
           brief.couleurs_marque ? `- Couleurs marque : ${brief.couleurs_marque.join(', ')}` : null,
@@ -2356,7 +2363,9 @@ HARD LOCKS :
 
         // Rôles d'images : 2 images uniquement, rôle clair et non ambigu
         const imageRoles = [
-          `IMAGE 1 (que TU analyses) = PRODUIT CLIENT "${nomProduit}" de "${nomMarque}" — VÉRITÉ ABSOLUE DU PACKAGING.`,
+          nomMarque
+            ? `IMAGE 1 (que TU analyses) = PRODUIT CLIENT "${nomProduit}" de "${nomMarque}" — VÉRITÉ ABSOLUE DU PACKAGING.`
+            : `IMAGE 1 (que TU analyses) = PRODUIT CLIENT "${nomProduit}" (aucune marque vendeur fournie — n'invente aucun nom, n'écris aucune zone marque) — VÉRITÉ ABSOLUE DU PACKAGING.`,
           'IMAGE 2 (que TU analyses) = CT / CREATIVE TEMPLATE — RÉFÉRENCE STRUCTURELLE UNIQUEMENT.',
           '',
           '⚠️ RÉALITÉ CRITIQUE — CE QUE VOIT GEMINI 3 PRO IMAGE (Step 2) :',
@@ -2366,7 +2375,9 @@ HARD LOCKS :
           '→ Le produit est désigné dans le prompt par "(IMAGE FOURNIE — fidélité photographique absolue, même packaging exact)".',
           '→ AUCUNE référence à "IMAGE 1"/"IMAGE 2" dans le prompt final — Gemini Image ne voit qu\'une seule image.',
           '→ Le prompt commence OBLIGATOIREMENT par : "⚠️ IMAGE FOURNIE — PRODUIT" puis le bloc fidélité, puis FORMAT :',
-          `LOGO : Aucune image logo n'est fournie. Intègre "${nomMarque}" en TEXTE dans l'emplacement approprié.`
+          nomMarque
+            ? `LOGO : Aucune image logo n'est fournie. Intègre "${nomMarque}" en TEXTE dans l'emplacement approprié.`
+            : `LOGO : Aucune image logo n'est fournie. Aucun nom de marque n'est fourni non plus — n'ajoute AUCUN nom de marque, générique ou inventé, nulle part sur le visuel.`
         ].join('\n');
 
         // Règle de fidélité + hiérarchie produit > présentation CT + palette
@@ -2401,7 +2412,7 @@ Dans les INSTRUCTIONS GEMINI ADDITIONNELLES, inclus OBLIGATOIREMENT :
 "→ Produit (IMAGE FOURNIE) : fidélité photographique ABSOLUE — même forme exacte, même étiquette, même packaging. Ne jamais inventer un produit différent."
 "→ Couleurs : EXCLUSIVEMENT la palette [HEX dominant S0] définie dans le prompt. Ignorer les couleurs du CT."
 
-Marque "${nomMarque}" : intégrée en TEXTE à l'emplacement approprié selon la structure décrite.
+${nomMarque ? `Marque "${nomMarque}" : intégrée en TEXTE à l'emplacement approprié selon la structure décrite.` : `Aucune marque vendeur fournie dans ce brief : n'écris AUCUN nom de marque, générique ou inventé ("la marque", "le vendeur", etc.), nulle part dans le prompt final. Aucune zone dédiée à un nom de marque ne doit exister.`}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
         const userText = [
@@ -4881,7 +4892,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
         // directement SUR LE BRIEF lui-même (déjà chargé de façon fiable, pas de lecture
         // croisée) : on ne pousse plus jamais que les indices pas encore confirmés livrés.
         const dejaPousses = new Set(briefs[idx].pushed_creative_indices || []);
-        var pushResult = await pushDeliverablesToProduct(briefs[idx].product?.id, id, briefs[idx].deliverables, dejaPousses, !!briefs[idx].batch_deja_cree);
+        var pushResult = await pushDeliverablesToProduct(briefs[idx].product?.id, id, briefs[idx].deliverables, dejaPousses, !!briefs[idx].batch_deja_cree, briefs[idx].quantity);
         if (pushResult?.newlyPushedIndices?.length) {
           briefs[idx].pushed_creative_indices = [...dejaPousses, ...pushResult.newlyPushedIndices];
         }
@@ -4929,11 +4940,24 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
     req.on('end', async () => {
       try {
         const deliverables = JSON.parse(body);
-        const briefs = await loadBriefs();
-        const idx = briefs.findIndex(b => b.id === id);
-        if (idx < 0) { res.writeHead(404); res.end(JSON.stringify({error:'Brief not found'})); return; }
-        briefs[idx].deliverables = deliverables;
-        await saveBriefs([briefs[idx]]);
+        // Cause profonde corrigée (statement timeout persistant malgré l'espacement des appels) :
+        // passer par saveBriefs() réécrivait TOUTE la ligne (photo_nobg comprise, une image
+        // complète qui ne change jamais pendant la génération) à chaque sauvegarde automatique —
+        // le vrai poids venait de là, pas seulement de la fréquence des appels. Écriture ciblée
+        // maintenant : uniquement la colonne deliverables, rien d'autre n'est retransmis.
+        const rPatch = await fetch(`${SUPABASE_URL_INT}/rest/v1/commandes?id=eq.${id}`, {
+          method: 'PATCH',
+          headers: {
+            apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+            'Content-Type': 'application/json', Prefer: 'return=minimal'
+          },
+          body: JSON.stringify({ deliverables })
+        });
+        if (!rPatch.ok) {
+          const errText = await rPatch.text();
+          console.error(`[Autosave] ❌ Échec écriture ciblée pour ${id}:`, rPatch.status, errText.slice(0,300));
+          res.writeHead(500); res.end(JSON.stringify({ error: errText })); return;
+        }
         res.writeHead(200, {'Content-Type':'application/json'});
         res.end(JSON.stringify({ ok: true }));
       } catch(e) {
@@ -5339,7 +5363,7 @@ async function uploadCreativeImage(base64Data, mime, filename) {
 // (vérifié dans Platform.jsx). Cumulatif — n'écrase jamais les livraisons précédentes du
 // même produit. Données Marché volontairement absent : l'agent qui produit ce format n'est
 // pas encore câblé dans le pipeline de production (voir note dans le code).
-async function pushDeliverablesToProduct(productId, ticketId, deliverables, alreadyPushedIndices = new Set(), batchDejaCree = false) {
+async function pushDeliverablesToProduct(productId, ticketId, deliverables, alreadyPushedIndices = new Set(), batchDejaCree = false, quantiteDemandee = null) {
   if (!productId || !deliverables) return;
   try {
     const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=creatives,deliveries,marche`, {
@@ -5453,6 +5477,13 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
       console.error('[Deliver] ❌ ÉCHEC PATCH products:', rPatch.status, errText.slice(0,400));
     }
     const expectedCount = (deliverables.creatives || []).filter(c => c?.imgB64).length;
+    // Cause profonde corrigée ("6 sur 9 considéré comme complet") : expectedCount se basait
+    // UNIQUEMENT sur ce qui était sauvegardé, jamais sur ce qui avait été RÉELLEMENT demandé à
+    // l'origine — si une sauvegarde a échoué en route (timeout) et que 3 créatives générées
+    // n'ont jamais atteint le brief, "6/6 sauvegardées" semblait complet alors que 9 étaient
+    // attendues. Comparaison supplémentaire à la quantité d'origine, distincte du contrôle
+    // d'envoi — un manque ici veut dire "régénère les manquantes dans Factory", pas "renvoie".
+    const manqueVsQuantiteDemandee = quantiteDemandee && expectedCount < quantiteDemandee;
     const dejaPresentesCeTicket = existingCreatives.filter(c => c.id && c.id.startsWith(`${ticketId}_`)).length;
     const totalMaintenant = dejaPresentesCeTicket + newCreatives.length;
     console.log(`[Deliver] ✅ ${newCreatives.length} nouvelle(s) créative(s) (${totalMaintenant}/${expectedCount} au total pour ce ticket) + ${angleEntries.length} angle(s)${deliverables.marche ? ' + données marché' : ''} poussés vers products/${productId}`);
@@ -5465,6 +5496,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
       adCopiesOk: rPatch.ok && angleEntries.length === (deliverables.copies || []).length && angleEntries.length > 0,
       adCopiesCount: angleEntries.length, adCopiesAttendu: (deliverables.copies || []).length,
       marcheOk: rPatch.ok && !!deliverables.marche,
+      manqueVsQuantiteDemandee, quantiteDemandee,
     };
   } catch(e) {
     console.error('[Deliver] Push vers products échoué :', e.message);
