@@ -5047,6 +5047,34 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
     return;
   }
 
+  // POST /commandes/:id/upload-creative-now — upload IMMÉDIAT d'une créative dès qu'elle est
+  // générée, pas à la fin. Cause profonde corrigée (statement timeout persistant malgré
+  // l'écriture ciblée sur deliverables) : le vrai poids ne venait pas de QUELLES colonnes
+  // étaient réécrites, mais de LA TAILLE du contenu lui-même — deliverables.creatives
+  // accumulait les images en base64 directement dans la ligne, grossissant à chaque créative
+  // jusqu'à devenir trop lourd pour Supabase, peu importe l'écriture ciblée. Chaque créative
+  // est maintenant uploadée vers le Storage dès sa génération — la base de données ne
+  // contient plus jamais que des liens légers (quelques dizaines d'octets), jamais les
+  // images elles-mêmes (souvent 500Ko-2Mo chacune).
+  if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/upload-creative-now$/)) {
+    const id = req.url.split('/')[2];
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { imgB64, mime, index } = JSON.parse(body);
+        if (!imgB64) { res.writeHead(400); res.end(JSON.stringify({ error: 'imgB64 requis' })); return; }
+        const url = await uploadCreativeImage(imgB64, mime || 'image/png', `${id}_${index}`);
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ ok: true, url }));
+      } catch(e) {
+        console.error(`[Upload immédiat] Échec pour ${id}_${JSON.parse(body||'{}').index ?? '?'}:`, e.message);
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   // POST /commandes/:id/save-deliverables — appelé automatiquement dès qu'une production
   // se termine (si lancée depuis un ticket), pour que "Envoyer au client" trouve toujours
   // les livrables même après avoir quitté la page.
@@ -5514,12 +5542,15 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
     const newlyPushedIndices = [];
     for (let i = 0; i < (deliverables.creatives || []).length; i++) {
       const c = deliverables.creatives[i];
-      if (!c || !c.imgB64) continue;
+      // Nouveau format : chaque créative est uploadée dès sa génération (voir
+      // /commandes/:id/upload-creative-now) — c.url est déjà prêt, jamais de ré-upload ici.
+      // Ancien format (c.imgB64) toléré en repli, pour les commandes en cours de transition.
+      if (!c || (!c.url && !c.imgB64)) continue;
       if (alreadyPushedIndices.has(i)) continue; // déjà confirmé livré pour CE ticket — jamais repoussé
       const idCandidat = `${ticketId}_${i}`;
       if (existingIds.has(idCandidat)) { newlyPushedIndices.push(i); continue; } // déjà là mais pas encore tracé sur le brief — on le trace sans le repousser
       try {
-        const url = await uploadCreativeImage(c.imgB64, c.mime || 'image/png', idCandidat);
+        const url = c.url || await uploadCreativeImage(c.imgB64, c.mime || 'image/png', idCandidat);
         // Même correctif que pour angleEntries plus bas — ce champ est CONSTRUIT SÉPARÉMENT et
         // avait été oublié lors du premier correctif, d'où le texte technique complet encore
         // visible dans la légende de chaque créative de la Galerie.
@@ -5598,7 +5629,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
       const errText = await rPatch.text();
       console.error('[Deliver] ❌ ÉCHEC PATCH products:', rPatch.status, errText.slice(0,400));
     }
-    const expectedCount = (deliverables.creatives || []).filter(c => c?.imgB64).length;
+    const expectedCount = (deliverables.creatives || []).filter(c => c?.imgB64 || c?.url).length;
     // Cause profonde corrigée ("6 sur 9 considéré comme complet") : expectedCount se basait
     // UNIQUEMENT sur ce qui était sauvegardé, jamais sur ce qui avait été RÉELLEMENT demandé à
     // l'origine — si une sauvegarde a échoué en route (timeout) et que 3 créatives générées
@@ -5622,7 +5653,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
     };
   } catch(e) {
     console.error('[Deliver] Push vers products échoué :', e.message);
-    return { expectedCount: (deliverables.creatives || []).filter(c => c?.imgB64).length, pushedCount: 0, patchOk: false, newlyPushedIndices: [], batchCree: false, error: e.message };
+    return { expectedCount: (deliverables.creatives || []).filter(c => c?.imgB64 || c?.url).length, pushedCount: 0, patchOk: false, newlyPushedIndices: [], batchCree: false, error: e.message };
   }
 }
 
