@@ -4789,33 +4789,17 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
     });
     const rows = await r.json();
     if (!rows.length) { res.writeHead(404); res.end(JSON.stringify({ error: 'Produit introuvable' })); return; }
-    const creatives = rows[0].creatives || [];
-    const vusIds = new Set();
-    const nettoyees = [];
-    let doublonsRetires = 0;
-    let anglesNormalises = 0;
-    for (const c of creatives) {
-      if (c.id && vusIds.has(c.id)) { doublonsRetires++; continue; }
-      if (c.id) vusIds.add(c.id);
-      // Anciennes créatives (avant le fix de troncature) : le nom d'angle complet avec tout le
-      // détail technique était encore stocké tel quel — les nouvelles ont la version tronquée,
-      // donc les deux coexistaient comme des chaînes différentes, jamais fusionnées dans les
-      // filtres. On normalise ici aussi, rétroactivement.
-      if (c.angle && c.angle.includes('*')) {
-        const propre = c.angle.split('*')[0].trim();
-        if (propre) { c.angle = propre; anglesNormalises++; }
-      }
-      nettoyees.push(c);
-    }
-    // Même nettoyage sur deliveries : entrées de batch dupliquées (mêmes tickets sans ticketId
-    // avant ce fix) et noms d'angle non tronqués dans l'historique / Ad Copies.
+    // Livraisons traitées en premier — construit la correspondance ticketId → cible, réutilisée
+    // ensuite pour rétro-remplir les anciennes créatives qui n'ont pas encore ce champ.
     const deliveries = rows[0].deliveries || [];
     const vusTickets = new Set();
     const deliveriesNettoyees = [];
+    const cibleParTicket = {};
     let batchsRetires = 0;
+    let anglesNormalises = 0;
     for (const d of deliveries) {
       if (d.ticketId && vusTickets.has(d.ticketId)) { batchsRetires++; continue; }
-      if (d.ticketId) vusTickets.add(d.ticketId);
+      if (d.ticketId) { vusTickets.add(d.ticketId); if (d.cible) cibleParTicket[d.ticketId] = d.cible; }
       if (Array.isArray(d.angles)) {
         d.angles = d.angles.map(a => {
           if (a?.nom && a.nom.includes('*')) {
@@ -4827,15 +4811,41 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
       }
       deliveriesNettoyees.push(d);
     }
+
+    const creatives = rows[0].creatives || [];
+    const vusIds = new Set();
+    const nettoyees = [];
+    let doublonsRetires = 0;
+    let ciblesRetrofillees = 0;
+    for (const c of creatives) {
+      if (c.id && vusIds.has(c.id)) { doublonsRetires++; continue; }
+      if (c.id) vusIds.add(c.id);
+      // Anciennes créatives (avant le fix de troncature) : le nom d'angle complet avec tout le
+      // détail technique était encore stocké tel quel — les nouvelles ont la version tronquée,
+      // donc les deux coexistaient comme des chaînes différentes, jamais fusionnées dans les
+      // filtres. On normalise ici aussi, rétroactivement.
+      if (c.angle && c.angle.includes('*')) {
+        const propre = c.angle.split('*')[0].trim();
+        if (propre) { c.angle = propre; anglesNormalises++; }
+      }
+      // Nouveau : rétro-remplissage de la cible pour les créatives livrées avant l'ajout de ce
+      // champ — permet au nouveau filtre "Cible" d'AdBoard de fonctionner même sur les anciennes
+      // données, pas seulement sur les créatives livrées après ce fix.
+      if (!c.cible && c.id) {
+        const ticketId = c.id.split('_').slice(0,-1).join('_');
+        if (cibleParTicket[ticketId]) { c.cible = cibleParTicket[ticketId]; ciblesRetrofillees++; }
+      }
+      nettoyees.push(c);
+    }
     const rPatch = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
       method: 'PATCH',
       headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
       body: JSON.stringify({ creatives: nettoyees, deliveries: deliveriesNettoyees })
     });
     if (!rPatch.ok) { res.writeHead(500); res.end(JSON.stringify({ error: 'Écriture échouée', detail: await rPatch.text() })); return; }
-    console.log(`[Dedupe] ${doublonsRetires} créative(s) doublon(s) + ${batchsRetires} batch(s) doublon(s) retirés, ${anglesNormalises} angle(s) normalisé(s) pour products/${productId}`);
+    console.log(`[Dedupe] ${doublonsRetires} créative(s) doublon(s) + ${batchsRetires} batch(s) doublon(s) retirés, ${anglesNormalises} angle(s) normalisé(s), ${ciblesRetrofillees} cible(s) rétro-remplie(s) pour products/${productId}`);
     res.writeHead(200, {'Content-Type':'application/json'});
-    res.end(JSON.stringify({ ok: true, doublonsRetires, batchsRetires, anglesNormalises, totalRestant: nettoyees.length }));
+    res.end(JSON.stringify({ ok: true, doublonsRetires, batchsRetires, anglesNormalises, ciblesRetrofillees, totalRestant: nettoyees.length }));
   } catch(e) {
     res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
   }
@@ -5387,6 +5397,11 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
     // Double protection : le suivi fiable vient du BRIEF (alreadyPushedIndices, passé par
     // l'appelant) — la vérification des IDs déjà présents dans products reste en filet de
     // sécurité supplémentaire, mais n'est plus la SEULE ligne de défense contre les doublons.
+    // Description de la cible pour ce lot — calculée une seule fois, réutilisée à la fois pour
+    // l'entrée de livraison globale ET pour chaque créative individuelle (nouveau : avant, seule
+    // la livraison globale la connaissait, aucune créative ne savait à quelle cible elle appartenait).
+    const cibleCeLot = [deliverables.marche?.persona?.nom, deliverables.marche?.persona?.role, deliverables.marche?.persona?.age ? `${deliverables.marche.persona.age} ans` : null, deliverables.marche?.persona?.ville].filter(Boolean).join(', ') || null;
+
     const existingIds = new Set(existingCreatives.map(c => c.id));
     const newCreatives = [];
     const newlyPushedIndices = [];
@@ -5405,7 +5420,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
         const angleCreative = angleBrutCreative.split('*')[0].trim() || `Angle ${((c.angleIdx || 0) + 1)}`;
         newCreatives.push({
           id: idCandidat, productId,
-          angle: angleCreative,
+          angle: angleCreative, cible: cibleCeLot,
           week: weekLabel, imageUrl: url
         });
         newlyPushedIndices.push(i);
@@ -5432,7 +5447,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
     const dejaCree = batchDejaCree || !!livraisonExistante;
     const deliveriesFinal = dejaCree
       ? existingDeliveries
-      : [...existingDeliveries, { ticketId, semaine: weekLabel, date: dateLabel, created_at: new Date().toISOString(), cible: [deliverables.marche?.persona?.nom, deliverables.marche?.persona?.role, deliverables.marche?.persona?.age ? `${deliverables.marche.persona.age} ans` : null, deliverables.marche?.persona?.ville].filter(Boolean).join(', ') || null, angles: angleEntries, cts_utilises: ctsUtilisesCeLot }];
+      : [...existingDeliveries, { ticketId, semaine: weekLabel, date: dateLabel, created_at: new Date().toISOString(), cible: cibleCeLot, angles: angleEntries, cts_utilises: ctsUtilisesCeLot }];
 
     const patchBody = {
       creatives: [...existingCreatives, ...newCreatives],
