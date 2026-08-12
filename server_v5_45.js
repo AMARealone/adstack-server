@@ -12,7 +12,6 @@ const PORT = 3001;
 const PROJECT_ID = 'adstack-497020';
 const LOCATION = 'us-central1';
 const MODEL = 'gemini-3-pro-image';
-const ANTHROPIC_KEY = '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';
 
 // ── Clés Sources Analyste de Marché ──
 const YOUTUBE_API_KEY = 'AIzaSyAhujEfLY6V4-IJkuy0BoHlldwEV0zyXFg';
@@ -27,6 +26,58 @@ const PAYS_TO_JUMIA_TLD = {
   'Sénégal':'sn', "Côte d'Ivoire":'ci', 'Cameroun':'cm'
   // Bénin/Guinée/Mali/Burkina Faso/Togo/RD Congo : pas de Jumia → source ignorée
 };
+
+// ── Source UNIQUE des offres — miroir exact du tableau PLANS de Platform.jsx ──
+// Créée pour corriger un bug réel : le prompt système d'Ava (endpoint /chat) citait des prix
+// codés en dur qui avaient dérivé des vrais prix affichés/facturés dans AdBoard. Tout endpoint
+// qui doit mentionner un prix ou un lien de paiement lit maintenant CET objet — jamais un chiffre
+// recopié à la main. Si les prix changent un jour dans Platform.jsx, il faut répercuter ici aussi
+// (pas encore automatisé d'un seul côté — Platform.jsx reste la source visuelle, celle-ci la
+// source texte pour les chatbots) : à garder en tête, pas de mécanisme de sync auto pour l'instant.
+const OFFERS = {
+  discovery: {
+    id: 'discovery', name: 'Conversion Discovery', isPack: true,
+    tagline: "Achat unique, sans engagement — pour tester avant de s'abonner.",
+    imagesPerWeek: 9, produitsPerWeek: '1',
+    once: { price: 9900, priceBarre: 15000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ywk7ik14/checkout' },
+  },
+  starter: {
+    id: 'starter', name: 'Conversion Starter', isPack: false,
+    tagline: 'Pour tester ses produits sereinement et obtenir ses premières ventes rentables.',
+    imagesPerWeek: 9, produitsPerWeek: '1',
+    monthly: { price: 29900, priceBarre: 40000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
+    annual:  { price: 24900, priceBarre: 29900, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_wdya3v9h/checkout' },
+  },
+  pro: {
+    id: 'pro', name: 'Conversion Pro', isPack: false, best: true,
+    tagline: 'Pour dominer son marché et écraser ses coûts d\'acquisition.',
+    imagesPerWeek: 18, produitsPerWeek: '1 à 2',
+    monthly: { price: 54900, priceBarre: 80000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
+    annual:  { price: 44900, priceBarre: 54900, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_lnp4ax0b/checkout' },
+  },
+  scale: {
+    id: 'scale', name: 'Conversion Scale', isPack: false,
+    tagline: "L'arsenal complet pour inonder plusieurs marchés en simultané.",
+    imagesPerWeek: 36, produitsPerWeek: '1 à 4',
+    monthly: { price: 79900, priceBarre: 160000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
+    annual:  { price: 64900, priceBarre: 79900,  delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_dn4fb72l/checkout' },
+  },
+};
+
+// Formatte le bloc offres pour un prompt système (utilisé par Ava ET le chatbot page de vente).
+function formatOffresPourPrompt(currency, currencyRate) {
+  const fmt = (fcfa) => {
+    if (!currency || currency === 'XOF') return fcfa.toLocaleString('fr-FR') + ' FCFA';
+    const val = Math.round(fcfa * (currencyRate||1) * 1.035);
+    try { return new Intl.NumberFormat(undefined, {style:'currency', currency, maximumFractionDigits:0}).format(val); }
+    catch(e) { return fcfa.toLocaleString('fr-FR') + ' FCFA'; }
+  };
+  const { starter, pro, scale, discovery } = OFFERS;
+  return `${discovery.name} (achat unique, non abonnement) : ${fmt(discovery.once.price)} — ${discovery.imagesPerWeek} images, livraison ${discovery.once.delivery}
+${starter.name} : ${fmt(starter.monthly.price)}/mois (mensuel) ou ${fmt(starter.annual.price)}/mois (engagement annuel, -${Math.round((1-starter.annual.price/starter.monthly.price)*100)}%) · ${starter.imagesPerWeek} images/sem · ${starter.produitsPerWeek} produit
+${pro.name} : ${fmt(pro.monthly.price)}/mois (mensuel) ou ${fmt(pro.annual.price)}/mois (engagement annuel, -${Math.round((1-pro.annual.price/pro.monthly.price)*100)}%) · ${pro.imagesPerWeek} images/sem · ${pro.produitsPerWeek} produits
+${scale.name} : ${fmt(scale.monthly.price)}/mois (mensuel) ou ${fmt(scale.annual.price)}/mois (engagement annuel, -${Math.round((1-scale.annual.price/scale.monthly.price)*100)}%) · ${scale.imagesPerWeek} images/sem · ${scale.produitsPerWeek} produits`;
+}
 
 // Domaines suggérés à Gemini grounding pour la recherche ciblée (V4 — 6 sources enrichies)
 // Note : Gemini Search grounding est l'unique outil de recherche web (Custom Search est fermé).
@@ -1526,64 +1577,6 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ text }));
       } catch(e) {
         console.error('✗ Erreur text gen:', e.message);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: e.message }));
-      }
-    });
-    return;
-  }
-
-  // ── Analyze endpoint — Claude Sonnet 4.6 (no Google OAuth needed) ──
-  if (req.method === 'POST' && req.url === '/analyze') {
-    let body = '';
-    req.on('data', c => body += c);
-    req.on('end', async () => {
-      try {
-        const reqBody = JSON.parse(body);
-        console.log('→ Calling Claude Haiku 4.5 (endpoint /analyze)...');
-
-        const claudeBody = JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: reqBody.maxOutputTokens || reqBody.maxTokens || 16000,
-          system: reqBody.system,
-          messages: [{ role: 'user', content: reqBody.parts || reqBody.prompt || '' }]
-        });
-
-        const https = require('https');
-        const result = await new Promise((resolve, reject) => {
-          const options = {
-            hostname: 'api.anthropic.com',
-            path: '/v1/messages',
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-api-key': ANTHROPIC_KEY,
-              'anthropic-version': '2023-06-01',
-              'Content-Length': Buffer.byteLength(claudeBody)
-            }
-          };
-          const r = https.request(options, res => {
-            let data = '';
-            res.on('data', c => data += c);
-            res.on('end', () => {
-              try {
-                const parsed = JSON.parse(data);
-                if (parsed.error) return reject(new Error(parsed.error.message));
-                const text = parsed.content?.find(b => b.type === 'text')?.text || '';
-                resolve(text);
-              } catch(e) { reject(e); }
-            });
-          });
-          r.on('error', reject);
-          r.write(claudeBody);
-          r.end();
-        });
-
-        console.log('✓ Claude Haiku 4.5 analyse terminée —', result.length, 'chars');
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ text: result }));
-      } catch(e) {
-        console.error('✗ Analyse error:', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
       }
@@ -3837,11 +3830,6 @@ if (req.method === 'POST' && req.url === '/chat') {
       }
 
       const { currency='XOF', currencyRate=1 } = context;
-      const formatPrice = (fcfa) => {
-        if (currency === 'XOF') return fcfa.toLocaleString('fr-FR') + ' FCFA';
-        const val = Math.round(fcfa * currencyRate * 1.035);
-        return new Intl.NumberFormat(undefined, {style:'currency', currency, maximumFractionDigits:0}).format(val);
-      };
       const userMarket = [...new Set(products.map(p => p.pays).filter(Boolean))].join(', ') || 'non précisé';
       const today = new Date().toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
 
@@ -3889,10 +3877,8 @@ CONTEXTE UTILISATEUR (détails à l'appui de la situation ci-dessus)
 - Devise : ${currency}
 - Messages échangés : ${msgCount}
 
-OFFRES (toujours dans la devise de l'utilisateur — mensuel ET annuel existent, l'annuel fait économiser ~25%)
-Starter : ${formatPrice(39900)}/mois (mensuel) ou ${formatPrice(29900)}/mois (annuel) · 9 images/sem · 1 produit
-Pro : ${formatPrice(69900)}/mois (mensuel) ou ${formatPrice(54900)}/mois (annuel) · 18 images/sem · 1-2 produits
-Scale : ${formatPrice(109900)}/mois (mensuel) ou ${formatPrice(79900)}/mois (annuel) · 36 images/sem · 1-4 produits
+OFFRES (source unique OFFERS, toujours dans la devise de l'utilisateur)
+${formatOffresPourPrompt(currency, currencyRate)}
 Plan actif : ${hasSubscription ? planActive.toUpperCase() + ' — NE JAMAIS le reproposer' : 'AUCUN'}
 
 TU ES
@@ -4008,6 +3994,140 @@ if (req.method === 'GET' && req.url.startsWith('/chat/history/')) {
     res.writeHead(200, {'Content-Type':'application/json'});
     res.end(JSON.stringify(rows||[]));
   } catch(e) { res.writeHead(200); res.end('[]'); }
+  return;
+}
+
+// POST /chat-vente — chatbot de la page de vente (prospects, pas encore clients).
+// Même moteur qu'Ava (Gemini via Vertex AI, jamais Claude), même table de persistance
+// chat_messages (déjà lue par le CRM), mais prompt système différent : pas de logique
+// d'abonnement/crédits puisqu'il n'y a pas encore de compte, à la place une présentation
+// d'AdBoard et des offres — toutes deux sourcées sur OFFERS, jamais un prix recopié à la main.
+if (req.method === 'POST' && req.url === '/chat-vente') {
+  let body = '';
+  req.on('data', d => body += d);
+  req.on('end', async () => {
+    try {
+      const { message, history = [], context = {}, session_id } = JSON.parse(body);
+      const { language = 'fr', currency = 'XOF', currencyRate = 1 } = context;
+      const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      const sessionId = session_id ? (String(session_id).startsWith('vente_') ? session_id : `vente_${session_id}`) : null;
+
+      const SYSTEM = `Tu es Ava, l'assistante d'AdStack. Tu discutes ici avec un PROSPECT sur la page de vente publique
+adstackofficial.com — cette personne n'a pas encore de compte AdBoard, ne la traite jamais comme une cliente existante.
+
+DATE DU JOUR : ${today}. Utilise toujours cette date comme référence — ne suppose jamais une autre année.
+
+━━━━━━━━━━━━━━━
+CE QU'EST ADSTACK
+Agence de créatives publicitaires propulsée par l'IA pour vendeurs e-commerce COD (paiement à la livraison) en
+Afrique francophone. On produit chaque semaine : analyse de marché, personas cibles, angles marketing, et les
+créatives publicitaires Meta Ads elles-mêmes, classées par angle, prêtes à uploader. Livraison garantie 48h (24h
+en engagement annuel) ou remboursé.
+
+CE QU'EST ADBOARD (l'espace client, accessible après souscription)
+- Mes Produits — où le client déclare ses produits et demande ses images.
+- Galerie Créatives — toutes les images publicitaires livrées, classées par produit et par angle.
+- Ad Copies — les textes publicitaires qui accompagnent les créatives.
+- Données Marché — l'analyse de marché et les personas cibles livrés pour chaque produit.
+- Suivi Demande — statut en temps réel de chaque commande en cours.
+- Nos Tarifs — gestion de l'abonnement et upgrade.
+
+━━━━━━━━━━━━━━━
+OFFRES (source unique OFFERS, toujours dans la devise du prospect)
+${formatOffresPourPrompt(currency, currencyRate)}
+Conversion Discovery est l'entrée idéale pour un visiteur hésitant (achat unique, sans engagement).
+
+PAIEMENT ET GARANTIE
+Wave, Orange Money, Moov Money, MTN MoMo, Djamo — paiement sécurisé via Chariow. Abonnement mensuel résiliable
+à tout moment (pas d'engagement, sauf le cycle annuel choisi volontairement pour le tarif réduit). Garantie :
+livraison sous 48h ou remboursé.
+
+PROCESS DE LIVRAISON
+Abonnement en ligne → brief produit (5 min) → analyse de marché → production des créatives → livraison sur AdBoard
+(Galerie Créatives + Ad Copies) sous 48h + notification → cycle hebdomadaire.
+
+DÉMO — CONTRAIREMENT À UNE ANCIENNE CONSIGNE, NE JAMAIS NIER OU ÉVITER LE SUJET
+Beaucoup de prospects arrivant sur cette page ont déjà reçu une démo personnalisée avant d'être relancés — si la
+personne en parle, confirme-le naturellement, ne fais jamais comme si ça n'existait pas.
+
+TU ES
+Ava. Tu parles comme une vraie personne — directe, chaleureuse. Prénom jamais utilisé (tu ne le connais pas encore).
+
+━━━━━━━━━━━━━━━
+RÈGLE 0 — TON RÔLE, STRICT ET NON NÉGOCIABLE
+Tu ne fais JAMAIS le travail créatif toi-même (pas d'angle marketing, pas d'avis créatif). Ton rôle : expliquer
+comment AdStack/AdBoard fonctionnent, rassurer sur la méthode et les délais, répondre aux objections, et pousser
+vers l'action (voir les offres, démarrer). Le travail créatif est fait par l'équipe humaine après commande.
+
+RÈGLE 1 — FORMAT (décide AVANT d'écrire)
+→ Réponse simple = 1-3 phrases, zéro bullet
+→ 2-4 éléments = bullets courts, 1 ligne max chacun
+→ Jamais de bloc > 4 lignes sans saut de ligne
+→ Toujours finir par UNE courte question (sauf CTA)
+
+RÈGLE 2 — CONCISION
+Maximum d'info, minimum de mots.
+
+RÈGLE 3 — CTA
+0 bouton avant le 3ème échange. 1 seul par message. Jamais 2 de suite.
+[BTN:offres:Voir les offres] [BTN:checkout:starter:Démarrer avec Starter →] [BTN:checkout:pro:Démarrer avec Pro →]
+[BTN:checkout:scale:Démarrer avec Scale →] [BTN:checkout:discovery:Tester avec Discovery →]
+Prospect chaud (a déjà vu une démo, pose des questions de prix/délai précises) → bouton checkout DIRECT.
+
+Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`;
+
+      const contents = [
+        ...history.slice(-6).map(m => ({ role: m.role, parts: [{ text: m.content }] })),
+        { role: 'user', parts: [{ text: message }] }
+      ];
+      const vertexBody = {
+        system_instruction: { parts: [{ text: SYSTEM }] },
+        contents,
+        generationConfig: { maxOutputTokens: 220, temperature: 0.4, thinkingConfig: { thinkingBudget: 0 } }
+      };
+
+      const CHAT_MODEL = 'gemini-2.5-flash';
+      let token;
+      try { token = await getToken(); }
+      catch(e) { throw new Error('Token Vertex AI impossible: ' + e.message); }
+      console.log('[Ava-vente] Appel Vertex AI model=gemini-2.5-flash contents.length=', contents.length);
+      const geminiData = await vertexRequest(token, CHAT_MODEL, vertexBody, 25000);
+      if (!geminiData?.candidates?.[0]) {
+        console.error('[Ava-vente] Gemini error:', JSON.stringify(geminiData).slice(0,300));
+      }
+      const reply = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "Désolée, je n'ai pas pu répondre. Réessaie dans un instant.";
+
+      // Même persistance qu'Ava (AdBoard) — le CRM lit déjà chat_messages par session_id,
+      // aucune modification CRM nécessaire. session_id préfixé "vente_" pour distinguer
+      // les conversations prospects des conversations clients déjà connectés dans AdBoard.
+      if (SUPABASE_SERVICE_KEY && sessionId) {
+        const saveMsg = async (role, content) => {
+          const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/chat_messages`, {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json', apikey:SUPABASE_SERVICE_KEY, Authorization:`Bearer ${SUPABASE_SERVICE_KEY}` },
+            body: JSON.stringify({ session_id: sessionId, role, content })
+          });
+          if (!r.ok) {
+            const errText = await r.text().catch(()=>'(corps illisible)');
+            console.error(`[Ava-vente] chat_messages HTTP ${r.status} (${role}):`, errText.slice(0,300));
+          }
+        };
+        saveMsg('user', message).catch(e => console.error('[Ava-vente] chat_messages save error (user):', e.message));
+        saveMsg('model', reply).catch(e => console.error('[Ava-vente] chat_messages save error (model):', e.message));
+      } else if (!SUPABASE_SERVICE_KEY) {
+        console.error('[Ava-vente] chat_messages non sauvegardé : SUPABASE_SERVICE_KEY absente côté serveur');
+      } else if (!sessionId) {
+        console.error('[Ava-vente] chat_messages non sauvegardé : aucun session_id reçu du client');
+      }
+
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ reply }));
+    } catch(e) {
+      console.error('[Ava-vente] ERREUR COMPLÈTE:', e.message, e.stack?.slice(0,300));
+      res.writeHead(500);
+      res.end(JSON.stringify({ reply: "Une erreur s'est produite. Réessaie dans un instant.", error: e.message }));
+    }
+  });
   return;
 }
 
