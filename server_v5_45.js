@@ -4810,7 +4810,7 @@ if (req.method === 'GET' && req.url.startsWith('/s/')) {
   const code = req.url.split('/s/')[1]?.split('?')[0];
   if (!code) { res.writeHead(404); res.end('Not found'); return; }
   try {
-    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/short_links?code=eq.${code}&select=id,long_url,clicks,thumbnail`, {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/short_links?code=eq.${code}&select=id,long_url,clicks,thumbnail,campagne`, {
       headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
     });
     const rows = await r.json();
@@ -4822,7 +4822,19 @@ if (req.method === 'GET' && req.url.startsWith('/s/')) {
     // vraiment). Sans ce filtre, chaque message envoyé gonflait le compteur de plusieurs
     // clics fantômes.
     const _uaClic = req.headers['user-agent'] || '';
-    const _estRobotClic = /WhatsApp|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Googlebot|Slackbot|Discordbot|bot|crawler|spider/i.test(_uaClic);
+    // Liste élargie — l'ancienne version ratait potentiellement des crawlers de prévisualisation
+    // qui n'utilisent pas un user-agent contenant explicitement "bot"/"crawler"/"spider" (ex:
+    // certains contextes WhatsApp Business/Cloud API ont un UA de prévisualisation différent de
+    // l'app grand public). Un vrai navigateur envoie TOUJOURS un user-agent non vide et contenant
+    // "Mozilla" — son absence ou un UA anormalement court est déjà un signal fort de robot/script.
+    const _estRobotClic = !_uaClic
+      || _uaClic.length < 20
+      || !/Mozilla/i.test(_uaClic)
+      || /WhatsApp|facebookexternalhit|Facebot|Meta-Extern|Twitterbot|LinkedInBot|Googlebot|Bingbot|Slackbot|Discordbot|TelegramBot|SkypeUriPreview|vkShare|Applebot|DuckDuckBot|YandexBot|AhrefsBot|SemrushBot|MJ12bot|ia_archiver|python-requests|curl|wget|headless|bot|crawler|spider/i.test(_uaClic);
+    // Log systématique (bot ou pas) — visible dans les logs Render. Objectif : pouvoir enfin
+    // VOIR ce qui frappe réellement ce endpoint plutôt que de deviner depuis un compteur agrégé
+    // qui ne dit rien du "pourquoi". À garder au moins le temps de comprendre l'écart clics/leads.
+    console.log(`[Clic /s/${code}] campagne=${link.campagne||'?'} robot=${_estRobotClic} ip=${(req.headers['x-forwarded-for']||req.socket.remoteAddress||'?').split(',')[0].trim()} ua="${_uaClic.slice(0,140)}"`);
     if (!_estRobotClic) {
       fetch(`${SUPABASE_URL_INT}/rest/v1/short_links?id=eq.${link.id}`, {
         method: 'PATCH',
