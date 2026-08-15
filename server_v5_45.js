@@ -4833,14 +4833,42 @@ if (req.method === 'GET' && req.url.startsWith('/s/')) {
     // certains contextes WhatsApp Business/Cloud API ont un UA de prévisualisation différent de
     // l'app grand public). Un vrai navigateur envoie TOUJOURS un user-agent non vide et contenant
     // "Mozilla" — son absence ou un UA anormalement court est déjà un signal fort de robot/script.
-    const _estRobotClic = !_uaClic
+    const _estRobotClicUA = !_uaClic
       || _uaClic.length < 20
       || !/Mozilla/i.test(_uaClic)
       || /WhatsApp|facebookexternalhit|Facebot|Meta-Extern|Twitterbot|LinkedInBot|Googlebot|Bingbot|Slackbot|Discordbot|TelegramBot|SkypeUriPreview|vkShare|Applebot|DuckDuckBot|YandexBot|AhrefsBot|SemrushBot|MJ12bot|ia_archiver|python-requests|curl|wget|headless|bot|crawler|spider/i.test(_uaClic);
+
+    // Détection par IP — cause profonde trouvée après coup (voir logs réels : IP 173.252.95.115
+    // et 69.63.184.9 avec user-agents Chrome 74 / Firefox 59, versions obsolètes de plusieurs
+    // années) : Meta scanne les liens envoyés sur WhatsApp avec un user-agent volontairement
+    // générique — "ressemble" à un vrai navigateur, ne contient aucun mot-clé de bot, passe donc
+    // le filtre UA seul. Une IP ne se falsifie pas aussi facilement qu'un user-agent — on
+    // vérifie donc aussi l'appartenance aux plages officielles de Meta (ASN 32934).
+    const _ipClic = (req.headers['x-forwarded-for']||req.socket.remoteAddress||'').split(',')[0].trim();
+    const _ipVersNombre = (ip) => {
+      const parts = (ip||'').replace('::ffff:','').split('.').map(Number);
+      if (parts.length !== 4 || parts.some(p => isNaN(p) || p<0 || p>255)) return null;
+      return ((parts[0]<<24) >>> 0) + (parts[1]<<16) + (parts[2]<<8) + parts[3];
+    };
+    const _dansPlage = (ip, cidr) => {
+      const [base, bits] = cidr.split('/');
+      const ipNum = _ipVersNombre(ip), baseNum = _ipVersNombre(base);
+      if (ipNum === null || baseNum === null) return false;
+      const masque = bits==='0' ? 0 : (~0 << (32-Number(bits))) >>> 0;
+      return (ipNum & masque) === (baseNum & masque);
+    };
+    // Plages Meta/Facebook officielles (ASN 32934) les plus significatives — vérifiées via
+    // IPinfo/ASN publics au moment de l'écriture, à réviser si Meta change son allocation.
+    const PLAGES_META = ['31.13.24.0/21','31.13.64.0/18','45.64.40.0/22','57.136.0.0/15','57.144.0.0/14',
+      '66.220.0.0/16','69.63.176.0/20','69.171.0.0/16','74.119.76.0/22','102.132.96.0/20','103.4.96.0/22',
+      '129.134.0.0/16','147.75.208.0/20','157.240.0.0/16','163.70.128.0/17','163.77.128.0/17',
+      '163.114.128.0/20','173.252.64.0/18','179.60.192.0/22','185.60.216.0/22','185.89.216.0/22','204.15.20.0/22'];
+    const _estIpMeta = PLAGES_META.some(cidr => _dansPlage(_ipClic, cidr));
+    const _estRobotClic = _estRobotClicUA || _estIpMeta;
     // Log systématique (bot ou pas) — visible dans les logs Render. Objectif : pouvoir enfin
     // VOIR ce qui frappe réellement ce endpoint plutôt que de deviner depuis un compteur agrégé
     // qui ne dit rien du "pourquoi". À garder au moins le temps de comprendre l'écart clics/leads.
-    console.log(`[Clic /s/${code}] campagne=${link.campagne||'?'} robot=${_estRobotClic} ip=${(req.headers['x-forwarded-for']||req.socket.remoteAddress||'?').split(',')[0].trim()} ua="${_uaClic.slice(0,140)}"`);
+    console.log(`[Clic /s/${code}] campagne=${link.campagne||'?'} robot=${_estRobotClic}${_estIpMeta?' (ip_meta)':''} ip=${_ipClic} ua="${_uaClic.slice(0,140)}"`);
     if (!_estRobotClic) {
       fetch(`${SUPABASE_URL_INT}/rest/v1/short_links?id=eq.${link.id}`, {
         method: 'PATCH',
