@@ -2913,16 +2913,22 @@ Sur une QUATRIÈME ligne, ajoute 1 à 3 balises de style/émotion pertinentes s�
         const code = paysRaw.toUpperCase().replace(/[^A-Z]/g,'').substring(0,2);
         const paysAdj = PAYS_ADJ[code] || PAYS_ADJ[pays_code?.toUpperCase()] || paysRaw || '';
 
-        // Niche : appel rapide à /niche (ou extraire depuis MARCHE_DESC)
+        // Niche : appel Gemini uniquement si la template la demande VRAIMENT — cause profonde
+        // corrigée d'un vrai gaspillage (et d'une confusion pour Amvr en lisant les logs) :
+        // cet appel se faisait avant INCONDITIONNELLEMENT, même quand [Niche] avait été retiré
+        // de la template. Le principe reste "template flexible, on ne cherche que ce qui est
+        // vraiment demandé dedans" — pas de travail caché sur une variable non présente.
         let niche = '';
-        try {
-          const token = await getToken();
-          const nicheData = await vertexRequest(token, 'gemini-2.5-flash', {
-            contents: [{ role:'user', parts:[{ text: `Grande catégorie marketing 1-2 mots max pour: "${produit || slug}". Exemples: cosmétiques, santé, mode, beauté, nutrition. UNIQUEMENT la catégorie, rien d'autre.` }] }],
-            generationConfig: { maxOutputTokens: 50, temperature: 0, thinkingConfig: { thinkingBudget: 0 } }
-          }, 90000, 'remplissage_message_demo');
-          niche = (nicheData.candidates?.[0]?.content?.parts?.[0]?.text || '').trim().split('\n')[0].replace(/['"«».,]/g,'');
-        } catch(e) { niche = produit.split(' ')[0] || ''; }
+        if (/\[Niche\]/i.test(tpl || '')) {
+          try {
+            const token = await getToken();
+            const nicheData = await vertexRequest(token, 'gemini-2.5-flash', {
+              contents: [{ role:'user', parts:[{ text: `Grande catégorie marketing 1-2 mots max pour: "${produit || slug}". Exemples: cosmétiques, santé, mode, beauté, nutrition. UNIQUEMENT la catégorie, rien d'autre.` }] }],
+              generationConfig: { maxOutputTokens: 50, temperature: 0, thinkingConfig: { thinkingBudget: 0 } }
+            }, 90000, 'remplissage_message_demo');
+            niche = (nicheData.candidates?.[0]?.content?.parts?.[0]?.text || '').trim().split('\n')[0].replace(/['"«».,]/g,'');
+          } catch(e) { niche = produit.split(' ')[0] || ''; }
+        }
 
         // Remplissage local du template — 100% fiable, zéro hallucination
         // Astérisques autour de [lien_demo] retirées avant insertion : une URL entourée de
