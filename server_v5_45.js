@@ -70,28 +70,28 @@ const OFFERS = {
     id: 'discovery', name: 'Conversion Discovery', isPack: true,
     tagline: "Achat unique, sans engagement — pour tester avant de s'abonner.",
     imagesPerWeek: 9, produitsPerWeek: '1',
-    once: { price: 9900, priceBarre: 15000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ywk7ik14/checkout' },
+    once: { price: 12900, priceBarre: 20000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ywk7ik14/checkout' },
   },
   starter: {
     id: 'starter', name: 'Conversion Starter', isPack: false,
     tagline: 'Pour tester ses produits sereinement et obtenir ses premières ventes rentables.',
     imagesPerWeek: 9, produitsPerWeek: '1',
-    monthly: { price: 29900, priceBarre: 40000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
-    annual:  { price: 24900, priceBarre: 29900, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_wdya3v9h/checkout' },
+    monthly: { price: 39900, priceBarre: 80000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
+    annual:  { price: 29900, priceBarre: 40000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_wdya3v9h/checkout' },
   },
   pro: {
     id: 'pro', name: 'Conversion Pro', isPack: false, best: true,
     tagline: 'Pour dominer son marché et écraser ses coûts d\'acquisition.',
     imagesPerWeek: 18, produitsPerWeek: '1 à 2',
-    monthly: { price: 54900, priceBarre: 80000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
-    annual:  { price: 44900, priceBarre: 54900, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_lnp4ax0b/checkout' },
+    monthly: { price: 79900, priceBarre: 160000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
+    annual:  { price: 59900, priceBarre: 80000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_lnp4ax0b/checkout' },
   },
   scale: {
     id: 'scale', name: 'Conversion Scale', isPack: false,
     tagline: "L'arsenal complet pour inonder plusieurs marchés en simultané.",
     imagesPerWeek: 36, produitsPerWeek: '1 à 4',
-    monthly: { price: 79900, priceBarre: 160000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
-    annual:  { price: 64900, priceBarre: 79900,  delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_dn4fb72l/checkout' },
+    monthly: { price: 119900, priceBarre: 320000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
+    annual:  { price: 89900, priceBarre: 120000,  delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_dn4fb72l/checkout' },
   },
 };
 
@@ -564,13 +564,13 @@ const SUPABASE_URL_INT = process.env.SUPABASE_URL || 'https://mifljhsusidgzelnsw
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 
 const PLAN_MAP = {
-  'prd_ywk7ik14': { plan: 'discovery', cycle: 'once',    type: 'pack', total_credits: 9,  price_fcfa: 9900,   prix_img: 1100 },
-  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly', credits_per_week: 9,  price_fcfa: 29900,  prix_img: 830 },
-  'prd_wdya3v9h': { plan: 'starter', cycle: 'annual',  credits_per_week: 9,  price_fcfa: 24900,  prix_img: 691 },
-  'prd_34w031':   { plan: 'pro',     cycle: 'monthly', credits_per_week: 18, price_fcfa: 54900,  prix_img: 762 },
-  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'annual',  credits_per_week: 18, price_fcfa: 44900,  prix_img: 623 },
-  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly', credits_per_week: 36, price_fcfa: 79900,  prix_img: 554 },
-  'prd_dn4fb72l': { plan: 'scale',   cycle: 'annual',  credits_per_week: 36, price_fcfa: 64900,  prix_img: 450 },
+  'prd_ywk7ik14': { plan: 'discovery', cycle: 'once',    type: 'pack', total_credits: 9,  price_fcfa: 12900,  prix_img: 1433 },
+  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly', credits_per_week: 9,  price_fcfa: 39900,  prix_img: 1108 },
+  'prd_wdya3v9h': { plan: 'starter', cycle: 'annual',  credits_per_week: 9,  price_fcfa: 29900,  prix_img: 831 },
+  'prd_34w031':   { plan: 'pro',     cycle: 'monthly', credits_per_week: 18, price_fcfa: 79900,  prix_img: 1110 },
+  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'annual',  credits_per_week: 18, price_fcfa: 59900,  prix_img: 832 },
+  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly', credits_per_week: 36, price_fcfa: 119900, prix_img: 833 },
+  'prd_dn4fb72l': { plan: 'scale',   cycle: 'annual',  credits_per_week: 36, price_fcfa: 89900,  prix_img: 624 },
 };
 
 const PLAN_LABELS = { discovery: 'Conversion Discovery', starter: 'Conversion Starter', pro: 'Conversion Pro', scale: 'Conversion Scale' };
