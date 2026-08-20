@@ -5811,7 +5811,10 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
       // interne, jamais destiné au client — on ne garde que la partie avant le premier "*".
       const nomBrut = (deliverables.angles && deliverables.angles[i]) || `Angle ${i + 1}`;
       const nom = nomBrut.split('*')[0].trim() || `Angle ${i + 1}`;
-      return { numero: i + 1, nom, hooks: copy?.hooks || [], description: copy?.description || '' };
+      // Justification client-safe — vient du bloc DONNEES_MARCHE (deliverables.marche.angles),
+      // pas du tableau interne deliverables.angles qui ne contient que les noms bruts.
+      const justification = (deliverables.marche?.angles || []).find(a => (a?.nom||'').split('*')[0].trim() === nom)?.justification || '';
+      return { numero: i + 1, nom, justification, hooks: copy?.hooks || [], description: copy?.description || '' };
     });
 
     // CT utilisés pour ce lot — nécessaire pour qu'un futur renouvellement puisse en éviter
