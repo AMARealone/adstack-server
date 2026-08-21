@@ -5882,7 +5882,19 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
       const nom = nomBrut.split('*')[0].trim() || `Angle ${i + 1}`;
       // Justification client-safe — vient du bloc DONNEES_MARCHE (deliverables.marche.angles),
       // pas du tableau interne deliverables.angles qui ne contient que les noms bruts.
-      const justification = (deliverables.marche?.angles || []).find(a => (a?.nom||'').split('*')[0].trim() === nom)?.justification || '';
+      // Cause profonde corrigée (justification absente sur certains angles) : le matching par
+      // nom EXACT (après split sur '*') échouait silencieusement à la moindre différence de
+      // formatage entre deliverables.angles[i] et deliverables.marche.angles[i] (guillemets,
+      // espace, ponctuation) — pourtant les deux tableaux décrivent LES MÊMES angles, dans LE
+      // MÊME ORDRE, extraits de LA MÊME réponse. On matche donc d'abord par position (fiable),
+      // avec un repli sur le nom normalisé (sans guillemets/ponctuation, insensible à la casse)
+      // uniquement si jamais les deux tableaux n'étaient pas alignés.
+      const margles = deliverables.marche?.angles || [];
+      const normalise = (s) => (s||'').split('*')[0].replace(/["'""»«]/g,'').trim().toLowerCase();
+      let justification = margles[i]?.justification || '';
+      if (!justification && margles.length) {
+        justification = margles.find(a => normalise(a?.nom) === normalise(nom))?.justification || '';
+      }
       return { numero: i + 1, nom, justification, hooks: copy?.hooks || [], description: copy?.description || '' };
     });
 
