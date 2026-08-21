@@ -4418,6 +4418,9 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
       rotationNecessaire: nbAnglesCibleCourante >= SEUIL_ANGLES_AVANT_ROTATION,
       ctsUtilisesDernierLot,
       commandeActiveAilleurs,
+      // Portrait déjà généré pour cibleActuelle — permet à la Factory de le réutiliser tel quel
+      // si la nouvelle commande porte sur la même cible, au lieu de le regénérer inutilement.
+      portraitUrlCibleActuelle: marche.persona?.portrait_url || null,
     }));
   } catch(e) {
     res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
