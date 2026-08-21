@@ -2883,6 +2883,30 @@ Sur une QUATRIÈME ligne, ajoute 1 à 3 balises de style/émotion pertinentes s�
     return;
   }
 
+  // ── /generate-persona-portrait : génère + upload le portrait réaliste du persona,
+  // appelé par la Factory une fois le persona connu (nom/âge/rôle/ville/journée type) ──
+  if (req.method === 'POST' && req.url === '/generate-persona-portrait') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { persona } = JSON.parse(body);
+        if (!persona?.nom) { res.writeHead(400); res.end(JSON.stringify({ error: 'persona.nom requis' })); return; }
+        const { base64, mime } = await genererPortraitPersona(persona);
+        const slug = (persona.nom || 'persona').toUpperCase().replace(/[^A-Z0-9ÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ]/gi, '_').replace(/_+/g,'_').slice(0, 30);
+        const filename = `${slug}_${Date.now()}`;
+        const url = await uploadPortraitPersona(base64, mime, filename);
+        console.log(`→ /generate-persona-portrait → ${persona.nom} → ${url}`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ url }));
+      } catch(e) {
+        console.error('/generate-persona-portrait error:', e.message);
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   // ── /fill-demo-msg : remplit le template WA depuis les données de la mindmap ────────────
   if (req.method === 'POST' && req.url === '/fill-demo-msg') {
     let body = '';
@@ -5725,6 +5749,48 @@ async function checkPhotoQuality(photoBase64) {
     console.warn('[Quality Check] Analyse échouée, image conservée par défaut :', e.message);
     return { ok: true, note: 'analyse échouée — image conservée par défaut' };
   }
+}
+
+// ── Portrait persona — image ultra-réaliste générée depuis la description du persona,
+// dans une situation quotidienne qui lui est propre (pas un studio, pas un stock photo générique).
+// Même infrastructure que removeBackground (Gemini 3 Pro Image), mais texte-vers-image pur :
+// aucune photo d'entrée, on décrit la scène entièrement à partir des données déjà extraites
+// par l'Analyste (rôle, âge, ville, journée type) — jamais une vraie personne existante.
+async function genererPortraitPersona(persona) {
+  const token = await getToken();
+  const { nom, age, role, ville } = persona || {};
+  // Puise une situation concrète dans la journée type déjà connue plutôt que d'inventer une
+  // scène générique — cohérent avec le reste du persona affiché au client à côté du portrait.
+  const moments = (persona?.journee_type || []).map(j => j.texte).filter(Boolean);
+  const situation = moments.length
+    ? moments[Math.floor(moments.length / 2)] // un moment de milieu de journée, ni trop tôt ni trop tard
+    : `dans son activité de ${role || 'tous les jours'}`;
+
+  const prompt = `Photographie ultra-réaliste, style reportage/documentaire (pas de studio, pas de pose figée), d'une personne de ${age || 'trente'} ans, ${role || ''}, vivant à ${ville || 'une ville d\'Afrique de l\'Ouest'}, photographiée naturellement en train de : ${situation}. Lumière naturelle, cadrage portrait serré (visage et buste visibles), expression authentique et non posée, vêtements et décor cohérents avec son quotidien réel décrit. Qualité photo professionnelle (appareil réflex), aucun style illustration/dessin/3D — doit ressembler à une vraie photo prise sur le vif, jamais à une image de banque d'images générique.`;
+
+  const vertexBody = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { responseModalities: ['TEXT', 'IMAGE'], temperature: 0.6 }
+  };
+  const data = await vertexRequestGlobalAvecReessai(token, 'gemini-3-pro-image', vertexBody, 60000, 'persona_portrait');
+  if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  const imgPart = parts.find(p => p.inlineData?.mimeType?.startsWith('image/'));
+  if (!imgPart) throw new Error('Pas d\'image dans la réponse Gemini — ' + JSON.stringify(parts).slice(0,200));
+  return { base64: imgPart.inlineData.data, mime: imgPart.inlineData.mimeType };
+}
+
+async function uploadPortraitPersona(base64Data, mime, filename) {
+  const buffer = Buffer.from(base64Data, 'base64');
+  const ext = (mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+  const objPath = `personas/${filename}.${ext}`;
+  const r = await fetch(`${SUPABASE_URL_INT}/storage/v1/object/demos/${objPath}`, {
+    method: 'POST',
+    headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': mime, 'x-upsert': 'true', 'Cache-Control': 'public, max-age=31536000, immutable' },
+    body: buffer
+  });
+  if (!r.ok) throw new Error(`Upload portrait échoué : HTTP ${r.status}`);
+  return `${SUPABASE_URL_INT}/storage/v1/object/public/demos/${objPath}`;
 }
 
 async function uploadCreativeImage(base64Data, mime, filename) {
