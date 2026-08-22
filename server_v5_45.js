@@ -4849,6 +4849,32 @@ if (req.method === 'GET' && req.url === '/setup-thumbnails') {
   return;
 }
 
+// POST /track-funnel-event — ajout au panier / paiement initié sur la page de vente. La
+// déduplication par session se fait déjà côté client (sessionStorage) — cet endpoint se contente
+// d'enregistrer, jamais de re-dédupliquer côté serveur (pas de session fiable à ce niveau).
+if (req.method === 'POST' && req.url === '/track-funnel-event') {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', async () => {
+    try {
+      const { type, prospect_id, campagne } = JSON.parse(body || '{}');
+      if (type !== 'ajout_panier' && type !== 'paiement_initie') {
+        res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'type invalide' })); return;
+      }
+      await fetch(`${SUPABASE_URL_INT}/rest/v1/funnel_events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, Prefer: 'return=minimal' },
+        body: JSON.stringify({ type, prospect_id: prospect_id || null, campagne: campagne || null })
+      });
+      res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true }));
+    } catch(e) {
+      console.error('/track-funnel-event error:', e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+  return;
+}
+
 // POST /shorten — crée un lien court auto-hébergé (utilisé pour les SMS, limite de caractères,
 // et les relances J+10/J+21 qui ont besoin d'une miniature différente du lien direct)
 if (req.method === 'POST' && req.url === '/shorten') {
