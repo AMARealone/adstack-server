@@ -3898,6 +3898,11 @@ if (req.method === 'POST' && req.url === '/chat') {
       // ── Résumé du contenu réel par produit — nécessaire pour qu'Ava puisse répondre à des
       // questions factuelles ("combien de créatives j'ai", "quels angles pour ce produit") sans
       // jamais voir les images elles-mêmes (juste les comptages et les textes déjà écrits). ──
+      // Dates de livraison ajoutées — sans ça, impossible de répondre à toute question contenant
+      // "récemment", "cette semaine", "mon dernier batch", etc. (question réelle remontée, restée
+      // sans réponse utilisable faute de cette info). Résumé des données marché ajouté aussi —
+      // demande explicite (positionnement, taille de marché, concurrence par produit), absent
+      // du contexte jusqu'ici alors que déjà disponible sur chaque produit (p.marche).
       const contentSummary = products.slice(0,5).map(p => {
         const nbCreatives = (p.creatives || []).length;
         const angleSource = (p.marche?.angles?.length ? p.marche.angles : null);
@@ -3908,7 +3913,14 @@ if (req.method === 'POST' && req.url === '/chat') {
           const allAngles = p.deliveries.flatMap(d => d.angles || []);
           anglesTxt = allAngles.map((a,i) => `  ${i+1}. "${a.nom}"`).join('\n');
         }
-        return `PRODUIT "${p.nom}" :\n- ${nbCreatives} créative(s) dans la Galerie\n- Angles marketing livrés :\n${anglesTxt}`;
+        const batchsTxt = (p.deliveries || []).length
+          ? p.deliveries.map((d,i) => `  Batch ${i+1} — livré le ${d.date || '?'} (${(d.angles||[]).length} angle(s), ${(d.angles||[]).length*3} créative(s))`).join('\n')
+          : '  aucun batch livré pour l\'instant';
+        const pos = p.marche?.positionnement;
+        const marcheTxt = pos
+          ? `  Taille du marché : ${pos.taille_marche_personnes || 'non disponible'} · Croissance : ${pos.taux_croissance || 'non disponible'} · Concurrence : ${pos.concurrence || 'non disponible'}${pos.concurrents_directs?.length ? ' (concurrents directs : ' + pos.concurrents_directs.map(c=>c.nom).join(', ') + ')' : ''}`
+          : '  aucune analyse de marché disponible pour l\'instant';
+        return `PRODUIT "${p.nom}" :\n- ${nbCreatives} créative(s) au total dans la Galerie\n- Historique des batchs livrés :\n${batchsTxt}\n- Angles marketing livrés :\n${anglesTxt}\n- Données marché :\n${marcheTxt}`;
       }).join('\n\n');
 
       const SYSTEM = `Tu es Ava, l'assistante d'AdStack — agence d'images publicitaires Meta Ads pour vendeurs en ligne.
@@ -3975,12 +3987,24 @@ Désir profond : plus de ventes, moins de galère, liberté financière.
 RÈGLE 5 — CTA
 0 bouton avant le 4ème échange. 1 seul par message. Jamais 2 de suite.
 Prospect chaud → bouton checkout DIRECT au message suivant.
-[BTN:login:Connecter mon compte] [BTN:openProductForm:Créer mon produit]
-[BTN:checkout:starter:Démarrer →] [BTN:checkout:pro:Passer en Pro →] [BTN:checkout:scale:Passer en Scale →]
-[BTN:checkout-annual:starter:Starter annuel -25% →] [BTN:checkout-annual:pro:Pro annuel -25% →] [BTN:checkout-annual:scale:Scale annuel -25% →]
-[BTN:navigate:suivi:Mes demandes] [BTN:navigate:galerie:Mes images]
+[BTN:login] [BTN:openProductForm]
+[BTN:checkout:starter] [BTN:checkout:pro] [BTN:checkout:scale]
+[BTN:checkout-annual:starter] [BTN:checkout-annual:pro] [BTN:checkout-annual:scale]
+[BTN:navigate:suivi] [BTN:navigate:galerie]
+[BTN:whatsapp]
 Utilise checkout-annual quand la personne parle d'engagement long terme, d'économiser, ou demande explicitement
 l'annuel. Sinon, checkout (mensuel) reste le choix par défaut.
+Utilise [BTN:whatsapp] UNIQUEMENT dans ces cas précis : (1) la personne a payé mais n'arrive pas à se connecter
+avec le bon compte (probable mauvais email utilisé au paiement — dis-lui d'abord d'essayer de se connecter avec
+l'email utilisé pour payer, propose WhatsApp seulement si ça ne résout rien), (2) la personne exprime clairement
+être bloquée ou frustrée après plusieurs échanges sans que tu puisses résoudre son problème. Jamais en premier
+recours pour une question simple — WhatsApp est le dernier filet, pas un raccourci.
+
+RÈGLE 6 — PAIEMENT SANS CONNEXION PRÉALABLE
+Il n'est PAS nécessaire d'être connecté pour payer — le paiement s'ouvre directement, connecté ou non. La
+connexion ne redevient utile qu'ensuite, pour créer un produit et suivre ses commandes. Si on te demande
+"comment commander" alors que la personne n'est pas connectée : ne dis JAMAIS "connecte-toi d'abord" — vends
+directement l'offre adaptée (bénéfices, pas features) et propose le bouton checkout correspondant tout de suite.
 
 Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`
 
