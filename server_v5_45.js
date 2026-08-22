@@ -4017,7 +4017,15 @@ Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`
       const vertexBody = {
         system_instruction: { parts: [{ text: SYSTEM }] },
         contents,
-        generationConfig: { maxOutputTokens: 220, temperature: 0.4, thinkingConfig: { thinkingBudget: 0 } }
+        // Cause profonde corrigée : la RÈGLE de recherche du prompt demandait à ce chatbot de
+        // construire une recherche Google, mais aucun outil de recherche n'était réellement
+        // déclaré ici — la consigne était invisible pour le modèle, incapable de chercher quoi
+        // que ce soit en pratique. thinkingBudget:0 (avant) + grounding activé aurait reproduit
+        // un bug déjà rencontré et corrigé ailleurs dans ce fichier (le budget de réflexion
+        // partage le même total que la sortie — sans budget dédié, la vraie réponse peut être
+        // tronquée avant même d'être écrite). maxOutputTokens élargi en conséquence.
+        generationConfig: { maxOutputTokens: 500, temperature: 0.4, thinkingConfig: { thinkingBudget: 512 } },
+        tools: [{ googleSearch: {} }],
       };
 
       const CHAT_MODEL = 'gemini-2.5-flash';
@@ -4196,7 +4204,15 @@ Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`;
       const vertexBody = {
         system_instruction: { parts: [{ text: SYSTEM }] },
         contents,
-        generationConfig: { maxOutputTokens: 220, temperature: 0.4, thinkingConfig: { thinkingBudget: 0 } }
+        // Cause profonde corrigée : la RÈGLE de recherche du prompt demandait à ce chatbot de
+        // construire une recherche Google, mais aucun outil de recherche n'était réellement
+        // déclaré ici — la consigne était invisible pour le modèle, incapable de chercher quoi
+        // que ce soit en pratique. thinkingBudget:0 (avant) + grounding activé aurait reproduit
+        // un bug déjà rencontré et corrigé ailleurs dans ce fichier (le budget de réflexion
+        // partage le même total que la sortie — sans budget dédié, la vraie réponse peut être
+        // tronquée avant même d'être écrite). maxOutputTokens élargi en conséquence.
+        generationConfig: { maxOutputTokens: 500, temperature: 0.4, thinkingConfig: { thinkingBudget: 512 } },
+        tools: [{ googleSearch: {} }],
       };
 
       const CHAT_MODEL = 'gemini-2.5-flash';
