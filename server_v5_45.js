@@ -4857,14 +4857,14 @@ if (req.method === 'POST' && req.url === '/track-funnel-event') {
   req.on('data', c => body += c);
   req.on('end', async () => {
     try {
-      const { type, prospect_id, campagne } = JSON.parse(body || '{}');
+      const { type, prospect_id, campagne, source, user_id } = JSON.parse(body || '{}');
       if (type !== 'ajout_panier' && type !== 'paiement_initie') {
         res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'type invalide' })); return;
       }
       await fetch(`${SUPABASE_URL_INT}/rest/v1/funnel_events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, Prefer: 'return=minimal' },
-        body: JSON.stringify({ type, prospect_id: prospect_id || null, campagne: campagne || null })
+        body: JSON.stringify({ type, prospect_id: prospect_id || null, campagne: campagne || null, source: source || 'vente', user_id: user_id || null })
       });
       res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true }));
     } catch(e) {
