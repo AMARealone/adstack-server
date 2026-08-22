@@ -7,6 +7,7 @@ const webpush = require('web-push');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
+const sharp = require('sharp');
 
 const PORT = 3001;
 const PROJECT_ID = 'adstack-497020';
@@ -5357,9 +5358,9 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
       try {
         const { imgB64, mime, index } = JSON.parse(body);
         if (!imgB64) { res.writeHead(400); res.end(JSON.stringify({ error: 'imgB64 requis' })); return; }
-        const url = await uploadCreativeImage(imgB64, mime || 'image/png', `${id}_${index}`);
+        const { imageUrl, thumbUrl } = await uploadCreativeImage(imgB64, mime || 'image/png', `${id}_${index}`);
         res.writeHead(200, {'Content-Type':'application/json'});
-        res.end(JSON.stringify({ ok: true, url }));
+        res.end(JSON.stringify({ ok: true, url: imageUrl, thumbUrl }));
       } catch(e) {
         console.error(`[Upload immédiat] Échec pour ${id}_${JSON.parse(body||'{}').index ?? '?'}:`, e.message);
         res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
@@ -5835,7 +5836,30 @@ async function uploadCreativeImage(base64Data, mime, filename) {
     body: buffer
   });
   if (!r.ok) throw new Error(`Upload créative échoué : HTTP ${r.status}`);
-  return `${SUPABASE_URL_INT}/storage/v1/object/public/demos/${objPath}`;
+  const imageUrl = `${SUPABASE_URL_INT}/storage/v1/object/public/demos/${objPath}`;
+
+  // Miniature compressée pour la Galerie AdBoard — chargement très lent remonté par le client,
+  // cause trouvée : la grille affichait l'image pleine résolution (souvent >1024px de large,
+  // plusieurs centaines de Ko) pour une vignette de ~110-150px. 400px de large (confortable même
+  // en écran retina 2-3x) + JPEG qualité 78 réduit généralement à 15-40 Ko, sans perte visible à
+  // cette taille d'affichage. Échec de la miniature toléré : la Galerie retombe alors sur
+  // imageUrl (voir Platform.jsx), jamais un blocage de l'upload principal pour ça.
+  let thumbUrl = null;
+  try {
+    const thumbBuffer = await sharp(buffer).resize({ width: 400, withoutEnlargement: true }).jpeg({ quality: 78 }).toBuffer();
+    const thumbPath = `creatives_thumb/${filename}.jpg`;
+    const rThumb = await fetch(`${SUPABASE_URL_INT}/storage/v1/object/demos/${thumbPath}`, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'image/jpeg', 'x-upsert': 'true', 'Cache-Control': 'public, max-age=31536000, immutable' },
+      body: thumbBuffer
+    });
+    if (rThumb.ok) thumbUrl = `${SUPABASE_URL_INT}/storage/v1/object/public/demos/${thumbPath}`;
+    else console.warn(`[Miniature] Upload échoué pour ${filename} : HTTP ${rThumb.status}`);
+  } catch(eThumb) {
+    console.warn(`[Miniature] Génération échouée pour ${filename} :`, eThumb.message);
+  }
+
+  return { imageUrl, thumbUrl };
 }
 
 // Pousse les livrables (créatives uploadées en Storage + ad copies) dans la table `products`
@@ -5885,7 +5909,15 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
       const idCandidat = `${ticketId}_${i}`;
       if (existingIds.has(idCandidat)) { newlyPushedIndices.push(i); continue; } // déjà là mais pas encore tracé sur le brief — on le trace sans le repousser
       try {
-        const url = c.url || await uploadCreativeImage(c.imgB64, c.mime || 'image/png', idCandidat);
+        // Cas normal : déjà uploadée via /upload-creative-now, c.url ET c.thumbUrl transmis par
+        // Factory — aucun nouvel upload nécessaire. Cas de repli (ancien format, c.imgB64 encore
+        // présent) : un seul upload direct ici, dont le résultat sert à la fois pour url et thumbUrl.
+        let url = c.url, thumbUrl = c.thumbUrl || null;
+        if (!url) {
+          const uploaded = await uploadCreativeImage(c.imgB64, c.mime || 'image/png', idCandidat);
+          url = uploaded.imageUrl;
+          thumbUrl = uploaded.thumbUrl;
+        }
         // Même correctif que pour angleEntries plus bas — ce champ est CONSTRUIT SÉPARÉMENT et
         // avait été oublié lors du premier correctif, d'où le texte technique complet encore
         // visible dans la légende de chaque créative de la Galerie.
@@ -5894,7 +5926,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
         newCreatives.push({
           id: idCandidat, productId,
           angle: angleCreative, cible: cibleCeLot,
-          week: weekLabel, imageUrl: url
+          week: weekLabel, imageUrl: url, thumbUrl: thumbUrl || null
         });
         newlyPushedIndices.push(i);
       } catch(eUp) { console.error('[Deliver] Upload créative échoué :', eUp.message); }
