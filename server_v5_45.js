@@ -3545,6 +3545,49 @@ if (req.method === 'GET' && req.url.startsWith('/cron/check-pending')) {
     }
     console.log(`[Pending Check] ${aRappeler.length} rappel(s) 36h envoyé(s)`);
     console.log(`[Pending Check] ${aAlerter.length} demande(s) signalée(s)`);
+
+    // ── Relance proactive "marquez vos Top Performer" — 7 à 10 jours après une livraison,
+    // si aucune créative de CE lot précis n'est encore marquée, jamais relancé deux fois pour
+    // le même lot. Fenêtre bornée (pas juste un seuil "≥7j") : passé 10 jours sans être passé
+    // dans une exécution du cron, on abandonne plutôt que d'envoyer un rappel tardif et hors
+    // contexte — mieux vaut un rappel manqué qu'un rappel qui arrive 3 semaines après coup.
+    let relancesEnvoyees = 0;
+    try {
+      const prodRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?select=id,user_id,deliveries,creatives&deliveries=not.is.null`, {
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+      });
+      const produits = await prodRes.json();
+      const J7 = 7 * 24*60*60*1000, J10 = 10 * 24*60*60*1000;
+      for (const p of produits) {
+        if (!p.user_id || !Array.isArray(p.deliveries) || !p.deliveries.length) continue;
+        const creativesTopPerformer = new Set((p.creatives||[]).filter(c => c.topPerformer).map(c => c.week));
+        let modifie = false;
+        for (const d of p.deliveries) {
+          if (!d.created_at || d.topPerformerReminderSent) continue;
+          if (creativesTopPerformer.has(d.semaine)) continue; // déjà une marquée sur ce lot, pas besoin de relancer
+          const age = Date.now() - new Date(d.created_at).getTime();
+          if (age < J7 || age > J10) continue;
+          await sendPushToUser(p.user_id, {
+            title: 'Une créative qui sort du lot ?',
+            body: `Vos visuels du batch ${d.semaine || ''} tournent depuis une semaine — marquez celles qui performent, ça affine vos prochains batches.`,
+            url: '/adboard/gallery'
+          });
+          d.topPerformerReminderSent = true;
+          modifie = true;
+          relancesEnvoyees++;
+        }
+        if (modifie) {
+          await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${p.id}`, {
+            method: 'PATCH',
+            headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ deliveries: p.deliveries })
+          });
+        }
+      }
+      console.log(`[Pending Check] ${relancesEnvoyees} relance(s) Top Performer envoyée(s)`);
+    } catch(eTP) {
+      console.error('[Pending Check] Relance Top Performer échouée:', eTP.message);
+    }
   } catch(e) {
     console.error('[Pending Check] Erreur:', e.message);
   }
@@ -4468,13 +4511,36 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
     const productId = req.url.split('/')[2];
     const SEUIL_ANGLES_AVANT_ROTATION = 18;
 
-    const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=derniere_synthese,deliveries,marche`, {
+    const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=derniere_synthese,deliveries,marche,creatives`, {
       headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
     });
     const prRows = await prRes.json();
     const product = prRows?.[0] || {};
     const marche = product.marche || {};
     const deliveries = product.deliveries || [];
+
+    // ── Angle gagnant (feedback loop Top Performer) — le marquage le PLUS RÉCENT prime,
+    // jamais le premier jamais marqué (limite les dégâts si le client ne remarque plus rien
+    // après la première fois). On ne reconstruit RIEN : on reprend nom + justification tels
+    // que déjà livrés au client, jamais le détail interne (moteur/pools), qui n'est plus
+    // disponible après génération — seule la version client-safe est persistée.
+    let angleGagnant = null;
+    const creativesTopPerformer = (product.creatives || []).filter(c => c.topPerformer);
+    if (creativesTopPerformer.length) {
+      // "Plus récent" = position la plus avancée dans deliveries (append chronologique) —
+      // on cherche, en partant de la dernière livraison, la première qui contient au moins
+      // une créative marquée top performer.
+      for (let i = deliveries.length - 1; i >= 0 && !angleGagnant; i--) {
+        const d = deliveries[i];
+        const idsCeLot = new Set(creativesTopPerformer.filter(c => c.week === d.semaine).map(c => c.angle));
+        if (!idsCeLot.size) continue;
+        const nomGagnant = [...idsCeLot][0]; // un seul angle gagnant repris à la fois (voir compétence Analyste)
+        const angleData = (d.angles || []).find(a => a.nom === nomGagnant);
+        if (angleData) {
+          angleGagnant = { nom: angleData.nom, justification: angleData.justification || '', batchOrigine: d.semaine };
+        }
+      }
+    }
 
     // Historique COMPLET des noms d'angles, toutes cibles confondues, depuis le tout début —
     // c'est cette liste que l'Analyste ne doit jamais reproduire, même après une rotation de cible.
@@ -4526,6 +4592,7 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
       rotationNecessaire: nbAnglesCibleCourante >= SEUIL_ANGLES_AVANT_ROTATION,
       ctsUtilisesDernierLot,
       commandeActiveAilleurs,
+      angleGagnant,
       // Portrait déjà généré pour cibleActuelle — permet à la Factory de le réutiliser tel quel
       // si la nouvelle commande porte sur la même cible, au lieu de le regénérer inutilement.
       portraitUrlCibleActuelle: marche.persona?.portrait_url || null,
