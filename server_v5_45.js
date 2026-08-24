@@ -1616,6 +1616,73 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── Fetch + extraction IA d'une page produit (pré-remplissage formulaire AdBoard) ──
+  // N'invente jamais : si la page n'est pas une fiche produit exploitable, ou si un champ
+  // n'est pas explicitement présent, on renvoie null pour ce champ plutôt que de deviner.
+  if (req.method === 'POST' && req.url === '/fetch-product-info') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { url } = JSON.parse(body);
+        if (!url || !/^https?:\/\//.test(url)) throw new Error('URL invalide');
+        console.log(`→ Fetch fiche produit: ${url}`);
+        const pageText = await fetchPageText(url);
+        if (!pageText || pageText.length < 80) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, data: null, reason: 'page_vide' }));
+          return;
+        }
+
+        const extractPrompt = `Tu reçois le texte brut d'une page web. Détermine si c'est une fiche produit e-commerce, et si oui, extrais UNIQUEMENT les informations explicitement présentes — n'invente rien, ne déduis rien qui ne soit pas écrit noir sur blanc.
+
+Réponds en JSON strict, uniquement l'objet, aucun texte autour, aucun bloc markdown :
+{"nom":"nom du produit ou null","prix":"prix actuel affiché, nombre seul sans devise, ou null","pays":"pays/marché de vente si explicitement mentionné (plusieurs possibles séparés par virgule) ou null","utilite":"à quoi sert le produit en une phrase courte ou null","promo":"offre promotionnelle actuelle si présente (ex: -20%, 2+1 gratuit) ou null","confiance":"haute|moyenne|basse"}
+
+Si la page n'est pas une fiche produit exploitable (site général, accueil, blog, catégorie...), tous les champs à null et confiance:"basse".
+
+TEXTE DE LA PAGE :
+${pageText}`;
+
+        const token = await getToken();
+        const vertexBody = {
+          system_instruction: { parts: [{ text: 'Tu extrais des données structurées depuis du texte web brut. Tu ne réponds qu\'en JSON strict, jamais de texte autour.' }] },
+          contents: [{ role: 'user', parts: [{ text: extractPrompt }] }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 500 }
+        };
+        const data = await vertexRequest(token, 'gemini-2.5-flash', vertexBody);
+        if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+        let raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        raw = raw.replace(/```json\s*|\s*```/g, '').trim();
+
+        let parsed;
+        try { parsed = JSON.parse(raw); }
+        catch(e) { throw new Error('Réponse IA non-JSON : ' + raw.slice(0,200)); }
+
+        if (!parsed || parsed.confiance === 'basse') {
+          console.log('✓ Fiche produit : confiance basse, rien renvoyé');
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, data: null, reason: 'confiance_basse' }));
+          return;
+        }
+
+        const cleaned = {};
+        ['nom','prix','pays','utilite','promo'].forEach(k => {
+          if (parsed[k] && String(parsed[k]).toLowerCase() !== 'null') cleaned[k] = String(parsed[k]).trim();
+        });
+
+        console.log(`✓ Fiche produit extraite (confiance: ${parsed.confiance}) — champs: ${Object.keys(cleaned).join(', ') || 'aucun'}`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, data: cleaned, confiance: parsed.confiance }));
+      } catch(e) {
+        console.error('✗ Erreur fetch-product-info:', e.message);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, data: null, error: e.message }));
+      }
+    });
+    return;
+  }
+
   // ── URL Fetcher endpoint (Synthesis Tool) ─────
   if (req.method === 'POST' && req.url === '/fetch-url') {
     let body = '';
@@ -4494,6 +4561,39 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/delete-creatives
 
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true, removed: existing.length - remaining.length }));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+  return;
+}
+
+// POST /products/:id/mark-top-performer — marque/démarque une créative comme Top Performer
+// depuis la Galerie AdBoard (bouton actif seulement 7j après arrivée, contrôlé côté client).
+if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/mark-top-performer$/)) {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', async () => {
+    try {
+      const productId = req.url.split('/')[2];
+      const { creativeId, value } = JSON.parse(body);
+      if (!creativeId) { res.writeHead(400); res.end(JSON.stringify({error:'creativeId requis'})); return; }
+
+      const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=creatives`, {
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+      });
+      const prRows = await prRes.json();
+      const existing = prRows?.[0]?.creatives || [];
+      const updated = existing.map(c => c.id === creativeId ? { ...c, topPerformer: value !== false } : c);
+
+      await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
+        method: 'PATCH',
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ creatives: updated })
+      });
+
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok: true }));
     } catch(e) {
       res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
     }
