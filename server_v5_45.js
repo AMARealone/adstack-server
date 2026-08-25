@@ -8,6 +8,16 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
+// ── Diagnostic temporaire (bug miniatures, échec systématique "vipspng: libpng read error"
+// malgré Node 24 LTS + cache de build vidé) — affiche au démarrage les versions natives
+// réellement chargées par sharp, pour voir s'il y a un mismatch plutôt que de continuer à
+// deviner. À retirer une fois le bug résolu.
+try {
+  console.log('[Sharp Diagnostic] Versions natives chargées :', JSON.stringify(sharp.versions));
+  console.log('[Sharp Diagnostic] Plateforme :', process.platform, process.arch, '— Node', process.version);
+} catch(eDiag) {
+  console.error('[Sharp Diagnostic] Échec au chargement de sharp lui-même :', eDiag.message);
+}
 
 const PORT = 3001;
 const PROJECT_ID = 'adstack-497020';
@@ -5581,9 +5591,9 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
     req.on('data', c => body += c);
     req.on('end', async () => {
       try {
-        const { imgB64, mime, index } = JSON.parse(body);
+        const { imgB64, mime, index, thumbB64 } = JSON.parse(body);
         if (!imgB64) { res.writeHead(400); res.end(JSON.stringify({ error: 'imgB64 requis' })); return; }
-        const { imageUrl, thumbUrl } = await uploadCreativeImage(imgB64, mime || 'image/png', `${id}_${index}`);
+        const { imageUrl, thumbUrl } = await uploadCreativeImage(imgB64, mime || 'image/png', `${id}_${index}`, thumbB64);
         res.writeHead(200, {'Content-Type':'application/json'});
         res.end(JSON.stringify({ ok: true, url: imageUrl, thumbUrl }));
       } catch(e) {
@@ -6048,7 +6058,7 @@ async function uploadPortraitPersona(base64Data, mime, filename) {
   return `${SUPABASE_URL_INT}/storage/v1/object/public/demos/${objPath}`;
 }
 
-async function uploadCreativeImage(base64Data, mime, filename) {
+async function uploadCreativeImage(base64Data, mime, filename, clientThumbB64) {
   const buffer = Buffer.from(base64Data, 'base64');
   const ext = (mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
   const objPath = `creatives/${filename}.${ext}`;
@@ -6070,18 +6080,44 @@ async function uploadCreativeImage(base64Data, mime, filename) {
   // cette taille d'affichage. Échec de la miniature toléré : la Galerie retombe alors sur
   // imageUrl (voir Platform.jsx), jamais un blocage de l'upload principal pour ça.
   let thumbUrl = null;
-  try {
-    const thumbBuffer = await sharp(buffer).resize({ width: 400, withoutEnlargement: true }).jpeg({ quality: 78 }).toBuffer();
-    const thumbPath = `creatives_thumb/${filename}.jpg`;
-    const rThumb = await fetch(`${SUPABASE_URL_INT}/storage/v1/object/demos/${thumbPath}`, {
-      method: 'POST',
-      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'image/jpeg', 'x-upsert': 'true', 'Cache-Control': 'public, max-age=31536000, immutable' },
-      body: thumbBuffer
-    });
-    if (rThumb.ok) thumbUrl = `${SUPABASE_URL_INT}/storage/v1/object/public/demos/${thumbPath}`;
-    else console.warn(`[Miniature] Upload échoué pour ${filename} : HTTP ${rThumb.status}`);
-  } catch(eThumb) {
-    console.warn(`[Miniature] Génération échouée pour ${filename} :`, eThumb.message);
+
+  // PRIORITÉ : miniature déjà générée côté navigateur (Canvas, voir factory.html) — contourne
+  // entièrement sharp/libvips, dont la génération serveur échoue systématiquement en prod
+  // ("vipspng: libpng read error", reproductible même Node LTS + cache de build vidé — cause
+  // exacte encore non identifiée, diagnostic en cours). Plus fiable, à privilégier tant que
+  // cette cause n'est pas trouvée et corrigée.
+  if (clientThumbB64) {
+    try {
+      const thumbBuffer = Buffer.from(clientThumbB64, 'base64');
+      const thumbPath = `creatives_thumb/${filename}.jpg`;
+      const rThumb = await fetch(`${SUPABASE_URL_INT}/storage/v1/object/demos/${thumbPath}`, {
+        method: 'POST',
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'image/jpeg', 'x-upsert': 'true', 'Cache-Control': 'public, max-age=31536000, immutable' },
+        body: thumbBuffer
+      });
+      if (rThumb.ok) thumbUrl = `${SUPABASE_URL_INT}/storage/v1/object/public/demos/${thumbPath}`;
+      else console.warn(`[Miniature] Upload (générée navigateur) échoué pour ${filename} : HTTP ${rThumb.status}`);
+    } catch(eThumbClient) {
+      console.warn(`[Miniature] Upload miniature navigateur échoué pour ${filename} :`, eThumbClient.message);
+    }
+  }
+
+  // REPLI : génération serveur via sharp — seulement si le client n'a pas fourni de miniature
+  // (navigateur sans support Canvas, très rare, ou ancien format) ou si son upload a échoué.
+  if (!thumbUrl) {
+    try {
+      const thumbBuffer = await sharp(buffer).resize({ width: 400, withoutEnlargement: true }).jpeg({ quality: 78 }).toBuffer();
+      const thumbPath = `creatives_thumb/${filename}.jpg`;
+      const rThumb = await fetch(`${SUPABASE_URL_INT}/storage/v1/object/demos/${thumbPath}`, {
+        method: 'POST',
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'image/jpeg', 'x-upsert': 'true', 'Cache-Control': 'public, max-age=31536000, immutable' },
+        body: thumbBuffer
+      });
+      if (rThumb.ok) thumbUrl = `${SUPABASE_URL_INT}/storage/v1/object/public/demos/${thumbPath}`;
+      else console.warn(`[Miniature] Upload échoué pour ${filename} : HTTP ${rThumb.status}`);
+    } catch(eThumb) {
+      console.warn(`[Miniature] Génération échouée pour ${filename} :`, eThumb.message, '| code:', eThumb.code, '| taille buffer entrée:', buffer.length, 'octets', '| stack:', eThumb.stack);
+    }
   }
 
   return { imageUrl, thumbUrl };
