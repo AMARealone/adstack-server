@@ -4519,25 +4519,43 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
     const marche = product.marche || {};
     const deliveries = product.deliveries || [];
 
-    // ── Angle gagnant (feedback loop Top Performer) — le marquage le PLUS RÉCENT prime,
-    // jamais le premier jamais marqué (limite les dégâts si le client ne remarque plus rien
-    // après la première fois). On ne reconstruit RIEN : on reprend nom + justification tels
-    // que déjà livrés au client, jamais le détail interne (moteur/pools), qui n'est plus
-    // disponible après génération — seule la version client-safe est persistée.
+    // ── Angle gagnant (feedback loop Top Performer) — DOIT rester strictement identique à
+    // getAngleGagnantActuel() dans Platform.jsx, sinon le badge affiché au client contredirait
+    // l'angle réellement transmis à l'Analyste ici.
+    //
+    // Score combiné, pas un simple "dernier marqué gagne" : pour chaque créative marquée Top
+    // Performer, on ajoute à son angle un poids de fraîcheur (position du batch — plus récent
+    // = poids plus fort). Un angle avec PLUSIEURS marquages, même un peu plus anciens, peut
+    // donc l'emporter sur un marquage unique très récent : ni le volume ni la fraîcheur seule
+    // ne dominent, les deux se combinent dans UN seul score par angle. Le multiplicateur de
+    // rang (classement manuel du client, pas encore construit) est neutre à 1 pour l'instant.
+    //
+    // On ne reconstruit RIEN de l'angle gagnant : on reprend nom + justification tels que déjà
+    // livrés au client (version la plus récente si reformulée entre deux batchs), jamais le
+    // détail interne (moteur/pools), qui n'est plus disponible après génération.
     let angleGagnant = null;
     const creativesTopPerformer = (product.creatives || []).filter(c => c.topPerformer);
-    if (creativesTopPerformer.length) {
-      // "Plus récent" = position la plus avancée dans deliveries (append chronologique) —
-      // on cherche, en partant de la dernière livraison, la première qui contient au moins
-      // une créative marquée top performer.
-      for (let i = deliveries.length - 1; i >= 0 && !angleGagnant; i--) {
-        const d = deliveries[i];
-        const idsCeLot = new Set(creativesTopPerformer.filter(c => c.week === d.semaine).map(c => c.angle));
-        if (!idsCeLot.size) continue;
-        const nomGagnant = [...idsCeLot][0]; // un seul angle gagnant repris à la fois (voir compétence Analyste)
-        const angleData = (d.angles || []).find(a => a.nom === nomGagnant);
-        if (angleData) {
-          angleGagnant = { nom: angleData.nom, justification: angleData.justification || '', batchOrigine: d.semaine };
+    if (creativesTopPerformer.length && deliveries.length) {
+      const scores = {}; // nom d'angle -> score cumulé
+      deliveries.forEach((d, i) => {
+        const poidsRecence = i + 1; // batch le plus ancien = 1, chaque batch suivant pèse plus
+        creativesTopPerformer.filter(c => c.week === d.semaine).forEach(c => {
+          const rankMultiplier = 1; // TODO: remplacer par le rang une fois le classement drag-and-drop construit
+          if (!c.angle) return;
+          scores[c.angle] = (scores[c.angle] || 0) + poidsRecence * rankMultiplier;
+        });
+      });
+      const entries = Object.entries(scores);
+      if (entries.length) {
+        entries.sort((a, b) => b[1] - a[1]);
+        const nomGagnant = entries[0][0];
+        // Formulation la plus à jour : on cherche depuis la livraison la PLUS RÉCENTE qui
+        // contient cet angle, pas forcément celle qui a déclenché le score le plus haut.
+        for (let i = deliveries.length - 1; i >= 0 && !angleGagnant; i--) {
+          const angleData = (deliveries[i].angles || []).find(a => a.nom === nomGagnant);
+          if (angleData) {
+            angleGagnant = { nom: angleData.nom, justification: angleData.justification || '', batchOrigine: deliveries[i].semaine };
+          }
         }
       }
     }
