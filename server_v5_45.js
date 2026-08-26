@@ -4550,7 +4550,9 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
       deliveries.forEach((d, i) => {
         const poidsRecence = i + 1; // batch le plus ancien = 1, chaque batch suivant pèse plus
         creativesTopPerformer.filter(c => c.week === d.semaine).forEach(c => {
-          const rankMultiplier = 1; // TODO: remplacer par le rang une fois le classement drag-and-drop construit
+          // Rang manuel (drag-and-drop client) — DOIT rester identique à Platform.jsx. Rang 1 =
+          // ×2, rang 2 = ×1.5... décroît vers 1 (neutre) pour rangs élevés/non classées.
+          const rankMultiplier = c.topPerformerRank ? (1 + 1 / c.topPerformerRank) : 1;
           if (!c.angle) return;
           scores[c.angle] = (scores[c.angle] || 0) + poidsRecence * rankMultiplier;
         });
@@ -4680,6 +4682,44 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/mark-top-perform
       const prRows = await prRes.json();
       const existing = prRows?.[0]?.creatives || [];
       const updated = existing.map(c => c.id === creativeId ? { ...c, topPerformer: value !== false } : c);
+
+      await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
+        method: 'PATCH',
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ creatives: updated })
+      });
+
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok: true }));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+  return;
+}
+
+// POST /products/:id/reorder-top-performers — persiste le classement manuel (drag-and-drop,
+// Galerie AdBoard) des créatives marquées Top Performer d'un produit. Reçoit l'ordre complet
+// (tableau d'ids, index 0 = rang 1) plutôt qu'un déplacement unitaire — plus simple et plus
+// robuste : un seul état à écrire, pas de logique d'insertion/décalage à répliquer serveur.
+if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/reorder-top-performers$/)) {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', async () => {
+    try {
+      const productId = req.url.split('/')[2];
+      const { order } = JSON.parse(body);
+      if (!Array.isArray(order) || !order.length) { res.writeHead(400); res.end(JSON.stringify({error:'order (tableau d\'ids) requis'})); return; }
+
+      const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=creatives`, {
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+      });
+      const prRows = await prRes.json();
+      const existing = prRows?.[0]?.creatives || [];
+      const updated = existing.map(c => {
+        const idx = order.indexOf(c.id);
+        return idx === -1 ? c : { ...c, topPerformerRank: idx + 1 };
+      });
 
       await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
         method: 'PATCH',
