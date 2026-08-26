@@ -4529,6 +4529,19 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
     const marche = product.marche || {};
     const deliveries = product.deliveries || [];
 
+    // Cible utilisée au DERNIER lot livré — sert de référence pour savoir si la prochaine
+    // commande reste sur la même cible ou si le client en a imposé une nouvelle.
+    // Cause profonde corrigée (changement de cible jamais détecté, ex: "prof d'EPS" → "professionnelle
+    // active" traité comme identique) : cette référence n'était que le PRÉNOM du persona (ex:
+    // "Aïssatou") — rien de comparable à une description de cible ("femme professionnelle active
+    // souffrant de discrimination..."). Un prénom seul ne permet aucune comparaison de sens.
+    // On construit maintenant une vraie description (rôle, âge, ville) à partir du persona complet.
+    // Calculée ICI (avant l'angle gagnant, pas après) — l'angle gagnant en a besoin pour se
+    // scoper à la bonne cible, voir juste en dessous.
+    const derniereLivraison = deliveries.length ? deliveries[deliveries.length - 1] : null;
+    const descrPersona = (p) => p ? [p.nom, p.role, p.age ? `${p.age} ans` : null, p.ville].filter(Boolean).join(', ') : null;
+    const cibleActuelle = descrPersona(marche.persona) || derniereLivraison?.cible || null;
+
     // ── Angle gagnant (feedback loop Top Performer) — DOIT rester strictement identique à
     // getAngleGagnantActuel() dans Platform.jsx, sinon le badge affiché au client contredirait
     // l'angle réellement transmis à l'Analyste ici.
@@ -4537,18 +4550,24 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
     // Performer, on ajoute à son angle un poids de fraîcheur (position du batch — plus récent
     // = poids plus fort). Un angle avec PLUSIEURS marquages, même un peu plus anciens, peut
     // donc l'emporter sur un marquage unique très récent : ni le volume ni la fraîcheur seule
-    // ne dominent, les deux se combinent dans UN seul score par angle. Le multiplicateur de
-    // rang (classement manuel du client, pas encore construit) est neutre à 1 pour l'instant.
+    // ne dominent, les deux se combinent dans UN seul score par angle.
+    //
+    // SCOPÉ À LA CIBLE ACTUELLE, PAS TOUT L'HISTORIQUE DU PRODUIT : un angle marketing joue sur
+    // les émotions d'UNE cible précise — un angle gagnant pour "mères actives 35-45 ans" n'a
+    // aucune raison de fonctionner pour "étudiants 18-22 ans" même sur le même produit. Mélanger
+    // les cibles fausserait complètement le signal. On ne regarde donc que les livraisons dont
+    // la cible correspond exactement à cibleActuelle (celle de la prochaine commande).
     //
     // On ne reconstruit RIEN de l'angle gagnant : on reprend nom + justification tels que déjà
     // livrés au client (version la plus récente si reformulée entre deux batchs), jamais le
     // détail interne (moteur/pools), qui n'est plus disponible après génération.
     let angleGagnant = null;
+    const deliveriesMemeCible = deliveries.filter(d => (d.cible || null) === cibleActuelle);
     const creativesTopPerformer = (product.creatives || []).filter(c => c.topPerformer);
-    if (creativesTopPerformer.length && deliveries.length) {
+    if (creativesTopPerformer.length && deliveriesMemeCible.length) {
       const scores = {}; // nom d'angle -> score cumulé
-      deliveries.forEach((d, i) => {
-        const poidsRecence = i + 1; // batch le plus ancien = 1, chaque batch suivant pèse plus
+      deliveriesMemeCible.forEach((d, i) => {
+        const poidsRecence = i + 1; // livraison la plus ancienne DE CETTE CIBLE = 1, chaque suivante pèse plus
         creativesTopPerformer.filter(c => c.week === d.semaine).forEach(c => {
           // Rang manuel (drag-and-drop client) — DOIT rester identique à Platform.jsx. Rang 1 =
           // ×2, rang 2 = ×1.5... décroît vers 1 (neutre) pour rangs élevés/non classées.
@@ -4561,12 +4580,12 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
       if (entries.length) {
         entries.sort((a, b) => b[1] - a[1]);
         const nomGagnant = entries[0][0];
-        // Formulation la plus à jour : on cherche depuis la livraison la PLUS RÉCENTE qui
-        // contient cet angle, pas forcément celle qui a déclenché le score le plus haut.
-        for (let i = deliveries.length - 1; i >= 0 && !angleGagnant; i--) {
-          const angleData = (deliveries[i].angles || []).find(a => a.nom === nomGagnant);
+        // Formulation la plus à jour : on cherche depuis la livraison DE CETTE CIBLE la plus
+        // récente qui contient cet angle, pas forcément celle qui a déclenché le score le plus haut.
+        for (let i = deliveriesMemeCible.length - 1; i >= 0 && !angleGagnant; i--) {
+          const angleData = (deliveriesMemeCible[i].angles || []).find(a => a.nom === nomGagnant);
           if (angleData) {
-            angleGagnant = { nom: angleData.nom, justification: angleData.justification || '', batchOrigine: deliveries[i].semaine };
+            angleGagnant = { nom: angleData.nom, justification: angleData.justification || '', batchOrigine: deliveriesMemeCible[i].semaine };
           }
         }
       }
@@ -4575,17 +4594,6 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
     // Historique COMPLET des noms d'angles, toutes cibles confondues, depuis le tout début —
     // c'est cette liste que l'Analyste ne doit jamais reproduire, même après une rotation de cible.
     const anglesHistorique = deliveries.flatMap(d => (d.angles || []).map(a => a.nom).filter(Boolean));
-
-    // Cible utilisée au DERNIER lot livré — sert de référence pour savoir si la prochaine
-    // commande reste sur la même cible ou si le client en a imposé une nouvelle.
-    // Cause profonde corrigée (changement de cible jamais détecté, ex: "prof d'EPS" → "professionnelle
-    // active" traité comme identique) : cette référence n'était que le PRÉNOM du persona (ex:
-    // "Aïssatou") — rien de comparable à une description de cible ("femme professionnelle active
-    // souffrant de discrimination..."). Un prénom seul ne permet aucune comparaison de sens.
-    // On construit maintenant une vraie description (rôle, âge, ville) à partir du persona complet.
-    const derniereLivraison = deliveries.length ? deliveries[deliveries.length - 1] : null;
-    const descrPersona = (p) => p ? [p.nom, p.role, p.age ? `${p.age} ans` : null, p.ville].filter(Boolean).join(', ') : null;
-    const cibleActuelle = descrPersona(marche.persona) || derniereLivraison?.cible || null;
 
     // Compteur d'angles pour la cible COURANTE uniquement : on remonte les livraisons les plus
     // récentes tant qu'elles partagent le même nom de cible que la dernière.
