@@ -4744,6 +4744,99 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/reorder-top-perf
   return;
 }
 
+// POST /briefs/create — validation AUTORITAIRE des crédits avant création, côté serveur.
+// Remplace l'insertion directe client→Supabase (RLS) qui ne revérifiait jamais rien : un
+// client dont l'état local n'était pas encore rafraîchi (allBriefs vide au tout premier
+// rendu, par ex.) pouvait laisser passer une demande alors qu'il n'avait plus de crédits
+// réellement disponibles — bug remonté en prod avec des demandes acceptées à tort.
+// Même logique de calcul que computeCredits()/verifierPlafondProduction() côté client
+// (Platform.jsx) — DOIT rester identique, sinon le chiffre affiché au client contredirait ce
+// que le serveur autorise réellement.
+if (req.method === 'POST' && req.url === '/briefs/create') {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', async () => {
+    try {
+      const { userId, productId, quantity } = JSON.parse(body);
+      if (!userId || !productId || !quantity) { res.writeHead(400); res.end(JSON.stringify({error:'userId, productId et quantity requis'})); return; }
+
+      const [subRes, briefsRes] = await Promise.all([
+        fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?user_id=eq.${userId}&select=*&order=started_at.desc&limit=1`, {
+          headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+        }),
+        fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?user_id=eq.${userId}&status=neq.cancelled&select=*`, {
+          headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+        })
+      ]);
+      const subRows = await subRes.json();
+      let sub = subRows?.[0] || null;
+      const allBriefs = await briefsRes.json();
+
+      // Même correction d'expiration que sbSubs.load() côté client — appliquée AVANT
+      // computeCredits, comme côté client.
+      if (sub?.expires_at && new Date(sub.expires_at) < new Date()) sub = { ...sub, active: false };
+
+      if (!sub || !sub.active) {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ error: 'abonnement_inactif' }));
+        return;
+      }
+
+      // ── computeCredits() — copie exacte de la logique Platform.jsx ──
+      const briefEstActif = (b) => !!b && (b.status === 'pending' || b.status === 'in_production');
+      const briefCompteCredits = (b) => briefEstActif(b) || b.status === 'done';
+      const used = allBriefs.filter(briefCompteCredits).reduce((sum, b) => sum + (b.credits_used || 9), 0);
+      let total;
+      if (sub.type === 'pack') {
+        total = sub.total_credits || 0;
+      } else {
+        const started = new Date(sub.started_at);
+        const now = new Date();
+        const startedMidnight = new Date(started.getFullYear(), started.getMonth(), started.getDate());
+        const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const msPerDay = 24 * 60 * 60 * 1000;
+        const daysElapsed = Math.floor((nowMidnight - startedMidnight) / msPerDay);
+        const weeksActive = Math.floor(daysElapsed / 7) + 1;
+        total = weeksActive * sub.credits_per_week;
+      }
+      const available = Math.max(0, total - used);
+
+      if (available < quantity) {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ error: 'credits_insuffisants', available, requested: quantity }));
+        return;
+      }
+
+      // ── verifierPlafondProduction() — copie exacte, plafond 36 images/24h tous produits ──
+      const PLAFOND_PRODUCTION_24H = 36;
+      const MS_24H = 24 * 60 * 60 * 1000;
+      const seuil24h = Date.now() - MS_24H;
+      const actifs24h = allBriefs.filter(b => briefEstActif(b) && new Date(b.created_at).getTime() >= seuil24h);
+      const totalActuel24h = actifs24h.reduce((s, b) => s + (b.credits_used || b.quantity || 9), 0);
+      if (totalActuel24h + quantity > PLAFOND_PRODUCTION_24H) {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ error: 'plafond_production', totalActuel24h }));
+        return;
+      }
+
+      // ── Tout est validé avec des données fraîches, ré-interrogées à l'instant : créer le brief ──
+      const insertRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs`, {
+        method: 'POST',
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify({ user_id: userId, product_id: productId, quantity, status: 'pending', credits_used: quantity })
+      });
+      if (!insertRes.ok) { res.writeHead(500); res.end(JSON.stringify({ error: 'Échec de la création' })); return; }
+      const rows = await insertRes.json();
+
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok: true, brief: rows[0] }));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+  return;
+}
+
 // GET /users/:id/products — produits existants d'un compte, pour choisir où livrer manuellement
 if (req.method === 'GET' && req.url.match(/^\/users\/[^/]+\/products$/)) {
   try {
