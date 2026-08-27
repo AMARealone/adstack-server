@@ -3498,7 +3498,21 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
           await activateSubscription(user.id, planInfo, email, user.user_metadata?.full_name || customer?.name);
           await traiterAttributionCRM(user.id);
         } else {
-          console.warn(`[Pulse] User introuvable pour email: ${email} — abonnement en attente`);
+          console.warn(`[Pulse] User introuvable pour email: ${email} — sauvegarde en attente pour rattrapage automatique`);
+          // Cause profonde corrigée (paiement confirmé mais jamais activé) : ce cas se
+          // contentait d'un console.warn — rien n'était conservé nulle part, donc même si le
+          // client s'inscrivait ensuite avec le même email, rien ne reliait automatiquement son
+          // paiement à son compte. Voir /cron/check-pending qui retente périodiquement.
+          try {
+            await fetch(`${SUPABASE_URL_INT}/rest/v1/pending_activations`, {
+              method: 'POST',
+              headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+              body: JSON.stringify({ email, name: customer?.name || null, plan_id: productId, sale_id: sale?.id || null })
+            });
+          } catch(ePending) {
+            console.error('[Pulse] Échec sauvegarde pending_activations :', ePending.message);
+            await notifierAdmin('⚠️ Paiement reçu mais non activé, ET sauvegarde échouée', `<p>Email: ${email}<br>Produit: ${productId}<br>Vente: ${sale?.id}<br>Erreur: ${ePending.message}</p><p><strong>Action manuelle requise.</strong></p>`);
+          }
         }
       }
     } catch(e) { console.error('[Pulse] Erreur:', e); }
@@ -3597,6 +3611,37 @@ if (req.method === 'GET' && req.url.startsWith('/cron/check-pending')) {
       console.log(`[Pending Check] ${relancesEnvoyees} relance(s) Top Performer envoyée(s)`);
     } catch(eTP) {
       console.error('[Pending Check] Relance Top Performer échouée:', eTP.message);
+    }
+
+    // ── Rattrapage des paiements en attente d'activation (voir /webhook/chariow) — un client
+    // qui a payé avant d'avoir un compte AdBoard (ou avec un email différent au moment du
+    // paiement) reste ici jusqu'à ce qu'un compte avec le même email apparaisse. Retenté à
+    // chaque passage du cron plutôt qu'une seule fois — le client peut s'inscrire des heures
+    // ou des jours après son paiement.
+    let activationsRattrapees = 0;
+    try {
+      const pendRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/pending_activations?resolved_at=is.null&select=*`, {
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+      });
+      const pendings = await pendRes.json();
+      for (const pend of pendings) {
+        const planInfo = PLAN_MAP[pend.plan_id];
+        if (!planInfo) continue; // produit inconnu, rien à faire, reste en attente
+        const user = await findUserByEmail(pend.email);
+        if (!user) continue; // toujours pas de compte avec cet email — on retentera au prochain passage
+        await activateSubscription(user.id, planInfo, pend.email, user.user_metadata?.full_name || pend.name);
+        await traiterAttributionCRM(user.id);
+        await fetch(`${SUPABASE_URL_INT}/rest/v1/pending_activations?id=eq.${pend.id}`, {
+          method: 'PATCH',
+          headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({ resolved_at: new Date().toISOString(), resolved_user_id: user.id })
+        });
+        activationsRattrapees++;
+        await notifierAdmin('✅ Activation rattrapée automatiquement', `<p>${pend.email} vient de créer son compte — abonnement activé rétroactivement (paiement du ${new Date(pend.created_at).toLocaleDateString('fr-FR')}).</p>`);
+      }
+      console.log(`[Pending Check] ${activationsRattrapees} activation(s) en attente rattrapée(s)`);
+    } catch(ePend) {
+      console.error('[Pending Check] Rattrapage activations échoué:', ePend.message);
     }
   } catch(e) {
     console.error('[Pending Check] Erreur:', e.message);
