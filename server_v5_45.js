@@ -4799,6 +4799,71 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/reorder-top-perf
 // vérifié qui y est associé, avant d'autoriser quoi que ce soit.
 // Mécanisme : generateLink (magiclink) + verify — la façon officielle Supabase de créer une
 // vraie session pour un utilisateur sans jamais connaître ni manipuler son mot de passe.
+// GET /crm/clients — vue Clients du CRM (remplace "Acheteurs Starter"). Rassemble
+// subscriptions + auth.users (emails/noms, jamais accessible directement en anon — d'où cet
+// endpoint plutôt qu'une lecture directe du CRM) + briefs (usage) + transactions (dépense),
+// avec la clé service pour tout voir peu importe le compte. Inclut TOUT abonné, qu'il ait ou
+// non été prospect/lead dans le CRM au préalable.
+if (req.method === 'GET' && req.url === '/crm/clients') {
+  try {
+    const [subsRes, usersRes, briefsRes, txRes] = await Promise.all([
+      fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?select=*`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }),
+      fetch(`${SUPABASE_URL_INT}/auth/v1/admin/users?per_page=1000`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }),
+      fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?select=user_id,status,credits_used`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }),
+      fetch(`${SUPABASE_URL_INT}/rest/v1/transactions?select=user_id,montant_fcfa,created_at&order=created_at.asc`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }),
+    ]);
+    const subs = await subsRes.json();
+    const usersData = await usersRes.json();
+    const users = usersData.users || usersData || [];
+    const briefs = await briefsRes.json();
+    const transactions = await txRes.json();
+
+    const usersById = {};
+    users.forEach(u => { usersById[u.id] = u; });
+
+    const briefEstActif = (b) => b.status === 'pending' || b.status === 'in_production';
+    const briefCompteCredits = (b) => briefEstActif(b) || b.status === 'done';
+
+    const clients = subs.map(sub => {
+      const u = usersById[sub.user_id] || {};
+      const mesBriefs = briefs.filter(b => b.user_id === sub.user_id);
+      const used = mesBriefs.filter(briefCompteCredits).reduce((s, b) => s + (b.credits_used || 9), 0);
+      let total;
+      if (sub.type === 'pack') {
+        total = sub.total_credits || 0;
+      } else {
+        const started = new Date(sub.started_at);
+        const now = new Date();
+        const startedMidnight = new Date(started.getFullYear(), started.getMonth(), started.getDate());
+        const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const weeksActive = Math.floor((nowMidnight - startedMidnight) / (7 * 86400000)) + 1;
+        total = weeksActive * (sub.credits_per_week || 0);
+      }
+      const mesTx = transactions.filter(t => t.user_id === sub.user_id);
+      const totalDepense = mesTx.reduce((s, t) => s + (t.montant_fcfa || 0), 0);
+
+      return {
+        user_id: sub.user_id,
+        email: u.email || null,
+        nom: u.user_metadata?.full_name || u.user_metadata?.name || null,
+        avatar: u.user_metadata?.avatar_url || u.user_metadata?.picture || null,
+        plan: sub.plan, cycle: sub.cycle, type: sub.type, active: sub.active,
+        started_at: sub.started_at, expires_at: sub.expires_at,
+        credits_used: used, credits_total: Math.max(total, 0),
+        total_depense_fcfa: totalDepense,
+        nb_achats: mesTx.length,
+        premier_achat: mesTx[0]?.created_at || sub.started_at,
+      };
+    }).sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(clients));
+  } catch (e) {
+    res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+  }
+  return;
+}
+
 const ADMIN_EMAIL_IMPERSONATE = 'thefirstquality01@gmail.com';
 if (req.method === 'POST' && req.url === '/admin/impersonate') {
   let body = '';
