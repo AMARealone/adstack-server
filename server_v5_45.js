@@ -5872,6 +5872,13 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
         if (pushResult?.batchCree) {
           briefs[idx].batch_deja_cree = true;
         }
+        // Portrait persona — voir genererEtSauvegarderPortraitEnTacheDeFond : jamais attendu
+        // ici (pas de "await"), volontairement. Continue de tourner dans ce process même une
+        // fois la réponse HTTP envoyée et même si Factory est fermée juste après.
+        if (pushResult?.besoinPortrait && pushResult.personaPourPortrait?.nom) {
+          genererEtSauvegarderPortraitEnTacheDeFond(briefs[idx].product?.id, pushResult.personaPourPortrait)
+            .catch(e => console.error('[Portrait] Erreur non interceptée en tâche de fond :', e.message));
+        }
       } else {
         console.warn(`[Deliver] Aucun livrable sauvegardé pour ${id} — statut poussé à AdBoard sans contenu.`);
       }
@@ -5899,6 +5906,83 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
       }
     } else {
       res.writeHead(404); res.end(JSON.stringify({ error: 'Brief not found' }));
+    }
+    return;
+  }
+
+  // POST /commandes/:id/send-one-creative — envoie UNE SEULE créative précise au client, sans
+  // toucher au reste du batch. Répond au besoin de contrôle fin : si une créative manque côté
+  // client après un envoi complet, ou si le client veut voir une créative précise dès qu'elle
+  // est prête sans attendre tout le batch, plutôt que de tout renvoyer.
+  if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/send-one-creative$/)) {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const id = req.url.split('/')[2];
+        const { index } = JSON.parse(body);
+        if (typeof index !== 'number') { res.writeHead(400); res.end(JSON.stringify({ error: 'index (nombre) requis' })); return; }
+
+        const briefs = await loadBriefs();
+        const idx = briefs.findIndex(b => b.id === id);
+        if (idx < 0) { res.writeHead(404); res.end(JSON.stringify({ error: 'Brief not found' })); return; }
+        if (!briefs[idx].deliverables) { res.writeHead(400); res.end(JSON.stringify({ error: 'Aucun livrable sauvegardé pour ce ticket' })); return; }
+        const creative = briefs[idx].deliverables.creatives?.[index];
+        if (!creative || (!creative.url && !creative.imgB64)) { res.writeHead(400); res.end(JSON.stringify({ error: `Créative ${index} inexistante ou pas encore générée` })); return; }
+
+        const dejaPousses = new Set(briefs[idx].pushed_creative_indices || []);
+        const pushResult = await pushDeliverablesToProduct(
+          briefs[idx].product?.id, id, briefs[idx].deliverables,
+          dejaPousses, !!briefs[idx].batch_deja_cree, briefs[idx].quantity,
+          new Set([index])
+        );
+        if (pushResult?.newlyPushedIndices?.length) {
+          briefs[idx].pushed_creative_indices = [...dejaPousses, ...pushResult.newlyPushedIndices];
+        }
+        if (pushResult?.batchCree) briefs[idx].batch_deja_cree = true;
+        await saveBriefs([briefs[idx]]);
+
+        const reussi = pushResult?.newlyPushedIndices?.includes(index) || dejaPousses.has(index);
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ ok: reussi, push: pushResult || null }));
+      } catch(e) {
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // POST /commandes/:id/send-marche — pousse UNIQUEMENT les Données Marché au client, sans
+  // toucher aux créatives ni aux ad copies. Réutilise pushDeliverablesToProduct avec un
+  // ensemble d'indices vide (onlyIndices) : aucune créative ne matche jamais un Set() vide,
+  // donc la boucle des créatives ne fait rien, mais le bloc marche — indépendant de cette
+  // boucle — s'exécute normalement.
+  if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/send-marche$/)) {
+    try {
+      const id = req.url.split('/')[2];
+      const briefs = await loadBriefs();
+      const idx = briefs.findIndex(b => b.id === id);
+      if (idx < 0) { res.writeHead(404); res.end(JSON.stringify({ error: 'Brief not found' })); return; }
+      if (!briefs[idx].deliverables?.marche) { res.writeHead(400); res.end(JSON.stringify({ error: 'Aucune donnée marché sauvegardée pour ce ticket' })); return; }
+
+      const dejaPousses = new Set(briefs[idx].pushed_creative_indices || []);
+      const pushResult = await pushDeliverablesToProduct(
+        briefs[idx].product?.id, id, briefs[idx].deliverables,
+        dejaPousses, !!briefs[idx].batch_deja_cree, briefs[idx].quantity,
+        new Set()
+      );
+      if (pushResult?.batchCree) briefs[idx].batch_deja_cree = true;
+      await saveBriefs([briefs[idx]]);
+
+      if (pushResult?.besoinPortrait && pushResult.personaPourPortrait?.nom) {
+        genererEtSauvegarderPortraitEnTacheDeFond(briefs[idx].product?.id, pushResult.personaPourPortrait)
+          .catch(e => console.error('[Portrait] Erreur non interceptée en tâche de fond :', e.message));
+      }
+
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok: !!pushResult?.marcheOk, push: pushResult || null }));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
     }
     return;
   }
@@ -6517,7 +6601,41 @@ async function uploadCreativeImage(base64Data, mime, filename, clientThumbB64) {
 // (vérifié dans Platform.jsx). Cumulatif — n'écrase jamais les livraisons précédentes du
 // même produit. Données Marché volontairement absent : l'agent qui produit ce format n'est
 // pas encore câblé dans le pipeline de production (voir note dans le code).
-async function pushDeliverablesToProduct(productId, ticketId, deliverables, alreadyPushedIndices = new Set(), batchDejaCree = false, quantiteDemandee = null) {
+// Génère + sauvegarde le portrait persona ENTIÈREMENT côté serveur, jamais dépendant de la
+// connexion du navigateur (Factory peut être fermée juste après "Envoyer au client" — la
+// génération continue et se termine quand même, puisqu'elle tourne dans ce process Node, pas
+// dans l'onglet). Jamais appelée en étant attendue (await) par son appelant — volontairement
+// fire-and-forget, pour ne jamais bloquer la réponse au clic "Envoyer au client".
+async function genererEtSauvegarderPortraitEnTacheDeFond(productId, persona) {
+  try {
+    console.log(`[Portrait] Génération en tâche de fond démarrée pour ${persona?.nom} (produit ${productId})...`);
+    const { base64, mime } = await genererPortraitPersona(persona);
+    const slug = (persona.nom || 'persona').toUpperCase().replace(/[^A-Z0-9ÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ]/gi, '_').replace(/_+/g,'_').slice(0, 30);
+    const filename = `${slug}_${Date.now()}`;
+    const url = await uploadPortraitPersona(base64, mime, filename);
+
+    // Relit products.marche À CE MOMENT PRÉCIS (pas l'état d'avant la génération) — le temps
+    // qu'a pris la génération (jusqu'à ~5 min dans le pire cas), une autre commande pour ce
+    // même produit pourrait avoir déjà modifié marche entre-temps ; on fusionne sur l'état
+    // actuel, jamais sur une copie potentiellement périmée.
+    const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=marche`, {
+      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+    });
+    const prRows = await prRes.json();
+    const marcheActuel = prRows[0]?.marche || {};
+    const rPatch = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
+      method: 'PATCH',
+      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ marche: { ...marcheActuel, persona: { ...marcheActuel.persona, portrait_url: url } } })
+    });
+    if (!rPatch.ok) { console.error('[Portrait] PATCH final échoué :', await rPatch.text()); return; }
+    console.log(`[Portrait] ✅ Généré et sauvegardé en tâche de fond pour ${productId} → ${url}`);
+  } catch(e) {
+    console.error('[Portrait] Génération en tâche de fond échouée :', e.message);
+  }
+}
+
+async function pushDeliverablesToProduct(productId, ticketId, deliverables, alreadyPushedIndices = new Set(), batchDejaCree = false, quantiteDemandee = null, onlyIndices = null) {
   if (!productId || !deliverables) return;
   try {
     const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=creatives,deliveries,marche`, {
@@ -6556,6 +6674,10 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
       // Ancien format (c.imgB64) toléré en repli, pour les commandes en cours de transition.
       if (!c || (!c.url && !c.imgB64)) continue;
       if (alreadyPushedIndices.has(i)) continue; // déjà confirmé livré pour CE ticket — jamais repoussé
+      // Envoi ciblé (voir /commandes/:id/send-one-creative) : ignore tout ce qui n'est pas
+      // l'index précis demandé, sans toucher au reste de la logique (id, angle, cible identiques
+      // à un envoi complet — juste une portée réduite).
+      if (onlyIndices && !onlyIndices.has(i)) continue;
       const idCandidat = `${ticketId}_${i}`;
       if (existingIds.has(idCandidat)) { newlyPushedIndices.push(i); continue; } // déjà là mais pas encore tracé sur le brief — on le trace sans le repousser
       try {
@@ -6632,6 +6754,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
     };
     // Données Marché — calculées en brouillon à la génération (voir /livrable-marche), écrites
     // pour de vrai seulement maintenant, au moment où le client doit réellement les voir.
+    let besoinPortrait = false;
     if (deliverables.marche) {
       const ancienPersonaNom = (existing.marche?.persona?.nom || '').toLowerCase().trim();
       const nouveauPersonaNom = (deliverables.marche.persona?.nom || '').toLowerCase().trim();
@@ -6644,6 +6767,15 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
           ? (existing.marche?.persona_started_at || new Date().toISOString())
           : new Date().toISOString(),
       };
+      // Portrait persona — réutilisé directement si c'est la même personne (rien à regénérer,
+      // aucun appel IA). Sinon, généré en tâche de fond APRÈS la réponse de ce endpoint (voir
+      // l'appelant plus bas) : jamais bloquant ici, jamais de label "en cours" visible côté
+      // client — juste présent la prochaine fois qu'il consulte Données Marché, une fois prêt.
+      if (memePerson && existing.marche?.persona?.portrait_url) {
+        patchBody.marche.persona = { ...patchBody.marche.persona, portrait_url: existing.marche.persona.portrait_url };
+      } else {
+        besoinPortrait = true;
+      }
     }
 
     const rPatch = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
@@ -6682,6 +6814,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
       adCopiesCount: angleEntries.length, adCopiesAttendu: (deliverables.copies || []).length,
       marcheOk: rPatch.ok && !!deliverables.marche,
       manqueVsQuantiteDemandee, quantiteDemandee,
+      besoinPortrait: rPatch.ok && besoinPortrait, personaPourPortrait: deliverables.marche?.persona || null,
     };
   } catch(e) {
     console.error('[Deliver] Push vers products échoué :', e.message);
