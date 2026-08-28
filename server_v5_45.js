@@ -5938,7 +5938,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
         const pushResult = await pushDeliverablesToProduct(
           briefs[idx].product?.id, id, briefs[idx].deliverables,
           dejaPousses, !!briefs[idx].batch_deja_cree, briefs[idx].quantity,
-          new Set([index])
+          new Set([index]), new Set()
         );
         if (pushResult?.newlyPushedIndices?.length) {
           briefs[idx].pushed_creative_indices = [...dejaPousses, ...pushResult.newlyPushedIndices];
@@ -5973,7 +5973,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
       const pushResult = await pushDeliverablesToProduct(
         briefs[idx].product?.id, id, briefs[idx].deliverables,
         dejaPousses, !!briefs[idx].batch_deja_cree, briefs[idx].quantity,
-        new Set()
+        new Set(), new Set()
       );
       if (pushResult?.batchCree) briefs[idx].batch_deja_cree = true;
       await saveBriefs([briefs[idx]]);
@@ -5988,6 +5988,42 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
     } catch(e) {
       res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
     }
+    return;
+  }
+
+  // POST /commandes/:id/send-one-copy — envoie UNE SEULE ad copy précise (un angle) au client,
+  // sans toucher aux créatives ni aux autres ad copies. Même principe que send-one-creative.
+  if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/send-one-copy$/)) {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const id = req.url.split('/')[2];
+        const { index } = JSON.parse(body);
+        if (typeof index !== 'number') { res.writeHead(400); res.end(JSON.stringify({ error: 'index (nombre) requis' })); return; }
+
+        const briefs = await loadBriefs();
+        const idx = briefs.findIndex(b => b.id === id);
+        if (idx < 0) { res.writeHead(404); res.end(JSON.stringify({ error: 'Brief not found' })); return; }
+        if (!briefs[idx].deliverables) { res.writeHead(400); res.end(JSON.stringify({ error: 'Aucun livrable sauvegardé pour ce ticket' })); return; }
+        const copy = briefs[idx].deliverables.copies?.[index];
+        if (!copy || !copy.description) { res.writeHead(400); res.end(JSON.stringify({ error: `Ad copy ${index} inexistante ou pas encore générée` })); return; }
+
+        const dejaPousses = new Set(briefs[idx].pushed_creative_indices || []);
+        const pushResult = await pushDeliverablesToProduct(
+          briefs[idx].product?.id, id, briefs[idx].deliverables,
+          dejaPousses, !!briefs[idx].batch_deja_cree, briefs[idx].quantity,
+          new Set(), new Set([index])
+        );
+        if (pushResult?.batchCree) briefs[idx].batch_deja_cree = true;
+        await saveBriefs([briefs[idx]]);
+
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ ok: !!pushResult?.patchOk, push: pushResult || null }));
+      } catch(e) {
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
     return;
   }
 
@@ -6639,7 +6675,7 @@ async function genererEtSauvegarderPortraitEnTacheDeFond(productId, persona) {
   }
 }
 
-async function pushDeliverablesToProduct(productId, ticketId, deliverables, alreadyPushedIndices = new Set(), batchDejaCree = false, quantiteDemandee = null, onlyIndices = null) {
+async function pushDeliverablesToProduct(productId, ticketId, deliverables, alreadyPushedIndices = new Set(), batchDejaCree = false, quantiteDemandee = null, onlyIndices = null, onlyCopyIndices = null) {
   if (!productId || !deliverables) return;
   try {
     const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=creatives,deliveries,marche`, {
@@ -6708,7 +6744,13 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
       } catch(eUp) { console.error('[Deliver] Upload créative échoué :', eUp.message); }
     }
 
-    const angleEntries = (deliverables.copies || []).map((copy, i) => {
+    const angleEntries = (deliverables.copies || [])
+      .map((copy, i) => ({ copy, i }))
+      // Envoi ciblé (voir /commandes/:id/send-one-copy) : ignore tout ce qui n'est pas l'index
+      // précis demandé — même principe que onlyIndices pour les créatives, appliqué ici avant
+      // le .map() principal pour ne jamais casser les index i utilisés dans le reste du bloc.
+      .filter(({ i }) => !onlyCopyIndices || onlyCopyIndices.has(i))
+      .map(({ copy, i }) => {
       // Cause profonde corrigée (nom d'angle affiché avec tout le détail technique "* Moteur
       // dominant : ..." dans AdBoard) : le nom brut extrait de la synthèse contient ce suffixe
       // interne, jamais destiné au client — on ne garde que la partie avant le premier "*".
