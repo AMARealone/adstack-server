@@ -573,6 +573,9 @@ const HTML_CONTENT = Buffer.from(HTML_B64, 'base64').toString('utf-8');
 const CHARIOW_KEY = process.env.CHARIOW_KEY || '';
 const SUPABASE_URL_INT = process.env.SUPABASE_URL || 'https://mifljhsusidgzelnswma.supabase.co';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
+// Nécessaire pour /admin/impersonate : vérifier un token utilisateur (auth/v1/user) et
+// finaliser un magiclink (auth/v1/verify) se font avec la clé anon, jamais la service key.
+const SUPABASE_ANON_KEY_INT = process.env.SUPABASE_ANON_KEY || '';
 
 const PLAN_MAP = {
   'prd_ywk7ik14': { plan: 'discovery', cycle: 'once',    type: 'pack', total_credits: 9,  price_fcfa: 12900,  prix_img: 1433 },
@@ -4789,7 +4792,123 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/reorder-top-perf
   return;
 }
 
-// POST /briefs/create — validation AUTORITAIRE des crédits avant création, côté serveur.
+// POST /admin/impersonate — génère une vraie session pour n'importe quel compte client, à
+// usage strictement admin. Sécurité : le token envoyé DOIT être une vraie session Supabase
+// valide (jamais un simple champ "je suis admin" — trivialement falsifiable par n'importe
+// qui) — on interroge Supabase avec ce token pour connaître l'email RÉEL et cryptographiquement
+// vérifié qui y est associé, avant d'autoriser quoi que ce soit.
+// Mécanisme : generateLink (magiclink) + verify — la façon officielle Supabase de créer une
+// vraie session pour un utilisateur sans jamais connaître ni manipuler son mot de passe.
+const ADMIN_EMAIL_IMPERSONATE = 'thefirstquality01@gmail.com';
+if (req.method === 'POST' && req.url === '/admin/impersonate') {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', async () => {
+    try {
+      const adminToken = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
+      if (!adminToken) { res.writeHead(401); res.end(JSON.stringify({ error: 'Token admin requis' })); return; }
+
+      const meRes = await fetch(`${SUPABASE_URL_INT}/auth/v1/user`, {
+        headers: { apikey: SUPABASE_ANON_KEY_INT, Authorization: `Bearer ${adminToken}` }
+      });
+      if (!meRes.ok) { res.writeHead(401); res.end(JSON.stringify({ error: 'Session admin invalide' })); return; }
+      const me = await meRes.json();
+      if ((me.email || '').toLowerCase() !== ADMIN_EMAIL_IMPERSONATE.toLowerCase()) {
+        console.warn(`[Impersonate] ⚠️ Tentative refusée — compte non-admin : ${me.email}`);
+        res.writeHead(403); res.end(JSON.stringify({ error: 'Non autorisé' })); return;
+      }
+
+      const { targetEmail } = JSON.parse(body);
+      if (!targetEmail) { res.writeHead(400); res.end(JSON.stringify({ error: 'targetEmail requis' })); return; }
+
+      const target = await findUserByEmail(targetEmail);
+      if (!target) { res.writeHead(404); res.end(JSON.stringify({ error: 'Aucun compte avec cet email' })); return; }
+
+      const linkRes = await fetch(`${SUPABASE_URL_INT}/auth/v1/admin/generate_link`, {
+        method: 'POST',
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'magiclink', email: targetEmail })
+      });
+      if (!linkRes.ok) { const t = await linkRes.text(); res.writeHead(500); res.end(JSON.stringify({ error: 'Génération du lien échouée: ' + t })); return; }
+      const linkData = await linkRes.json();
+      const hashedToken = linkData.hashed_token || linkData.properties?.hashed_token;
+      if (!hashedToken) { res.writeHead(500); res.end(JSON.stringify({ error: 'hashed_token absent de la réponse Supabase' })); return; }
+
+      const verifyRes = await fetch(`${SUPABASE_URL_INT}/auth/v1/verify`, {
+        method: 'POST',
+        headers: { apikey: SUPABASE_ANON_KEY_INT, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'magiclink', token_hash: hashedToken })
+      });
+      if (!verifyRes.ok) { const t = await verifyRes.text(); res.writeHead(500); res.end(JSON.stringify({ error: 'Vérification du lien échouée: ' + t })); return; }
+      const session = await verifyRes.json();
+
+      console.log(`[Impersonate] ${me.email} → connecté en tant que ${targetEmail}`);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, session }));
+    } catch (e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+  return;
+}
+
+// POST /reconcile-account — appelé automatiquement juste après une connexion réussie (voir
+// Platform.jsx). Relie les données d'un compte migré (produits, briefs, abonnement...) à son
+// nouvel identifiant Google, dès sa première connexion — sans ça, un compte migré vers un
+// nouveau projet Supabase perd l'accès à ses propres données (nouvel id Google-OAuth ≠ ancien
+// id, les deux ne se ressemblent pas). Sans effet et instantané pour un compte déjà réconcilié
+// ou qui n'était pas concerné par une migration — sûr à appeler à chaque connexion.
+if (req.method === 'POST' && req.url === '/reconcile-account') {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', async () => {
+    try {
+      const { email, userId } = JSON.parse(body);
+      if (!email || !userId) { res.writeHead(400); res.end(JSON.stringify({error:'email et userId requis'})); return; }
+
+      const remapRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/user_id_remap?email=eq.${encodeURIComponent(email.toLowerCase())}&resolved=eq.false&select=*`, {
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+      });
+      const rows = await remapRes.json();
+      if (!rows.length) { res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ ok: true, reconciled: false })); return; }
+
+      const oldId = rows[0].old_id;
+      const TABLES_A_CORRIGER = [
+        { table: 'products', colonne: 'user_id' },
+        { table: 'briefs', colonne: 'user_id' },
+        { table: 'subscriptions', colonne: 'user_id' },
+        { table: 'pending_activations', colonne: 'resolved_user_id' },
+      ];
+      let totalLignes = 0;
+      for (const { table, colonne } of TABLES_A_CORRIGER) {
+        try {
+          const patchRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/${table}?${colonne}=eq.${oldId}`, {
+            method: 'PATCH',
+            headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+            body: JSON.stringify({ [colonne]: userId })
+          });
+          const patched = await patchRes.json();
+          if (Array.isArray(patched)) totalLignes += patched.length;
+        } catch(eTable) {
+          console.warn(`[Reconcile] ${table}.${colonne} échoué :`, eTable.message);
+        }
+      }
+
+      await fetch(`${SUPABASE_URL_INT}/rest/v1/user_id_remap?email=eq.${encodeURIComponent(email.toLowerCase())}`, {
+        method: 'PATCH',
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ resolved: true, resolved_at: new Date().toISOString(), new_id: userId })
+      });
+
+      console.log(`[Reconcile] ${email} : ${totalLignes} ligne(s) reliée(s) à ${userId}`);
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok: true, reconciled: true, totalLignes }));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+  return;
+}
 // Remplace l'insertion directe client→Supabase (RLS) qui ne revérifiait jamais rien : un
 // client dont l'état local n'était pas encore rafraîchi (allBriefs vide au tout premier
 // rendu, par ex.) pouvait laisser passer une demande alors qu'il n'avait plus de crédits
