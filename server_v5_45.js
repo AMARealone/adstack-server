@@ -2683,7 +2683,12 @@ HARD LOCKS :
           if (ct.styleTags && ct.styleTags.length) ligne += ` [style: ${ct.styleTags.join(',')}]`;
           return ligne;
         }).join('\n');
-        const synthExcerpt = (synthesis || '').substring(0, 3500);
+        // 6000 caractères plutôt que 3500 — la section des angles (avec leur quadrant EPIC,
+        // nécessaire au nouveau matching par ton) peut arriver tard dans le document si S0/S1
+        // sont denses (pricing complet, psychographie détaillée, journée type). Une troncature
+        // trop courte la couperait, rendant la règle de matching par ton invisible pour l'IA
+        // sans que rien ne le signale — mieux vaut une marge large que deviner juste.
+        const synthExcerpt = (synthesis || '').substring(0, 6000);
 
         // Tolérance de redondance par volume — préparation pour les futurs batchs 18/36.
         // Un batch de 9 (3 angles × 3 niveaux) exige 0% de redondance structurelle. Au-delà,
@@ -2729,6 +2734,13 @@ RÈGLES DE CONTEXTUALISATION (après diversification) :
 
 PRIORITÉ DE NICHE (avant de choisir, avant même la diversification) : identifie la niche globale du produit à partir de la synthèse, parmi les mêmes catégories que celles balisées sur les CT (cosmétique, complément alimentaire, fashion, chaussures, bijoux et accessoires, montres, tech et électronique, maison et déco, cuisine et électroménager, bien-être et santé, sport et fitness, automobile, bébé et enfant, animaux, outils et bricolage, jouets et gaming, lunettes, bagagerie et maroquinerie, éducation et formation, services et coaching, autre). Priorise fortement les CT balisés de cette niche ou d'une niche visuellement/conceptuellement proche (ex : cosmétique et bien-être et santé se ressemblent visuellement, fashion et chaussures aussi) — un CT de niche totalement éloignée (ex : automobile pour un produit cosmétique) ne doit être choisi qu'en dernier recours, si la couverture en niche pertinente est structurellement insuffisante pour respecter la diversification demandée plus haut. Les CT sans niche balisée (pas encore enrichis) restent éligibles normalement, jugés visuellement comme avant.
 
+MATCHING PAR TON (utilise la description de chaque CT, pas juste sa niche) : la description de chaque CT contient sa géométrie visuelle ET le ton de son copywriting (registre direct/aspirationnel/alarmiste/complice, intention narrative). Pour CHAQUE angle de la synthèse, identifie son quadrant EPIC (Émotionnel / Pratique / Identitaire / Critique — donné explicitement dans la synthèse pour chaque angle) et privilégie, à niche égale, les CT dont le ton décrit dans leur description résonne avec ce quadrant précis :
+→ Angle Émotionnel → CT au ton direct sur le ressenti, dramatisation du problème, sensation vécue.
+→ Angle Pratique → CT au ton logique/calcul, comparatif, preuve chiffrée, "achat intelligent".
+→ Angle Identitaire → CT au ton aspirationnel, statut, transformation identitaire, figure à laquelle s'identifier.
+→ Angle Critique → CT au ton contrariant/confrontant une idée reçue, positionnement contre le marché ou la concurrence.
+Ce matching de ton s'ajoute à la diversification structurelle et à la priorité de niche — jamais à leur place. Un CT sans meta description suffisamment riche (pas encore enrichi) reste éligible, jugé visuellement comme avant, sans pénalité.
+
 Si la liste a moins de ${count} CTs distincts, retourne tous les IDs disponibles (sans doublon), dans le meilleur ordre possible.
 
 IMPORTANT FORMAT : réponds UNIQUEMENT avec un JSON array sur UNE SEULE LIGNE, dans l'ordre exact décrit ci-dessus, sans markdown, sans backticks, sans explication.
@@ -2754,6 +2766,8 @@ RÈGLES DE CONTEXTUALISATION (après diversification) :
 - Adapte à l'angle marketing unique décrit dans la synthèse
 
 PRIORITÉ DE NICHE (avant de choisir, avant même la diversification) : identifie la niche globale du produit à partir de la synthèse, parmi les mêmes catégories que celles balisées sur les CT. Priorise fortement les CT balisés de cette niche ou d'une niche visuellement/conceptuellement proche — un CT de niche totalement éloignée ne doit être choisi qu'en dernier recours. Les CT sans niche balisée restent éligibles normalement, jugés visuellement comme avant.
+
+MATCHING PAR TON (utilise la description de chaque CT, pas juste sa niche) : la description de chaque CT contient sa géométrie visuelle ET le ton de son copywriting. Identifie le quadrant EPIC de l'angle unique décrit dans la synthèse (Émotionnel / Pratique / Identitaire / Critique — donné explicitement dans la synthèse) et privilégie, à niche égale, les CT dont le ton décrit dans leur description résonne avec ce quadrant. Ce matching s'ajoute à la diversification et à la niche, jamais à leur place. Un CT sans description suffisamment riche reste éligible, jugé visuellement comme avant.
 
 Si la liste a moins de ${count} CTs distincts, retourne tous les IDs disponibles (sans doublon).
 
