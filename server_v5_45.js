@@ -2678,6 +2678,7 @@ HARD LOCKS :
         // jugement refait à chaque sélection.
         const ctListText = ctList.map((ct, i) => {
           let ligne = `${i+1}. ID: ${ct.id} → "${ct.name}"${ct.meta ? ` — ${ct.meta}` : ''}`;
+          if (ct.niche) ligne += ` [niche: ${ct.niche}]`;
           if (ct.awareness && ct.awareness.length) ligne += ` [conscience balisée: ${ct.awareness.join('/')}]`;
           if (ct.styleTags && ct.styleTags.length) ligne += ` [style: ${ct.styleTags.join(',')}]`;
           return ligne;
@@ -2726,6 +2727,8 @@ RÈGLES DE CONTEXTUALISATION (après diversification) :
 - Adapte au TYPE DE PRODUIT identifié dans la synthèse (santé, beauté, fitness, food, tech, mode...)
 - Adapte au PERSONA (âge, sexe, classe sociale, culture du pays cible)
 
+PRIORITÉ DE NICHE (avant de choisir, avant même la diversification) : identifie la niche globale du produit à partir de la synthèse, parmi les mêmes catégories que celles balisées sur les CT (cosmétique, complément alimentaire, fashion, chaussures, bijoux et accessoires, montres, tech et électronique, maison et déco, cuisine et électroménager, bien-être et santé, sport et fitness, automobile, bébé et enfant, animaux, outils et bricolage, jouets et gaming, lunettes, bagagerie et maroquinerie, éducation et formation, services et coaching, autre). Priorise fortement les CT balisés de cette niche ou d'une niche visuellement/conceptuellement proche (ex : cosmétique et bien-être et santé se ressemblent visuellement, fashion et chaussures aussi) — un CT de niche totalement éloignée (ex : automobile pour un produit cosmétique) ne doit être choisi qu'en dernier recours, si la couverture en niche pertinente est structurellement insuffisante pour respecter la diversification demandée plus haut. Les CT sans niche balisée (pas encore enrichis) restent éligibles normalement, jugés visuellement comme avant.
+
 Si la liste a moins de ${count} CTs distincts, retourne tous les IDs disponibles (sans doublon), dans le meilleur ordre possible.
 
 IMPORTANT FORMAT : réponds UNIQUEMENT avec un JSON array sur UNE SEULE LIGNE, dans l'ordre exact décrit ci-dessus, sans markdown, sans backticks, sans explication.
@@ -2749,6 +2752,8 @@ RÈGLES DE CONTEXTUALISATION (après diversification) :
 - Adapte au TYPE DE PRODUIT identifié dans la synthèse (santé, beauté, fitness, food, tech, mode...)
 - Adapte au PERSONA (âge, sexe, classe sociale, culture du pays cible)
 - Adapte à l'angle marketing unique décrit dans la synthèse
+
+PRIORITÉ DE NICHE (avant de choisir, avant même la diversification) : identifie la niche globale du produit à partir de la synthèse, parmi les mêmes catégories que celles balisées sur les CT. Priorise fortement les CT balisés de cette niche ou d'une niche visuellement/conceptuellement proche — un CT de niche totalement éloignée ne doit être choisi qu'en dernier recours. Les CT sans niche balisée restent éligibles normalement, jugés visuellement comme avant.
 
 Si la liste a moins de ${count} CTs distincts, retourne tous les IDs disponibles (sans doublon).
 
@@ -2890,9 +2895,14 @@ EXEMPLES PARFAITS (modèle à suivre) :
 "Plein-cadre produit vert/blanc — flacon centré grand format + liste 4 bénéfices gauche + marque haut"
 "Grille 3 vignettes blanc — 3 photos usage quotidien + légende sous chaque + CTA bas centre"
 
-Après le nom, sur une DEUXIÈME ligne, ajoute le mécanisme psychologique principal que ce CT semble utiliser pour convaincre — en 3-6 mots maximum, parmi (ou proche de) : preuve sociale, comparaison concurrentielle, aspiration lifestyle, urgence/offre, autorité/expertise, transformation avant-après, dramatisation du problème, réassurance/garantie.
+Après le nom, sur les lignes 2 à 4 (TROIS lignes, jamais moins, jamais plus, jamais fusionnées), donne une description précise et UNIQUE à ce CT — jamais une formule générique qui pourrait s'appliquer à un autre CT de la galerie. Le but : qu'un agent qui lit cette description PLUS TARD, sans revoir l'image, puisse reconstruire mentalement le visuel exact — sa géométrie, son placement, son ton de copywriting — comme s'il le voyait. Une fois lue et mémorisée, cette description doit suffire ; il ne doit jamais avoir besoin de revoir l'image pour se rappeler ce qu'est ce CT.
+Ligne 2 — GÉOMÉTRIE VISUELLE : où se trouve chaque élément exactement (zones, proportions, superposition), dans quel ordre l'œil les rencontre, quelle taille relative chaque élément occupe.
+Ligne 3 — TON ET INTENTION DU COPYWRITING visible sur ce CT (s'il y a du texte) : registre (direct, aspirationnel, alarmiste, complice...), à qui il semble s'adresser, quelle émotion ou action il pousse à ressentir/faire. S'il n'y a pas de texte visible sur le CT, décris à la place l'intention narrative pure du visuel (quelle histoire il raconte sans mots).
+Ligne 4 — CE QUI REND CE CT DIFFÉRENT de tout autre CT à structure proche dans une galerie de plusieurs centaines : le détail précis, la combinaison ou le choix qui ne se confondrait avec aucun autre.
 
-Sur une TROISIÈME ligne, indique UN SEUL niveau de conscience — celui pour lequel ce CT est structurellement le plus évident, parmi : solution, product, most. Jamais deux valeurs à la fois : si un CT semble à cheval entre deux niveaux, choisis celui qui domine le plus clairement sa structure. Base-toi sur des marqueurs STRUCTURELS OBSERVABLES dans le CT, pas une impression générale :
+Sur la ligne 5, indique le mécanisme psychologique principal que ce CT semble utiliser pour convaincre — en 3-6 mots maximum, parmi (ou proche de) : preuve sociale, comparaison concurrentielle, aspiration lifestyle, urgence/offre, autorité/expertise, transformation avant-après, dramatisation du problème, réassurance/garantie.
+
+Sur la ligne 6, indique UN SEUL niveau de conscience — celui pour lequel ce CT est structurellement le plus évident, parmi : solution, product, most. Jamais deux valeurs à la fois : si un CT semble à cheval entre deux niveaux, choisis celui qui domine le plus clairement sa structure. Base-toi sur des marqueurs STRUCTURELS OBSERVABLES dans le CT, pas une impression générale :
 
 → "most" : la structure met en avant un PRIX, une OFFRE (bundle/pack/prix barré), ou une URGENCE de façon visible et centrale — ton agressif et promotionnel assumé. Exemples de marqueurs : prix affiché, badge "-X%"/"OFFRE", CTA direct type "Commander maintenant", compte à rebours.
 → "product" : la structure sert à construire la CONFIANCE ENVERS CE PRODUIT PRÉCIS — comparaison à des produits concurrents nommés, avis/témoignage client, figure d'autorité (expert, professionnel du domaine) qui recommande ou utilise le produit, ou une figure aspirationnelle (athlète, influenceur, célébrité — la personne que la cible aimerait devenir) tenant/utilisant le produit. Le produit est visible et central, mais SANS prix ni offre mise en avant.
@@ -2900,13 +2910,17 @@ Sur une TROISIÈME ligne, indique UN SEUL niveau de conscience — celui pour le
 
 Réponds avec UNE SEULE valeur, sans autre texte (ex : "product" ou "solution" ou "most").
 
-Sur une QUATRIÈME ligne, ajoute 1 à 3 balises de style/émotion pertinentes séparées par une virgule, parmi (ou proche de) : luxe, humour, presse, urgence, chaleureux, minimaliste, audacieux, scientifique, communautaire, aspirationnel — ou tout autre mot précis si aucun de ceux-là ne convient vraiment. Pas de dièse, juste les mots séparés par virgule.` }] };
+Sur la ligne 7, ajoute 1 à 3 balises de style/émotion pertinentes séparées par une virgule, parmi (ou proche de) : luxe, humour, presse, urgence, chaleureux, minimaliste, audacieux, scientifique, communautaire, aspirationnel — ou tout autre mot précis si aucun de ceux-là ne convient vraiment. Pas de dièse, juste les mots séparés par virgule.
+
+Sur la ligne 8, indique la NICHE GLOBALE de ce CT — pas le produit exact représenté, mais la grande catégorie mainstream à laquelle son style visuel et sa structure conviennent le mieux, UNE SEULE valeur, choisie strictement dans cette liste :
+cosmétique, complément alimentaire, fashion, chaussures, bijoux et accessoires, montres, tech et électronique, maison et déco, cuisine et électroménager, bien-être et santé, sport et fitness, automobile, bébé et enfant, animaux, outils et bricolage, jouets et gaming, lunettes, bagagerie et maroquinerie, éducation et formation, services et coaching, autre
+Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient vraiment — ne force jamais un CT dans une niche qui ne lui va pas juste pour éviter "autre". Un CT peut très bien convenir à plusieurs niches proches (ex : cosmétique et bien-être) — dans ce cas choisis celle qui domine le plus clairement sa structure visuelle, pas un compromis vague.` }] };
 
         const geminiBody = {
           systemInstruction,
           contents: [{ role: 'user', parts: [
             { inlineData: { mimeType: mime || 'image/jpeg', data: b64 } },
-            { text: 'Génère le nom précis de ce Creative Template (ligne 1), son mécanisme psychologique principal (ligne 2), ses niveaux de conscience compatibles (ligne 3), puis ses balises de style/émotion (ligne 4). Sois très descriptif et spécifique.' }
+            { text: 'Génère le nom précis de ce Creative Template (ligne 1), sa description unique en 3 lignes — géométrie visuelle, ton du copywriting, ce qui le rend distinct (lignes 2-4) —, son mécanisme psychologique principal (ligne 5), ses niveaux de conscience compatibles (ligne 6), ses balises de style/émotion (ligne 7), puis sa niche globale (ligne 8). Sois très descriptif et spécifique, en particulier sur les lignes 2 à 4 — c\'est ce qui permettra de reconnaître ce CT sans jamais revoir l\'image.' }
           ]}],
           // Cause profonde corrigée (meta/awareness/style toujours vides, nom parfois tronqué
           // en plein mot) : aucun thinkingConfig n'était fixé — Gemini consommait une partie du
@@ -2914,7 +2928,7 @@ Sur une QUATRIÈME ligne, ajoute 1 à 3 balises de style/émotion pertinentes s�
           // laissant presque rien pour écrire les 4 lignes demandées. Tâche de classification
           // simple, la réflexion n'apporte rien ici — désactivée, comme pour les autres appels
           // légers du même type dans ce fichier (Quality Check Photo, filtres langue, etc.).
-          generationConfig: { temperature: 0.2, maxOutputTokens: 400, thinkingConfig: { thinkingBudget: 0 } }
+          generationConfig: { temperature: 0.2, maxOutputTokens: 800, thinkingConfig: { thinkingBudget: 0 } }
         };
 
         const data = await vertexRequest(token, 'gemini-2.5-flash', geminiBody);
@@ -2923,13 +2937,18 @@ Sur une QUATRIÈME ligne, ajoute 1 à 3 balises de style/émotion pertinentes s�
         const raw = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).join('').trim();
         const lignes = raw.split('\n').map(l => l.trim()).filter(Boolean);
         const clean = (lignes[0] || '').replace(/^["'«»\-]|["'«»]$/g, '').substring(0, 70);
-        const meta = (lignes[1] || '').replace(/^["'«»\-]|["'«»]$/g, '').substring(0, 60);
+        // Meta description enrichie : 3 lignes (géométrie / ton copywriting / distinction),
+        // jointes en un seul champ texte — plus la formule courte à 3-6 mots d'avant.
+        const meta = [lignes[1], lignes[2], lignes[3]].filter(Boolean).join(' ').substring(0, 500);
         const AWARENESS_VALIDES = ['solution', 'product', 'most'];
-        const awareness = (lignes[2] || '').toLowerCase().split(',').map(s => s.trim()).filter(s => AWARENESS_VALIDES.includes(s));
-        const styleTags = (lignes[3] || '').split(',').map(s => s.trim().toLowerCase().replace(/^#/, '')).filter(Boolean).slice(0, 3);
-        console.log('  → "' + clean + '" · méta: ' + meta + ' · conscience: ' + awareness.join('/') + ' · style: ' + styleTags.join(','));
+        const awareness = (lignes[4] || '').toLowerCase().split(',').map(s => s.trim()).filter(s => AWARENESS_VALIDES.includes(s));
+        const styleTags = (lignes[5] || '').split(',').map(s => s.trim().toLowerCase().replace(/^#/, '')).filter(Boolean).slice(0, 3);
+        const NICHES_VALIDES = ['cosmétique', 'complément alimentaire', 'fashion', 'chaussures', 'bijoux et accessoires', 'montres', 'tech et électronique', 'maison et déco', 'cuisine et électroménager', 'bien-être et santé', 'sport et fitness', 'automobile', 'bébé et enfant', 'animaux', 'outils et bricolage', 'jouets et gaming', 'lunettes', 'bagagerie et maroquinerie', 'éducation et formation', 'services et coaching', 'autre'];
+        const nicheRaw = (lignes[6] || '').toLowerCase().trim();
+        const niche = NICHES_VALIDES.includes(nicheRaw) ? nicheRaw : 'autre';
+        console.log('  → "' + clean + '" · méta: ' + meta.substring(0,80) + '... · conscience: ' + awareness.join('/') + ' · style: ' + styleTags.join(',') + ' · niche: ' + niche);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ name: clean, meta: meta, awareness: awareness, styleTags: styleTags }));
+        res.end(JSON.stringify({ name: clean, meta: meta, awareness: awareness, styleTags: styleTags, niche: niche }));
       } catch(e) {
         console.error('✗ NAME-CT error:', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
