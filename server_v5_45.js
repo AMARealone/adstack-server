@@ -2715,31 +2715,36 @@ Tu reçois une synthèse de marché (${count/3} angles marketing, chacun déclin
 
 Tu dois choisir exactement ${count} CTs, organisés en ${count/3} groupes de 3 — un groupe par angle. À l'intérieur de CHAQUE groupe, les 3 CTs doivent être adaptés respectivement à Solution Aware, Product Aware, puis Most Aware, DANS CET ORDRE.
 
-RÈGLES DE DIVERSIFICATION (PRIORITÉ ABSOLUE) :
-1. ZÉRO DOUBLON : chaque CT sélectionné a un ID unique.
-2. ${toleranceTxt}
-3. COUVERTURE VARIÉE : couvre un maximum de structures différentes parmi : hero produit, split lifestyle, avant-après, grille bénéfices, screenshot témoignage, podcast 2-col, story narrative, comparatif, UGC, stats preuve sociale, etc.
-4. À l'intérieur d'un même groupe (même angle), les 3 CTs doivent être des approches visuelles complémentaires — jamais 2x le même concept.${rotationTxt}
+Pour choisir chaque CT, évalue-le sur 5 niveaux de cohérence, DANS CET ORDRE DE PRIORITÉ STRICT — un niveau supérieur l'emporte toujours sur un niveau inférieur en cas de conflit entre deux CT candidats :
 
-RÈGLES D'ADAPTATION PAR NIVEAU DE CONSCIENCE (à l'intérieur de chaque groupe de 3) :
-- Position 1 (Solution Aware) : transformation (situation actuelle → situation désirée, avant/après un mode de vie) OU comparaison entre TYPES DE SOLUTIONS différents (pas des produits concurrents — des approches différentes, ex: "le café vs la volonté vs une vraie solution"), intégré à une routine/un quotidien. Produit peu ou pas visible, jamais mis en avant seul.
-- Position 2 (Product Aware) : construit la confiance envers CE produit précis — comparatif à des produits concurrents nommés, témoignage/avis client, figure d'autorité (expert, professionnel) ou figure aspirationnelle (athlète, influenceur — ce que la cible aimerait devenir) qui recommande/utilise le produit. Produit visible et central, jamais de prix/offre mis en avant.
-- Position 3 (Most Aware) : structure purement promotionnelle — prix affiché, offre/bundle/pack, urgence, CTA direct type "Commander maintenant".
+━━━ NIVEAU 1 — NICHE ━━━
+Le CT est-il balisé dans la même niche que le produit, ou une niche visuellement/conceptuellement proche (ex : cosmétique et bien-être et santé se ressemblent visuellement, fashion et chaussures aussi) ? Vérifie la balise [niche: ...] de chaque CT contre la niche du produit déduite de la synthèse, parmi : cosmétique, complément alimentaire, fashion, chaussures, bijoux et accessoires, montres, tech et électronique, maison et déco, cuisine et électroménager, bien-être et santé, sport et fitness, automobile, bébé et enfant, animaux, outils et bricolage, jouets et gaming, lunettes, bagagerie et maroquinerie, éducation et formation, services et coaching, autre. C'est le filtre le plus large — presque tout le reste dépend de partir d'un pool déjà cohérent en niche. Un CT de niche totalement éloignée n'est choisi qu'en dernier recours, si la couverture en niche pertinente est structurellement insuffisante.
 
-PRIORITÉ AUX BALISES EXPLICITES : si un CT porte une balise "[conscience balisée: ...]", respecte-la STRICTEMENT plutôt que de rejuger visuellement — c'est une donnée pré-établie, plus fiable qu'une déduction refaite à chaque sélection. Chaque CT balisé n'a qu'UN SEUL niveau (solution, product OU most) — il ne va que dans la position correspondante (1 pour solution, 2 pour product, 3 pour most), jamais ailleurs. Pour les CT sans balise de conscience (pas encore enrichis), continue à juger visuellement comme avant, selon les mêmes critères ci-dessus.
+━━━ NIVEAU 2 — PRODUIT PRÉCIS ━━━
+Au sein des CT de la bonne niche, le CT représente-t-il le produit d'une façon compatible avec CE produit précis, pas juste sa catégorie ? Utilise la description du CT (géométrie visuelle) pour voir COMMENT un produit y est introduit/représenté — flacon compte-gouttes, pot, poudre en sachet, comprimé, vêtement, appareil, packaging... — et compare à la forme réelle du produit décrite dans la synthèse. Un CT montrant un flacon compte-gouttes ne convient pas à un produit vendu en poudre, même dans la même niche.
 
-RÈGLES DE CONTEXTUALISATION (après diversification) :
-- Adapte au TYPE DE PRODUIT identifié dans la synthèse (santé, beauté, fitness, food, tech, mode...)
-- Adapte au PERSONA (âge, sexe, classe sociale, culture du pays cible)
+━━━ NIVEAU 3 — ANGLE ━━━
+Le CT convient-il au FOND de l'angle marketing précis auquel il est assigné (pas juste son quadrant EPIC — ça, c'est le niveau 5) ? Utilise la description ET les balises du CT — un CT structuré autour d'une transformation avant/après colle à un angle de transformation, pas à un angle qui critique une pratique du marché ; un CT structuré autour d'un comparatif chiffré colle à un angle pratique/rationnel, pas à un angle identitaire.
 
-PRIORITÉ DE NICHE (avant de choisir, avant même la diversification) : identifie la niche globale du produit à partir de la synthèse, parmi les mêmes catégories que celles balisées sur les CT (cosmétique, complément alimentaire, fashion, chaussures, bijoux et accessoires, montres, tech et électronique, maison et déco, cuisine et électroménager, bien-être et santé, sport et fitness, automobile, bébé et enfant, animaux, outils et bricolage, jouets et gaming, lunettes, bagagerie et maroquinerie, éducation et formation, services et coaching, autre). Priorise fortement les CT balisés de cette niche ou d'une niche visuellement/conceptuellement proche (ex : cosmétique et bien-être et santé se ressemblent visuellement, fashion et chaussures aussi) — un CT de niche totalement éloignée (ex : automobile pour un produit cosmétique) ne doit être choisi qu'en dernier recours, si la couverture en niche pertinente est structurellement insuffisante pour respecter la diversification demandée plus haut. Les CT sans niche balisée (pas encore enrichis) restent éligibles normalement, jugés visuellement comme avant.
+━━━ NIVEAU 4 — NIVEAU DE CONSCIENCE ━━━
+Le CT correspond-il à Solution/Product/Most Aware pour sa position dans le groupe ? Si le CT porte une balise "[conscience balisée: ...]", respecte-la STRICTEMENT plutôt que de rejuger visuellement — donnée pré-établie, plus fiable qu'une déduction refaite à chaque sélection. Un CT balisé n'a qu'UN SEUL niveau, jamais ailleurs que sa position correspondante (1 pour solution, 2 pour product, 3 pour most). Sans balise, juge visuellement :
+- Solution Aware : transformation (situation actuelle → désirée) ou comparaison entre TYPES de solutions différents, produit peu ou pas visible.
+- Product Aware : confiance envers ce produit précis — comparatif nommé, témoignage, figure d'autorité ou aspirationnelle. Produit visible et central, jamais de prix/offre.
+- Most Aware : structure purement promotionnelle — prix affiché, offre/bundle/pack, urgence, CTA direct.
 
-MATCHING PAR TON (utilise la description de chaque CT, pas juste sa niche) : la description de chaque CT contient sa géométrie visuelle ET le ton de son copywriting (registre direct/aspirationnel/alarmiste/complice, intention narrative). Pour CHAQUE angle de la synthèse, identifie son quadrant EPIC (Émotionnel / Pratique / Identitaire / Critique — donné explicitement dans la synthèse pour chaque angle) et privilégie, à niche égale, les CT dont le ton décrit dans leur description résonne avec ce quadrant précis :
-→ Angle Émotionnel → CT au ton direct sur le ressenti, dramatisation du problème, sensation vécue.
-→ Angle Pratique → CT au ton logique/calcul, comparatif, preuve chiffrée, "achat intelligent".
-→ Angle Identitaire → CT au ton aspirationnel, statut, transformation identitaire, figure à laquelle s'identifier.
-→ Angle Critique → CT au ton contrariant/confrontant une idée reçue, positionnement contre le marché ou la concurrence.
-Ce matching de ton s'ajoute à la diversification structurelle et à la priorité de niche — jamais à leur place. Un CT sans meta description suffisamment riche (pas encore enrichi) reste éligible, jugé visuellement comme avant, sans pénalité.
+━━━ NIVEAU 5 — TON / QUADRANT EPIC ━━━
+À cohérence égale sur les 4 niveaux précédents, privilégie le CT dont le ton (extrait de sa description : registre direct/aspirationnel/alarmiste/complice, intention narrative) résonne avec le quadrant EPIC de l'angle (donné explicitement dans la synthèse pour chaque angle) :
+→ Émotionnel → ton direct sur le ressenti, dramatisation du problème, sensation vécue.
+→ Pratique → ton logique/calcul, comparatif, preuve chiffrée, "achat intelligent".
+→ Identitaire → ton aspirationnel, statut, transformation identitaire, figure à laquelle s'identifier.
+→ Critique → ton contrariant/confrontant une idée reçue, positionnement contre le marché ou la concurrence.
+
+━━━ CONTRAINTES TOUJOURS ACTIVES — à respecter à CHAQUE niveau ci-dessus, jamais en option, jamais reléguées après ━━━
+→ NON-DOUBLON : chaque CT sélectionné a un ID unique, sans aucune exception.
+→ DIVERSITÉ STRUCTURELLE : ${toleranceTxt} Couvre un maximum de structures différentes parmi hero produit, split lifestyle, avant-après, grille bénéfices, screenshot témoignage, podcast 2-col, story narrative, comparatif, UGC, stats preuve sociale, etc. À l'intérieur d'un même groupe (même angle), les 3 CTs doivent être des approches visuelles complémentaires — jamais 2x le même concept.
+→ ROTATION / RENOUVELLEMENT : ${rotationTxt.trim() || 'Pas de contrainte de rotation pour cette commande (premier batch pour ce produit).'}
+
+Les CT sans meta description suffisamment riche (pas encore enrichis via "Renommer tous" dans la Galerie CT) restent éligibles à chaque niveau, jugés visuellement comme avant — jamais pénalisés pour absence de balisage, juste moins précisément départagés.
 
 Si la liste a moins de ${count} CTs distincts, retourne tous les IDs disponibles (sans doublon), dans le meilleur ordre possible.
 
@@ -2755,19 +2760,28 @@ Format exact (copie exactement ce style) : ["ct_xxx", "ct_yyy", "ct_zzz"]`;
 Tu reçois une synthèse de marché simplifiée (angle unique, persona, produit) et une liste de Creative Templates (CT).
 Tu dois choisir exactement ${count} CTs adaptés au contexte ET visuellement distincts les uns des autres — pas de structure par niveau de conscience ici, juste la meilleure adéquation globale à l'angle, au produit et au persona.
 
-RÈGLES DE DIVERSIFICATION (PRIORITÉ ABSOLUE) :
-1. ZÉRO DOUBLON : chaque CT sélectionné a un ID unique.
-2. ${toleranceTxt}
-3. COUVERTURE VARIÉE : les ${count} CTs doivent couvrir un maximum de structures différentes parmi : hero produit, split lifestyle, avant-après, grille bénéfices, screenshot témoignage, podcast 2-col, story narrative, comparatif, UGC, stats preuve sociale, etc.
+Pour choisir chaque CT, évalue-le sur 5 niveaux de cohérence, DANS CET ORDRE DE PRIORITÉ STRICT — un niveau supérieur l'emporte toujours sur un niveau inférieur en cas de conflit :
 
-RÈGLES DE CONTEXTUALISATION (après diversification) :
-- Adapte au TYPE DE PRODUIT identifié dans la synthèse (santé, beauté, fitness, food, tech, mode...)
-- Adapte au PERSONA (âge, sexe, classe sociale, culture du pays cible)
-- Adapte à l'angle marketing unique décrit dans la synthèse
+━━━ NIVEAU 1 — NICHE ━━━
+Le CT est-il balisé dans la même niche que le produit, ou une niche visuellement/conceptuellement proche ? Vérifie la balise [niche: ...] contre la niche du produit déduite de la synthèse. Un CT de niche totalement éloignée n'est choisi qu'en dernier recours.
 
-PRIORITÉ DE NICHE (avant de choisir, avant même la diversification) : identifie la niche globale du produit à partir de la synthèse, parmi les mêmes catégories que celles balisées sur les CT. Priorise fortement les CT balisés de cette niche ou d'une niche visuellement/conceptuellement proche — un CT de niche totalement éloignée ne doit être choisi qu'en dernier recours. Les CT sans niche balisée restent éligibles normalement, jugés visuellement comme avant.
+━━━ NIVEAU 2 — PRODUIT PRÉCIS ━━━
+Le CT représente-t-il le produit d'une façon compatible avec CE produit précis, pas juste sa catégorie ? Utilise la description du CT pour voir COMMENT un produit y est introduit visuellement (flacon, pot, poudre, comprimé, vêtement, appareil...) et compare à la forme réelle du produit dans la synthèse.
 
-MATCHING PAR TON (utilise la description de chaque CT, pas juste sa niche) : la description de chaque CT contient sa géométrie visuelle ET le ton de son copywriting. Identifie le quadrant EPIC de l'angle unique décrit dans la synthèse (Émotionnel / Pratique / Identitaire / Critique — donné explicitement dans la synthèse) et privilégie, à niche égale, les CT dont le ton décrit dans leur description résonne avec ce quadrant. Ce matching s'ajoute à la diversification et à la niche, jamais à leur place. Un CT sans description suffisamment riche reste éligible, jugé visuellement comme avant.
+━━━ NIVEAU 3 — ANGLE ━━━
+Le CT convient-il au FOND de l'angle marketing unique décrit dans la synthèse (pas juste son quadrant EPIC — niveau 5) ? Utilise la description ET les balises du CT pour juger la cohérence de fond, pas juste catégorielle.
+
+━━━ NIVEAU 4 — PERSONA ━━━
+Le CT convient-il au persona (âge, sexe, classe sociale, culture du pays cible) décrit dans la synthèse ?
+
+━━━ NIVEAU 5 — TON / QUADRANT EPIC ━━━
+À cohérence égale sur les niveaux précédents, privilégie le CT dont le ton (extrait de sa description) résonne avec le quadrant EPIC de l'angle (Émotionnel / Pratique / Identitaire / Critique, donné explicitement dans la synthèse).
+
+━━━ CONTRAINTES TOUJOURS ACTIVES ━━━
+→ NON-DOUBLON : chaque CT sélectionné a un ID unique, sans exception.
+→ DIVERSITÉ STRUCTURELLE : ${toleranceTxt} Les ${count} CTs doivent couvrir un maximum de structures différentes parmi hero produit, split lifestyle, avant-après, grille bénéfices, screenshot témoignage, podcast 2-col, story narrative, comparatif, UGC, stats preuve sociale, etc.
+
+Les CT sans meta description suffisamment riche restent éligibles à chaque niveau, jugés visuellement comme avant.
 
 Si la liste a moins de ${count} CTs distincts, retourne tous les IDs disponibles (sans doublon).
 
@@ -3450,6 +3464,25 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
     const idx = briefs.findIndex(b => b.id === id);
     if (idx >= 0) {
       briefs[idx].generation_started_at = new Date().toISOString();
+      // Cause profonde corrigée (client reçoit une créative du MAUVAIS batch après "Relancer
+      // la production") : "Relancer" réutilise le même ticket (même commandeId), et jusqu'ici
+      // pushed_creative_indices restait tel quel — donc pour un batch d'origine à 8/9 envoyées,
+      // le nouveau batch se voyait sauter ses 8 premières créatives (crues déjà envoyées, alors
+      // qu'elles n'ont RIEN à voir avec le batch précédent) et seul l'index encore "manquant"
+      // partait — avec le contenu du NOUVEAU batch dedans, dans un slot pensé pour l'ancien.
+      // Reset systématique ici : un vrai démarrage de génération veut toujours dire table rase
+      // pour le suivi d'envoi, qu'il s'agisse d'un premier lancement (déjà vide, sans effet) ou
+      // d'une relance (c'est justement là que ça compte).
+      briefs[idx].pushed_creative_indices = [];
+      briefs[idx].batch_deja_cree = false;
+      // Compteur de génération — incrémenté à chaque vrai démarrage (1 si jamais généré avant).
+      // Sert à construire des id de créatives garantis différents d'une relance à l'autre (voir
+      // pushDeliverablesToProduct) : sans ça, un id reconstruit comme `${ticketId}_${i}` retombe
+      // EXACTEMENT sur le même id qu'au batch précédent pour le même index — si ce batch avait
+      // déjà été livré au client, le nouveau contenu à cet index est silencieusement bloqué (vu
+      // comme "déjà là"), jamais réellement uploadé. La remise à zéro de pushed_creative_indices
+      // seule ne suffit pas à couvrir ce cas précis.
+      briefs[idx].generation_version = (briefs[idx].generation_version || 0) + 1;
       await saveBriefs([briefs[idx]]);
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true }));
@@ -5146,7 +5179,16 @@ if (req.method === 'POST' && req.url === '/manual-deliver') {
         if (!targetProductId) throw new Error('Création du produit échouée côté AdBoard');
       }
 
-      await pushDeliverablesToProduct(targetProductId, ticketId || ('manuel-' + Date.now()), deliverables);
+      const pushResult = await pushDeliverablesToProduct(targetProductId, ticketId || ('manuel-' + Date.now()), deliverables);
+
+      // Cause profonde corrigée (portrait persona jamais généré via "Envoyer à un autre
+      // compte") : ce chemin d'envoi est entièrement séparé de /commandes/:id/done, où le
+      // déclenchement avait été branché — jamais répliqué ici, donc jamais déclenché pour un
+      // envoi manuel, alors que les Données Marché sont poussées exactement pareil.
+      if (pushResult?.besoinPortrait && pushResult.personaPourPortrait?.nom) {
+        genererEtSauvegarderPortraitEnTacheDeFond(targetProductId, pushResult.personaPourPortrait)
+          .catch(e => console.error('[Portrait] Erreur non interceptée en tâche de fond :', e.message));
+      }
 
       await notifyUserBoth(userId, {
         title: '🎉 Nouveaux visuels disponibles',
@@ -5883,7 +5925,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
         // directement SUR LE BRIEF lui-même (déjà chargé de façon fiable, pas de lecture
         // croisée) : on ne pousse plus jamais que les indices pas encore confirmés livrés.
         const dejaPousses = new Set(briefs[idx].pushed_creative_indices || []);
-        var pushResult = await pushDeliverablesToProduct(briefs[idx].product?.id, id, briefs[idx].deliverables, dejaPousses, !!briefs[idx].batch_deja_cree, briefs[idx].quantity);
+        var pushResult = await pushDeliverablesToProduct(briefs[idx].product?.id, id, briefs[idx].deliverables, dejaPousses, !!briefs[idx].batch_deja_cree, briefs[idx].quantity, null, null, briefs[idx].generation_version || 1);
         if (pushResult?.newlyPushedIndices?.length) {
           briefs[idx].pushed_creative_indices = [...dejaPousses, ...pushResult.newlyPushedIndices];
         }
@@ -5952,7 +5994,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
         const pushResult = await pushDeliverablesToProduct(
           briefs[idx].product?.id, id, briefs[idx].deliverables,
           dejaPousses, !!briefs[idx].batch_deja_cree, briefs[idx].quantity,
-          new Set([index]), new Set()
+          new Set([index]), new Set(), briefs[idx].generation_version || 1
         );
         if (pushResult?.newlyPushedIndices?.length) {
           briefs[idx].pushed_creative_indices = [...dejaPousses, ...pushResult.newlyPushedIndices];
@@ -5987,7 +6029,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
       const pushResult = await pushDeliverablesToProduct(
         briefs[idx].product?.id, id, briefs[idx].deliverables,
         dejaPousses, !!briefs[idx].batch_deja_cree, briefs[idx].quantity,
-        new Set(), new Set()
+        new Set(), new Set(), briefs[idx].generation_version || 1
       );
       if (pushResult?.batchCree) briefs[idx].batch_deja_cree = true;
       await saveBriefs([briefs[idx]]);
@@ -6027,7 +6069,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
         const pushResult = await pushDeliverablesToProduct(
           briefs[idx].product?.id, id, briefs[idx].deliverables,
           dejaPousses, !!briefs[idx].batch_deja_cree, briefs[idx].quantity,
-          new Set(), new Set([index])
+          new Set(), new Set([index]), briefs[idx].generation_version || 1
         );
         if (pushResult?.batchCree) briefs[idx].batch_deja_cree = true;
         await saveBriefs([briefs[idx]]);
@@ -6689,7 +6731,7 @@ async function genererEtSauvegarderPortraitEnTacheDeFond(productId, persona) {
   }
 }
 
-async function pushDeliverablesToProduct(productId, ticketId, deliverables, alreadyPushedIndices = new Set(), batchDejaCree = false, quantiteDemandee = null, onlyIndices = null, onlyCopyIndices = null) {
+async function pushDeliverablesToProduct(productId, ticketId, deliverables, alreadyPushedIndices = new Set(), batchDejaCree = false, quantiteDemandee = null, onlyIndices = null, onlyCopyIndices = null, generationVersion = 1) {
   if (!productId || !deliverables) return;
   try {
     const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=creatives,deliveries,marche`, {
@@ -6732,7 +6774,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
       // l'index précis demandé, sans toucher au reste de la logique (id, angle, cible identiques
       // à un envoi complet — juste une portée réduite).
       if (onlyIndices && !onlyIndices.has(i)) continue;
-      const idCandidat = `${ticketId}_${i}`;
+      const idCandidat = `${ticketId}_g${generationVersion}_${i}`;
       if (existingIds.has(idCandidat)) { newlyPushedIndices.push(i); continue; } // déjà là mais pas encore tracé sur le brief — on le trace sans le repousser
       try {
         // Cas normal : déjà uploadée via /upload-creative-now, c.url ET c.thumbUrl transmis par
