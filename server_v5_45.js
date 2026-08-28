@@ -2940,11 +2940,15 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         // Meta description enrichie : 3 lignes (géométrie / ton copywriting / distinction),
         // jointes en un seul champ texte — plus la formule courte à 3-6 mots d'avant.
         const meta = [lignes[1], lignes[2], lignes[3]].filter(Boolean).join(' ').substring(0, 500);
+        // lignes[4] = mécanisme psychologique (ligne 5 du prompt) — jamais exploité comme champ
+        // séparé pour l'instant, mais DOIT être compté dans l'index, sinon tout ce qui suit
+        // décale d'un cran (bug réel détecté : conscience vide, "product" retrouvé dans style,
+        // vraie niche jamais lue, "autre" par défaut à la place).
         const AWARENESS_VALIDES = ['solution', 'product', 'most'];
-        const awareness = (lignes[4] || '').toLowerCase().split(',').map(s => s.trim()).filter(s => AWARENESS_VALIDES.includes(s));
-        const styleTags = (lignes[5] || '').split(',').map(s => s.trim().toLowerCase().replace(/^#/, '')).filter(Boolean).slice(0, 3);
+        const awareness = (lignes[5] || '').toLowerCase().split(',').map(s => s.trim()).filter(s => AWARENESS_VALIDES.includes(s));
+        const styleTags = (lignes[6] || '').split(',').map(s => s.trim().toLowerCase().replace(/^#/, '')).filter(Boolean).slice(0, 3);
         const NICHES_VALIDES = ['cosmétique', 'complément alimentaire', 'fashion', 'chaussures', 'bijoux et accessoires', 'montres', 'tech et électronique', 'maison et déco', 'cuisine et électroménager', 'bien-être et santé', 'sport et fitness', 'automobile', 'bébé et enfant', 'animaux', 'outils et bricolage', 'jouets et gaming', 'lunettes', 'bagagerie et maroquinerie', 'éducation et formation', 'services et coaching', 'autre'];
-        const nicheRaw = (lignes[6] || '').toLowerCase().trim();
+        const nicheRaw = (lignes[7] || '').toLowerCase().trim();
         const niche = NICHES_VALIDES.includes(nicheRaw) ? nicheRaw : 'autre';
         console.log('  → "' + clean + '" · méta: ' + meta.substring(0,80) + '... · conscience: ' + awareness.join('/') + ' · style: ' + styleTags.join(',') + ' · niche: ' + niche);
         res.writeHead(200, { 'Content-Type': 'application/json' });
