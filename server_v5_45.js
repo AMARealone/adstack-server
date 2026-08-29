@@ -2797,7 +2797,18 @@ Format exact (copie exactement ce style) : ["ct_xxx", "ct_yyy", "ct_zzz"]`;
         const geminiBody = {
           systemInstruction,
           contents: [{ role: 'user', parts: [{ text: userText }]}],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 1200 }
+          // Cause profonde corrigée (réponse tronquée à quelques dizaines de caractères, JSON
+          // jamais fermé, repli sur un parsing partiel qui ne récupère qu'une poignée d'IDs sur
+          // les 9/18/27/36 demandés) : aucun thinkingConfig n'était fixé ici — même trou déjà
+          // trouvé et corrigé sur /name-ct, jamais répliqué sur cet endpoint. Gemini consommait
+          // une partie du budget de sortie pour "réfléchir" en interne avant d'écrire le
+          // tableau JSON, ce qui laissait de moins en moins de place à mesure que le prompt (le
+          // raisonnement à 5 niveaux) est devenu plus complexe à traiter. La réflexion doit se
+          // faire à travers le prompt structuré lui-même, jamais en pensée cachée pour une
+          // tâche de sélection/classification comme celle-ci. maxOutputTokens élargi aussi, par
+          // marge de sécurité (36 IDs ne devraient tenir qu'en ~400-500 tokens, mais mieux vaut
+          // large que retomber dans le même piège).
+          generationConfig: { temperature: 0.3, maxOutputTokens: 2000, thinkingConfig: { thinkingBudget: 0 } }
         };
 
         const data = await vertexRequest(token, 'gemini-2.5-flash', geminiBody);
