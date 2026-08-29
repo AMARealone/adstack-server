@@ -6259,7 +6259,19 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
       try {
         const { imgB64, mime, index, thumbB64 } = JSON.parse(body);
         if (!imgB64) { res.writeHead(400); res.end(JSON.stringify({ error: 'imgB64 requis' })); return; }
-        const { imageUrl, thumbUrl } = await uploadCreativeImage(imgB64, mime || 'image/png', `${id}_${index}`, thumbB64);
+        // Cause profonde corrigée (le client voit éternellement l'image du 1er lancement, même
+        // après plusieurs relances réussies et confirmées) : le nom de fichier ne changeait
+        // jamais d'une relance à l'autre (${id}_${index} seul, sans version) — combiné au cache
+        // "immutable" 1 an sur ces fichiers (volontaire, ces images ne changent normalement
+        // jamais UNE FOIS livrées), le navigateur qui avait déjà vu cette URL une fois ne la
+        // redemande plus JAMAIS au serveur, même si le fichier lui-même a bien été écrasé
+        // (x-upsert:true) avec la nouvelle image entre-temps. La métadonnée texte (ct/desc,
+        // stockée en JSON, jamais mise en cache) se mettait à jour normalement — d'où l'angle/
+        // description corrects mais l'image visuellement figée sur l'ancienne version.
+        const briefsPourVersion = await loadBriefs();
+        const briefTrouve = briefsPourVersion.find(b => b.id === id);
+        const generationVersion = briefTrouve?.generation_version || 1;
+        const { imageUrl, thumbUrl } = await uploadCreativeImage(imgB64, mime || 'image/png', `${id}_g${generationVersion}_${index}`, thumbB64);
         res.writeHead(200, {'Content-Type':'application/json'});
         res.end(JSON.stringify({ ok: true, url: imageUrl, thumbUrl }));
       } catch(e) {
