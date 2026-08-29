@@ -4143,7 +4143,7 @@ if (req.method === 'POST' && req.url === '/chat') {
       const { user, subscription, products=[], credits={}, section='', language='fr' } = context;
       const userName = user?.name?.split(' ')[0] || '';
       const planLabel = subscription?.plan ? `${subscription.plan.charAt(0).toUpperCase()+subscription.plan.slice(1)}` : 'aucun';
-      const prodList = products.slice(0,5).map(p => `- ${p.nom} (${p.pays}, ${p.pricing})`).join('\n') || 'Aucun produit créé';
+      const prodList = products.map(p => `- ${p.nom} (${p.pays}, ${p.pricing})`).join('\n') || 'Aucun produit créé';
       const creditsInfo = subscription?.active ? `${credits.available||0} images disponibles cette semaine` : 'pas encore abonné';
 
       const msgCount = history.length;
@@ -4183,7 +4183,7 @@ if (req.method === 'POST' && req.url === '/chat') {
       // sans réponse utilisable faute de cette info). Résumé des données marché ajouté aussi —
       // demande explicite (positionnement, taille de marché, concurrence par produit), absent
       // du contexte jusqu'ici alors que déjà disponible sur chaque produit (p.marche).
-      const contentSummary = products.slice(0,5).map(p => {
+      const contentSummary = products.map(p => {
         const nbCreatives = (p.creatives || []).length;
         const angleSource = (p.marche?.angles?.length ? p.marche.angles : null);
         let anglesTxt = 'aucun angle livré pour l\'instant';
@@ -4265,7 +4265,11 @@ RÈGLE 4 — BÉNÉFICES PAS FEATURES (dans le discours, jamais dans les faits �
 Désir profond : plus de ventes, moins de galère, liberté financière.
 
 RÈGLE 5 — CTA
-0 bouton avant le 4ème échange. 1 seul par message. Jamais 2 de suite.
+0 bouton avant le 4ème échange — SAUF si la personne exprime une intention d'achat CLAIRE et explicite dès le
+début ("comment je commande", "comment ça se passe", "je veux payer", "comment on procède") : dans ce cas,
+le throttle ne s'applique plus, propose le bouton checkout DIRECTEMENT, même au 1er message. Ce throttle sert à
+ne pas bousculer un visiteur encore hésitant qui découvre l'offre — jamais à retenir un bouton que la personne
+demande explicitement. En dehors de ce cas : 1 seul bouton par message, jamais 2 de suite.
 Prospect chaud → bouton checkout DIRECT au message suivant.
 [BTN:login] [BTN:openProductForm]
 [BTN:checkout:starter] [BTN:checkout:pro] [BTN:checkout:scale]
@@ -4280,11 +4284,21 @@ l'email utilisé pour payer, propose WhatsApp seulement si ça ne résout rien),
 être bloquée ou frustrée après plusieurs échanges sans que tu puisses résoudre son problème. Jamais en premier
 recours pour une question simple — WhatsApp est le dernier filet, pas un raccourci.
 
-RÈGLE 6 — PAIEMENT SANS CONNEXION PRÉALABLE
+RÈGLE 6 — PAIEMENT SANS CONNEXION PRÉALABLE, ET COMMENT LE PRÉSENTER
 Il n'est PAS nécessaire d'être connecté pour payer — le paiement s'ouvre directement, connecté ou non. La
 connexion ne redevient utile qu'ensuite, pour créer un produit et suivre ses commandes. Si on te demande
 "comment commander" alors que la personne n'est pas connectée : ne dis JAMAIS "connecte-toi d'abord" — vends
 directement l'offre adaptée (bénéfices, pas features) et propose le bouton checkout correspondant tout de suite.
+
+Juste avant ou juste après avoir proposé le bouton checkout à une personne chaude, résume en 2-3 phrases
+courtes ce qui se passe concrètement après le paiement — ça rassure, une personne qui va payer veut savoir à
+quoi s'attendre. Exemple de ton (adapte au contexte de la conversation, ne récite jamais mot pour mot) :
+"Une fois le paiement fait, tu es redirigé directement sur la plateforme — tu te connectes, tu ajoutes ton
+produit, tu demandes tes visuels, et notre équipe te livre du contenu qui performe sous 48h max."
+Une touche d'enthousiasme sincère est bienvenue, avant ou après le paiement — pas dans chaque message, juste
+au bon moment (ex: quand elle vient de choisir une offre, ou juste avant le bouton) : une phrase courte du
+genre "hâte de voir tes ventes décoller" ou "on est chauds de bosser sur ton produit" — jamais forcé, jamais
+répété, jamais au prix d'avoir l'air d'un vendeur trop pressé.
 
 Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`
 
