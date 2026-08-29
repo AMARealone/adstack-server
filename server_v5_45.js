@@ -6975,14 +6975,25 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
     // 50-60% et garantir de la variété visuelle plutôt que répéter les mêmes structures.
     const ctsUtilisesCeLot = [...new Set((deliverables.creatives || []).map(c => c?.ct).filter(Boolean))];
 
-    // Sur un renvoi (après un envoi partiel précédent), ce ticket a déjà sa propre entrée de
-    // batch — ne jamais en recréer une deuxième, juste garder celle qui existe déjà. Double
-    // protection : batchDejaCree vient du brief (fiable, pas de lecture croisée), livraisonExistante
-    // reste en filet de sécurité supplémentaire sur la lecture fraîche de products.
-    const dejaCree = batchDejaCree || !!livraisonExistante;
+    // Sur un renvoi (après un envoi partiel précédent) DE LA MÊME génération, ce ticket a déjà
+    // sa propre entrée de batch — ne jamais en recréer une deuxième, juste garder celle qui
+    // existe déjà. Mais sur une VRAIE relance (generation_version a avancé depuis la création de
+    // cette entrée), le contenu doit être REMPLACÉ, pas laissé figé sur la toute première
+    // tentative — sinon les angles/ad copies restent bloqués sur un lancement abandonné, même
+    // quand les créatives, elles (suivies séparément par index), se mettent à jour normalement.
+    // Cause profonde corrigée (ad copies/angles à 0 chez le client malgré [Deliver] annonçant un
+    // succès) : avant, dejaCree ignorait complètement la version — une seule entrée créée UNE
+    // FOIS, plus jamais rafraîchie, peu importe combien de relances suivaient.
+    const dejaCreeMemeVersion = livraisonExistante && livraisonExistante.generation_version === generationVersion;
+    const dejaCree = dejaCreeMemeVersion;
+    const nouvelleEntreeLivraison = { ticketId, semaine: weekLabel, date: dateLabel, created_at: new Date().toISOString(), cible: cibleCeLot, angles: angleEntries, cts_utilises: ctsUtilisesCeLot, generation_version: generationVersion };
     const deliveriesFinal = dejaCree
       ? existingDeliveries
-      : [...existingDeliveries, { ticketId, semaine: weekLabel, date: dateLabel, created_at: new Date().toISOString(), cible: cibleCeLot, angles: angleEntries, cts_utilises: ctsUtilisesCeLot }];
+      : livraisonExistante
+        // Remplace l'entrée existante en place (même position) plutôt que d'en ajouter une
+        // nouvelle — une relance reste UN SEUL batch pour ce ticket, juste son contenu change.
+        ? existingDeliveries.map(d => d.ticketId === ticketId ? nouvelleEntreeLivraison : d)
+        : [...existingDeliveries, nouvelleEntreeLivraison];
 
     const patchBody = {
       creatives: [...existingCreatives, ...newCreatives],
