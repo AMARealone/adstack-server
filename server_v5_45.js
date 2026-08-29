@@ -2630,7 +2630,14 @@ HARD LOCKS :
           contents: [{ role:'user', parts: geminiParts }],
           generationConfig: {
             responseModalities: ['TEXT', 'IMAGE'],
-            temperature: 1.0
+            temperature: 1.0,
+            // Ajouté par prudence — aucun maxOutputTokens n'était fixé jusqu'ici, ce modèle
+            // utilisait son défaut interne. Sur une composition dense (beaucoup de texte, CT
+            // complexe), un défaut trop juste pourrait limiter la marge que le modèle a pour
+            // "finir" proprement la composition avant de rendre l'image — cohérent avec
+            // l'observation d'une qualité parfois meilleure au 2e essai. Pas une certitude,
+            // mais une marge de sécurité qui ne coûte rien à ajouter.
+            maxOutputTokens: 8192,
           }
         };
 
@@ -4713,8 +4720,13 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
     // Calculée ICI (avant l'angle gagnant, pas après) — l'angle gagnant en a besoin pour se
     // scoper à la bonne cible, voir juste en dessous.
     const derniereLivraison = deliveries.length ? deliveries[deliveries.length - 1] : null;
+    // Le prénom n'entre plus dans la comparaison — voir le même correctif appliqué à
+    // pushDeliverablesToProduct (memePerson). Gardé dans l'affichage pour le CRM/Factory,
+    // mais exclu de la logique de détection "même cible".
     const descrPersona = (p) => p ? [p.nom, p.role, p.age ? `${p.age} ans` : null, p.ville].filter(Boolean).join(', ') : null;
+    const signaturePersona = (p) => p ? [p.sexe, p.role, p.age, p.ville].filter(Boolean).join('|').toLowerCase().trim() : null;
     const cibleActuelle = descrPersona(marche.persona) || derniereLivraison?.cible || null;
+    const signatureCibleActuelle = signaturePersona(marche.persona);
 
     // ── Angle gagnant (feedback loop Top Performer) — DOIT rester strictement identique à
     // getAngleGagnantActuel() dans Platform.jsx, sinon le badge affiché au client contredirait
@@ -6530,6 +6542,15 @@ async function saveBriefs(briefs) {
           delivery_reminder_sent: b.delivery_reminder_sent || false,
           pushed_creative_indices: b.pushed_creative_indices || [],
           batch_deja_cree: b.batch_deja_cree || false,
+          // Cause profonde corrigée (le fix anti-collision "version de génération" semblait ne
+          // JAMAIS marcher malgré plusieurs corrections successives) : cette liste de champs est
+          // celle RÉELLEMENT écrite en base — resolution=merge-duplicates ne touche QUE les
+          // colonnes listées ici, laisse toutes les autres inchangées. generation_version
+          // s'incrémentait bien en mémoire à chaque appel, s'utilisait correctement pour CET
+          // appel précis, mais n'était jamais dans cette liste — donc jamais réellement
+          // persisté. Au prochain chargement, generation_version revenait à sa valeur d'avant,
+          // recréant EXACTEMENT la même collision d'id qu'avant le premier fix.
+          generation_version: b.generation_version || 1,
         })
       });
       if (!r.ok) console.error('[Commandes] Sauvegarde échouée pour', b.id, ':', await r.text());
@@ -6929,9 +6950,13 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
     // pour de vrai seulement maintenant, au moment où le client doit réellement les voir.
     let besoinPortrait = false;
     if (deliverables.marche) {
-      const ancienPersonaNom = (existing.marche?.persona?.nom || '').toLowerCase().trim();
-      const nouveauPersonaNom = (deliverables.marche.persona?.nom || '').toLowerCase().trim();
-      const memePerson = ancienPersonaNom && ancienPersonaNom === nouveauPersonaNom;
+      // Cause profonde corrigée (portrait régénéré à chaque batch même sur la même cible, et
+      // détection "même cible" peu fiable) : cette comparaison se faisait sur persona.nom —
+      // un prénom choisi librement par l'IA à chaque appel, qui varie même pour EXACTEMENT la
+      // même cible démographique. Comparaison basée maintenant sur les faits stables (sexe,
+      // rôle, âge, ville) — jamais le prénom, qui n'est qu'une habillage narratif.
+      const signaturePersona = (p) => p ? [p.sexe, p.role, p.age, p.ville].filter(Boolean).join('|').toLowerCase().trim() : '';
+      const memePerson = signaturePersona(existing.marche?.persona) && signaturePersona(existing.marche?.persona) === signaturePersona(deliverables.marche.persona);
       patchBody.marche = {
         ...deliverables.marche,
         // Nécessaire pour compter les angles du SEUL persona courant (voir /products/:id/renewal-context) —
