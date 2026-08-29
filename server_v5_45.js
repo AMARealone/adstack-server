@@ -5190,7 +5190,22 @@ if (req.method === 'POST' && req.url === '/manual-deliver') {
         if (!targetProductId) throw new Error('Création du produit échouée côté AdBoard');
       }
 
-      const pushResult = await pushDeliverablesToProduct(targetProductId, ticketId || ('manuel-' + Date.now()), deliverables);
+      // Cause profonde corrigée (2e envoi manuel sur le même ticket écrase silencieusement —
+      // le client reçoit les VIEILLES créatives au lieu des nouvelles) : ce endpoint ne
+      // chargeait jamais generation_version depuis le brief, retombant systématiquement sur la
+      // valeur par défaut (1) de pushDeliverablesToProduct — donc chaque envoi manuel sur un
+      // même ticketId reconstruit EXACTEMENT les mêmes id que la fois précédente, collisionnant
+      // avec ce qui a déjà été poussé. Chargé ici explicitement, comme pour tous les autres
+      // points d'envoi (send-one-creative, send-marche, send-one-copy, /done).
+      let generationVersion = 1;
+      if (ticketId) {
+        try {
+          const briefsPourVersion = await loadBriefs();
+          const briefTrouve = briefsPourVersion.find(b => b.id === ticketId);
+          if (briefTrouve?.generation_version) generationVersion = briefTrouve.generation_version;
+        } catch(eVer) { console.warn('[manual-deliver] Lecture generation_version échouée, repli sur 1 :', eVer.message); }
+      }
+      const pushResult = await pushDeliverablesToProduct(targetProductId, ticketId || ('manuel-' + Date.now()), deliverables, new Set(), false, null, null, null, generationVersion);
 
       // Cause profonde corrigée (portrait persona jamais généré via "Envoyer à un autre
       // compte") : ce chemin d'envoi est entièrement séparé de /commandes/:id/done, où le
