@@ -1204,8 +1204,20 @@ async function findUserByEmail(email) {
 
 // ── HTTP Server ────────────────────────────────
 const server = http.createServer(async (req, res) => {
-  // CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS — Cause profonde corrigée (save-deliverables bloqué à 100% depuis
+  // www.adstackofficial.com, "Access-Control-Allow-Origin must not be the wildcard '*' when
+  // the request's credentials mode is 'include'") : un wildcard statique est rejeté par le
+  // navigateur dès qu'une requête est considérée "credentialed" — peu importe la raison exacte
+  // (cookies déjà présents pour ce domaine, comportement Chrome récent, etc.), la requête
+  // n'atteignait jamais le serveur, bloquée en amont. Autosave semblait tourner sans erreur
+  // (aucun log serveur, puisque rien n'arrivait jamais) pendant que la base gardait
+  // éternellement le tout premier contenu sauvegardé avec succès — exactement le symptôme
+  // "toujours le batch du lancement 1" remonté. Reflet dynamique de l'origine exacte de la
+  // requête à la place — reste ouvert à n'importe quel domaine (comportement identique au
+  // wildcard pour la sécurité), mais compatible avec les requêtes credentialed.
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Vary', 'Origin');
   // Cause profonde corrigée ("Failed to fetch" sur la suppression d'une carte démo dans
   // Factory) : DELETE n'était pas dans la liste des méthodes autorisées — le navigateur
   // rejette la requête au niveau CORS avant même qu'elle atteigne le serveur, quel que soit
