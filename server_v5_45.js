@@ -20,7 +20,7 @@ try {
 }
 
 const PORT = 3001;
-const PROJECT_ID = 'adstack-497020';
+const PROJECT_ID = 'adstack-ecosystem-api';
 const LOCATION = 'us-central1';
 const MODEL = 'gemini-3-pro-image';
 
