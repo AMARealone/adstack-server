@@ -3513,6 +3513,39 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
       // comme "déjà là"), jamais réellement uploadé. La remise à zéro de pushed_creative_indices
       // seule ne suffit pas à couvrir ce cas précis.
       briefs[idx].generation_version = (briefs[idx].generation_version || 0) + 1;
+
+      // Nettoyage immédiat du produit OFFICIEL du ticket, dès la relance — pas besoin d'attendre
+      // l'envoi pour ce cas précis, connu dès maintenant (contrairement à un compte test, qui
+      // n'est choisi qu'au moment d'envoyer — voir le filet de sécurité identique dans
+      // pushDeliverablesToProduct, qui reste nécessaire pour CE cas-là). Purement une question
+      // de rapidité de confirmation visuelle, pas une nécessité technique — même logique de
+      // filtrage par version que le nettoyage à l'envoi, dupliquée volontairement plutôt que
+      // partagée, pour ne jamais faire dépendre l'un de l'autre.
+      const productIdOfficiel = briefs[idx].product?.id;
+      if (productIdOfficiel) {
+        try {
+          const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productIdOfficiel}&select=creatives`, {
+            headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+          });
+          const prRows = await prRes.json();
+          const creativesActuelles = prRows?.[0]?.creatives || [];
+          const regexVersionTicket = new RegExp(`^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_g(\\d+)_`);
+          const nettoyees = creativesActuelles.filter(c => {
+            const m = c.id && c.id.match(regexVersionTicket);
+            return !m || parseInt(m[1], 10) >= briefs[idx].generation_version;
+          });
+          if (nettoyees.length !== creativesActuelles.length) {
+            await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productIdOfficiel}`, {
+              method: 'PATCH',
+              headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+              body: JSON.stringify({ creatives: nettoyees })
+            });
+            console.log(`[Relance] ${creativesActuelles.length - nettoyees.length} créative(s) d'une version antérieure retirée(s) immédiatement pour le ticket ${id}`);
+          }
+        } catch(eClean) {
+          console.error('[Relance] Nettoyage immédiat échoué (le filet à l\'envoi prendra le relais) :', eClean.message);
+        }
+      }
       await saveBriefs([briefs[idx]]);
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true }));
