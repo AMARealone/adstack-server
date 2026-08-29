@@ -3494,6 +3494,37 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
       // comme "déjà là"), jamais réellement uploadé. La remise à zéro de pushed_creative_indices
       // seule ne suffit pas à couvrir ce cas précis.
       briefs[idx].generation_version = (briefs[idx].generation_version || 0) + 1;
+
+      // Cause profonde corrigée (le client voit encore l'ancien batch "hyper bugué" à côté du
+      // nouveau après une relance) : le fix précédent (version de génération dans l'id) évite
+      // bien qu'un nouveau contenu écrase silencieusement l'ancien par collision — mais ça
+      // n'empêche pas les deux de COEXISTER, si l'ancien avait déjà été envoyé au client avant
+      // la relance. Une vraie relance sur CE ticket précis veut dire "l'ancien batch n'existe
+      // plus" — donc on le supprime activement de la galerie du produit ici, avant que la
+      // nouvelle génération ne commence. Scope strict : seules les créatives dont l'id commence
+      // par CE ticketId précis sont retirées — jamais celles d'un autre batch/ticket pour le
+      // même produit (ex: une vraie commande récurrente antérieure, toujours légitime).
+      const productId = briefs[idx].product?.id;
+      if (productId) {
+        try {
+          const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=creatives`, {
+            headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+          });
+          const prRows = await prRes.json();
+          const creativesActuelles = prRows?.[0]?.creatives || [];
+          const nettoyees = creativesActuelles.filter(c => !c.id || !c.id.startsWith(`${id}_`));
+          if (nettoyees.length !== creativesActuelles.length) {
+            await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
+              method: 'PATCH',
+              headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+              body: JSON.stringify({ creatives: nettoyees })
+            });
+            console.log(`[Relance] ${creativesActuelles.length - nettoyees.length} créative(s) de l'ancien batch retirée(s) pour le ticket ${id}`);
+          }
+        } catch(eClean) {
+          console.error('[Relance] Nettoyage ancien batch échoué :', eClean.message);
+        }
+      }
       await saveBriefs([briefs[idx]]);
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true }));
