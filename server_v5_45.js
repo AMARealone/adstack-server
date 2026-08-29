@@ -5087,7 +5087,39 @@ if (req.method === 'POST' && req.url === '/reconcile-account') {
         headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
       });
       const rows = await remapRes.json();
-      if (!rows.length) { res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ ok: true, reconciled: false })); return; }
+
+      // Cause profonde corrigée (nouveau client — jamais eu de compte avant d'acheter — attend
+      // jusqu'à 30-60 min avant d'avoir accès, au lieu d'un accès immédiat à sa 1ère connexion) :
+      // ce endpoint ne vérifiait QUE user_id_remap (migration Supabase), jamais
+      // pending_activations (un paiement reçu avant que le compte n'existe). Un vrai nouveau
+      // client n'a par définition AUCUNE entrée user_id_remap (il n'a jamais été migré depuis
+      // nulle part) — son activation dépendait donc entièrement du prochain passage du cron
+      // /cron/check-pending. Même logique de résolution que ce cron, exécutée ici immédiatement,
+      // au moment précis où on sait qu'un compte vient d'être créé/connecté avec cet email.
+      let activationImmediate = false;
+      try {
+        const pendRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/pending_activations?email=eq.${encodeURIComponent(email.toLowerCase())}&resolved_at=is.null&select=*`, {
+          headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+        });
+        const pendings = await pendRes.json();
+        for (const pend of pendings) {
+          const planInfo = PLAN_MAP[pend.plan_id];
+          if (!planInfo) continue; // produit inconnu, laisse le cron gérer/signaler ce cas
+          await activateSubscription(userId, planInfo, email, pend.name);
+          await traiterAttributionCRM(userId);
+          await fetch(`${SUPABASE_URL_INT}/rest/v1/pending_activations?id=eq.${pend.id}`, {
+            method: 'PATCH',
+            headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ resolved_at: new Date().toISOString(), resolved_user_id: userId })
+          });
+          activationImmediate = true;
+          notifierAdmin('✅ Activation immédiate à la connexion', `<p>${email} vient de se connecter pour la première fois — abonnement activé immédiatement (paiement du ${new Date(pend.created_at).toLocaleDateString('fr-FR')}, plus besoin d'attendre le cron).</p>`).catch(()=>{});
+        }
+      } catch(ePend) {
+        console.error('[Reconcile] Vérification pending_activations échouée (le cron prendra le relais) :', ePend.message);
+      }
+
+      if (!rows.length) { res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ ok: true, reconciled: false, activationImmediate })); return; }
 
       const oldId = rows[0].old_id;
       const TABLES_A_CORRIGER = [
@@ -5119,7 +5151,7 @@ if (req.method === 'POST' && req.url === '/reconcile-account') {
 
       console.log(`[Reconcile] ${email} : ${totalLignes} ligne(s) reliée(s) à ${userId}`);
       res.writeHead(200, {'Content-Type':'application/json'});
-      res.end(JSON.stringify({ ok: true, reconciled: true, totalLignes }));
+      res.end(JSON.stringify({ ok: true, reconciled: true, totalLignes, activationImmediate }));
     } catch(e) {
       res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
     }
