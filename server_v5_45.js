@@ -3055,7 +3055,10 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         const { persona } = JSON.parse(body);
         if (!persona?.nom) { res.writeHead(400); res.end(JSON.stringify({ error: 'persona.nom requis' })); return; }
         const { base64, mime } = await genererPortraitPersona(persona);
-        const slug = (persona.nom || 'persona').toUpperCase().replace(/[^A-Z0-9ÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ]/gi, '_').replace(/_+/g,'_').slice(0, 30);
+        // Cause profonde corrigée (upload échoue en HTTP 400 pour tout prénom accentué) —
+        // même correctif qu'en tâche de fond, voir genererEtSauvegarderPortraitEnTacheDeFond.
+        const nomAsciiTest = (persona.nom || 'persona').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const slug = nomAsciiTest.toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/_+/g,'_').slice(0, 30);
         const filename = `${slug}_${Date.now()}`;
         const url = await uploadPortraitPersona(base64, mime, filename);
         console.log(`→ /generate-persona-portrait → ${persona.nom} → ${url}`);
@@ -6918,7 +6921,13 @@ async function genererEtSauvegarderPortraitEnTacheDeFond(productId, persona) {
   try {
     console.log(`[Portrait] Génération en tâche de fond démarrée pour ${persona?.nom} (produit ${productId})...`);
     const { base64, mime } = await genererPortraitPersona(persona);
-    const slug = (persona.nom || 'persona').toUpperCase().replace(/[^A-Z0-9ÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ]/gi, '_').replace(/_+/g,'_').slice(0, 30);
+    // Cause profonde corrigée (upload portrait échoue systématiquement en HTTP 400 pour toute
+    // cible au prénom accentué, ex: "Aïssatou") : ce regex autorisait explicitement les
+    // caractères accentués à passer tels quels dans le nom de fichier — mais un chemin d'objet
+    // Supabase Storage doit être strictement ASCII-safe. Translittéré en ASCII pur maintenant
+    // (Aïssatou → AISSATOU) avant construction du nom, plutôt que de garder l'accent original.
+    const nomAscii = (persona.nom || 'persona').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const slug = nomAscii.toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/_+/g,'_').slice(0, 30);
     const filename = `${slug}_${Date.now()}`;
     const url = await uploadPortraitPersona(base64, mime, filename);
 
@@ -6994,6 +7003,15 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
     // l'entrée de livraison globale ET pour chaque créative individuelle (nouveau : avant, seule
     // la livraison globale la connaissait, aucune créative ne savait à quelle cible elle appartenait).
     const cibleCeLot = [deliverables.marche?.persona?.nom, deliverables.marche?.persona?.role, deliverables.marche?.persona?.age ? `${deliverables.marche.persona.age} ans` : null, deliverables.marche?.persona?.ville].filter(Boolean).join(', ') || null;
+    // Cause profonde corrigée (la même cible apparaît dupliquée plusieurs fois côté client —
+    // "Aïssatou, Aïssatou, Aïssatou" — une par batch au lieu d'une seule avec tous les batches
+    // dessous) : le client regroupe les livraisons par égalité EXACTE du texte cibleCeLot
+    // ci-dessus, qui inclut le prénom généré par l'IA. Même sur "la même cible" logiquement,
+    // ce prénom (ou la formulation du rôle) peut légèrement varier d'un batch à l'autre malgré
+    // l'instruction de réutilisation — assez pour casser une comparaison de texte exact.
+    // Signature stable ajoutée ici, sans le prénom, réservée à l'identité/au regroupement —
+    // cibleCeLot reste inchangé pour l'affichage (le prénom reste agréable à lire).
+    const cibleSignatureCeLot = [deliverables.marche?.persona?.sexe, deliverables.marche?.persona?.role, deliverables.marche?.persona?.age, deliverables.marche?.persona?.ville].filter(Boolean).join('|').toLowerCase().trim() || null;
 
     const existingIds = new Set(existingCreatives.map(c => c.id));
     const newCreatives = [];
@@ -7080,7 +7098,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
     // FOIS, plus jamais rafraîchie, peu importe combien de relances suivaient.
     const dejaCreeMemeVersion = livraisonExistante && livraisonExistante.generation_version === generationVersion;
     const dejaCree = dejaCreeMemeVersion;
-    const nouvelleEntreeLivraison = { ticketId, semaine: weekLabel, date: dateLabel, created_at: new Date().toISOString(), cible: cibleCeLot, angles: angleEntries, cts_utilises: ctsUtilisesCeLot, generation_version: generationVersion };
+    const nouvelleEntreeLivraison = { ticketId, semaine: weekLabel, date: dateLabel, created_at: new Date().toISOString(), cible: cibleCeLot, cible_signature: cibleSignatureCeLot, angles: angleEntries, cts_utilises: ctsUtilisesCeLot, generation_version: generationVersion };
     const deliveriesFinal = dejaCree
       ? existingDeliveries
       : livraisonExistante
