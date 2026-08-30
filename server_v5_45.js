@@ -1614,12 +1614,16 @@ const server = http.createServer(async (req, res) => {
 
         const model = reqBody.model || 'gemini-2.5-flash';
         console.log(`→ Calling ${model} (text)...`);
+        // Aucun thinkingConfig n'était fixé ici — ce endpoint générique sert notamment à tester
+        // des agents directement, donc reçoit potentiellement des prompts complexes de skill
+        // complète. Défaut raisonnable fixé, personnalisable par l'appelant via reqBody.
         const vertexBody = {
           system_instruction: { parts: [{ text: reqBody.system }] },
           contents: [{ role: 'user', parts: reqBody.parts }],
           generationConfig: {
             temperature: reqBody.temperature !== undefined ? reqBody.temperature : 0.7,
-            maxOutputTokens: reqBody.maxOutputTokens || reqBody.maxTokens || 32000
+            maxOutputTokens: reqBody.maxOutputTokens || reqBody.maxTokens || 32000,
+            thinkingConfig: { thinkingBudget: reqBody.thinkingBudget !== undefined ? reqBody.thinkingBudget : 8192 }
           }
         };
 
@@ -1670,10 +1674,13 @@ TEXTE DE LA PAGE :
 ${pageText}`;
 
         const token = await getToken();
+        // Même trou que select-cts/name-ct (voir ailleurs dans ce fichier) : aucun thinkingConfig
+        // fixé, sur une sortie très courte (500 tokens) — risque de troncature identique.
+        // Tâche d'extraction pure, aucun bénéfice à réfléchir dessus.
         const vertexBody = {
           system_instruction: { parts: [{ text: 'Tu extrais des données structurées depuis du texte web brut. Tu ne réponds qu\'en JSON strict, jamais de texte autour.' }] },
           contents: [{ role: 'user', parts: [{ text: extractPrompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 500 }
+          generationConfig: { temperature: 0.1, maxOutputTokens: 500, thinkingConfig: { thinkingBudget: 0 } }
         };
         const data = await vertexRequest(token, 'gemini-2.5-flash', vertexBody);
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
@@ -2091,10 +2098,20 @@ Organise en sections (## AVIS PRODUIT, ## VERBATIMS REDDIT, ## VERBATIMS TRUSTPI
 Pour chaque verbatim ramené : cite la phrase exacte entre guillemets + l'URL de la source + (si possible) le pseudo de l'auteur. Si une section retourne ZÉRO résultat exploitable, écris explicitement [AUCUN VERBATIM TROUVÉ] pour cette section — ne fabrique rien.
 
 Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation — c\'est le rôle de l'analyste qui te suit, pas le tien.`;
+          // Cause profonde corrigée (scraping parfois pauvre/générique sur certains produits) :
+          // aucun thinkingConfig n'était fixé sur cette étape précise — la plus critique du
+          // pipeline Analyste selon Amar lui-même ("le 20/80, l'unfair advantage"). Sur un
+          // objectif de sortie dense (1500-3000 mots) avec seulement 8000 tokens de budget
+          // total, une réflexion non bornée pouvait consommer une part significative de ce
+          // budget avant même d'écrire la donnée brute — moins de marge pour vraiment tout
+          // organiser (avis, verbatims, prix concurrents, etc.), donc un rendu plus pauvre sur
+          // les produits où il y a le plus à trier. Borné ici (pas à zéro : organiser des
+          // résultats de recherche multi-sources en catégories avec citations exactes demande
+          // un vrai raisonnement), avec une marge de sortie large en dessous.
           const geminiBody = {
             contents: [{ role: 'user', parts: [{ text: researchPrompt }] }],
             tools: [{ googleSearch: {} }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 8000 }
+            generationConfig: { temperature: 0.2, maxOutputTokens: 8000, thinkingConfig: { thinkingBudget: 2048 } }
           };
           const data = await vertexRequest(token, 'gemini-2.5-flash', geminiBody, 150000, isTest ? 'analyste_grounding_test' : 'analyste_grounding_prod');
           if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
@@ -3029,9 +3046,11 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         const { prompt } = JSON.parse(body);
         if (!prompt) { res.writeHead(400); res.end(JSON.stringify({ error: 'prompt requis' })); return; }
         const token = await getToken();
+        // Aucun thinkingConfig n'était fixé ici — repli sur le défaut natif de Gemini, non
+        // borné. Fixé explicitement, cohérent avec le reste du fichier.
         const data = await vertexRequest(token, 'gemini-2.5-pro', {
           contents: [{ role:'user', parts:[{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 4000, temperature: 0.3 }
+          generationConfig: { maxOutputTokens: 4000, temperature: 0.3, thinkingConfig: { thinkingBudget: 1024 } }
         });
         const text = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
         console.log(`→ /gen-messages → ${text.length} chars`);
