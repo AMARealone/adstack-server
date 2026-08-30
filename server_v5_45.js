@@ -2042,7 +2042,7 @@ ${pageText}`;
         console.log('═'.repeat(60));
 
         // ── SOURCE 1/5 — Gemini 2.5 Flash + Google Search grounding ──
-        console.log('\n[1/5] Gemini Search grounding (recherche multi-source enrichie)...');
+        console.log('\n[1/4] Gemini Search grounding (recherche multi-source enrichie)...');
         let donneesBrutes = '';
         try {
           const token = await getToken();
@@ -2060,7 +2060,7 @@ PLAN DE RECHERCHE (effectue PLUSIEURS requêtes Google distinctes pour couvrir c
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 0. PAGE PRODUIT OFFICIELLE : ${lien_page_produit ? `accède à cette URL et extrais son contenu exact (prix, ingrédients, descriptions, avis) : ${lien_page_produit}` : '(non fourni)'}
-1. AVIS PRODUIT EXACT : "${produit}" "${marque}" + avis OU reviews OU "ça marche" (pays ${pays})
+1. VÉRIFICATION RAPIDE DU NOM EXACT : "${produit}" "${marque}" + avis OU reviews (pays ${pays}) — UNE seule requête ici, pas plus. La grande majorité des produits e-commerce que tu analyses sont des marques neuves, créées récemment par le client — ça ne renvoie presque toujours rien, et c'est normal, pas un échec. Ne LES INSISTE PAS. L'essentiel du volume de recherche doit porter sur les points suivants (catégorie/problème), qui ont une vraie chance de ramener de la donnée réelle.
 2. AVIS CATÉGORIE : "${produit}" + verbatims/témoignages (élargis à la catégorie produit, francophone)
 3. REDDIT : "${produit}" reddit OR sous-reddits liés (ex : r/Skincareaddiction, r/Nutrition, r/Senegal, r/CoteDIvoire)
 4. TRUSTPILOT : recherche avis sur "${marque}" + 2-3 concurrents directs identifiés — pour chaque concurrent, cherche spécifiquement CE QUI REVIENT dans les avis positifs (pourquoi les gens ont acheté, ce qu'ils apprécient) ET dans les avis négatifs (pourquoi ils regrettent, ce qui les a fait hésiter avant d'acheter)
@@ -2138,18 +2138,35 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
         }
 
         // ── SOURCE 2/5 — Google Trends (requêtes associées) ──
-        console.log('\n[2/5] Google Trends...');
+        console.log('\n[2/4] Google Trends...');
         try {
+          // Cause profonde corrigée (quasi toujours 0 requête associée trouvée) : interroger le
+          // NOM DE MARQUE exact du produit — une marque neuve n'a structurellement aucun volume
+          // de recherche, Trends ne peut rien renvoyer. Dérivé maintenant un terme de catégorie/
+          // problème générique via un petit appel Gemini dédié (rapide, pas cher, thinkingBudget
+          // à 0 — tâche d'extraction pure), qui LUI a une vraie chance d'avoir du volume.
+          let termeTrends = produit;
+          try {
+            const tokenCat = await getToken();
+            const catBody = {
+              contents: [{ role: 'user', parts: [{ text: `Produit : "${produit}"${marque ? ` (marque : ${marque})` : ''}. En 2-4 mots maximum, donne UNIQUEMENT la catégorie générique ou le problème que ce produit résout — jamais le nom de marque, jamais le nom de produit exact. Réponds uniquement ces 2-4 mots, rien d'autre, pas de ponctuation finale. Exemple : pour "Vitalina Energy" (complément énergisant), réponds "complément énergisant" ou "fatigue chronique".` }] }],
+              generationConfig: { temperature: 0.2, maxOutputTokens: 30, thinkingConfig: { thinkingBudget: 0 } }
+            };
+            const catData = await vertexRequest(tokenCat, 'gemini-2.5-flash', catBody, 15000, 'trends_categorie');
+            const catTerme = catData.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            if (catTerme && catTerme.length > 2 && catTerme.length < 60) { termeTrends = catTerme; console.log(`   → terme de catégorie dérivé : "${termeTrends}" (au lieu du nom exact)`); }
+          } catch(eCat) { console.log('   ✗ dérivation catégorie échouée, repli sur le nom exact :', eCat.message); }
+
           const geo = PAYS_TO_GEO[pays] || '';
           const googleTrends = require('google-trends-api');
-          const raw = await googleTrends.relatedQueries({ keyword: produit, geo, hl: 'fr' });
+          const raw = await googleTrends.relatedQueries({ keyword: termeTrends, geo, hl: 'fr' });
           const j = JSON.parse(raw);
           const ranked = j?.default?.rankedList?.[0]?.rankedKeyword || [];
           const top = ranked.slice(0, 8).map(k => k.query);
           console.log(`   → geo=${geo || '(monde)'}, ${top.length} requête(s) associée(s)`);
           top.forEach(q => console.log(`      • ${q}`));
           if (top.length) {
-            donneesBrutes += `### SOURCE — GOOGLE TRENDS (requêtes associées, ${geo || 'monde'})\n${top.join(', ')}\n\n`;
+            donneesBrutes += `### SOURCE — GOOGLE TRENDS (requêtes associées à "${termeTrends}", ${geo || 'monde'})\n${top.join(', ')}\n\n`;
           } else {
             console.log('   ✗ aucune requête associée trouvée');
           }
@@ -2159,7 +2176,7 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
         }
 
         // ── SOURCE 3/5 — YouTube (recherche + commentaires) ──
-        console.log('\n[3/5] YouTube Data API...');
+        console.log('\n[3/4] YouTube Data API...');
         try {
           let ytQuery = `${produit} ${marque} avis test`;
           let ytQ = encodeURIComponent(ytQuery);
@@ -2202,42 +2219,22 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
           console.log('   ✗ erreur YouTube :', e.message);
         }
 
-        // ── SOURCE 4/5 — Jumia (prix + produits concurrents) ──
-        console.log('\n[4/5] Jumia...');
-        try {
-          const tld = PAYS_TO_JUMIA_TLD[pays];
-          if (!tld) {
-            console.log(`   ✗ Jumia non disponible pour "${pays}" — source ignorée`);
-          } else {
-            const jq = encodeURIComponent(produit);
-            const jumiaUrl = `https://www.jumia.${tld}/catalog/?q=${jq}`;
-            console.log(`   → ${jumiaUrl}`);
-            const html = await fetchRawHtml(jumiaUrl);
-            console.log(`   → ${html.length} chars HTML reçus`);
-            const names = [...html.matchAll(/<h3[^>]*class="[^"]*name[^"]*"[^>]*>([^<]+)<\/h3>/gi)].map(m => m[1].trim());
-            const prices = [...html.matchAll(/<div[^>]*class="[^"]*prc[^"]*"[^>]*>([^<]+)<\/div>/gi)].map(m => m[1].trim());
-            console.log(`   → ${names.length} produit(s) trouvé(s)`);
-            const items = names.slice(0, 8).map((n, i) => `${n} — ${prices[i] || 'prix ?'}`);
-            items.forEach(it => console.log(`      • ${it}`));
-            if (items.length) {
-              donneesBrutes += `### SOURCE — JUMIA ${pays} (jumia.${tld})\n${items.join('\n')}\n\n`;
-            } else {
-              console.log('   ✗ aucun produit extrait — extrait HTML brut pour debug :');
-              console.log('   ' + html.replace(/\s+/g, ' ').slice(0, 600));
-            }
-          }
-        } catch (e) {
-          console.log('   ✗ erreur Jumia :', e.message);
-        }
+        // Cause profonde corrigée (Jumia ne renvoie jamais de produit) : ce scraping HTTP direct
+        // recevait systématiquement une page de challenge Cloudflare ("Just a moment..."), jamais
+        // la vraie page produit — vérifié sur le HTML brut reçu. Un simple appel HTTP ne peut
+        // jamais passer cette protection ; il faudrait un vrai navigateur avec JS, complexe et
+        // coûteux pour ce que ça rapportait. Retiré entièrement — les prix Jumia restent demandés
+        // au point 7 du plan de recherche de la Source 1 (Gemini Search), qui passe par
+        // l'infrastructure Google et n'est pas bloquée de la même façon.
 
         // ── SOURCE 5/5 — Google Custom Search ──
         // Retirée : Custom Search JSON API fermée aux nouveaux projets GCP (et arrêt total prévu 01/2027).
         // Son intention (recherche sur sites ciblés) est repliée dans le prompt de la Source 1 (TARGET_DOMAINS_HINT).
-        console.log('\n[5/5] Google Custom Search — retirée (API fermée aux nouveaux projets), repliée dans la Source 1.');
+        console.log('\n[Note] Google Custom Search et Jumia (scraping HTTP direct) retirés — repliés dans la Source 1 (Gemini Search).');
 
         // ── SOURCE 6 — Page produit client (lien_page_produit du brief) ──
         if (lien_page_produit && lien_page_produit.startsWith('http')) {
-          console.log('\n[6/6] Page produit client...');
+          console.log('\n[4/4] Page produit client...');
           console.log(`   → ${lien_page_produit}`);
           try {
             const pageHtml = await fetchRawHtml(lien_page_produit);
@@ -2305,7 +2302,7 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
             console.log("   → URL notée dans données malgré l'échec");
           }
         } else {
-          console.log('\n[6/6] Page produit — absente du brief (lien_page_produit non fourni)');
+          console.log('\n[4/4] Page produit — absente du brief (lien_page_produit non fourni)');
         }
 
         // ── Injection de DONNÉES BRUTES dans le bloc texte ──
