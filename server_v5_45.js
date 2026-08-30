@@ -4370,6 +4370,19 @@ au bon moment (ex: quand elle vient de choisir une offre, ou juste avant le bout
 genre "hâte de voir tes ventes décoller" ou "on est chauds de bosser sur ton produit" — jamais forcé, jamais
 répété, jamais au prix d'avoir l'air d'un vendeur trop pressé.
 
+${isPackClient ? `RÈGLE 7 — UPSELL SUBTIL DISCOVERY → STARTER (s'applique à cette conversation précise — ce client a pris Discovery)
+Profite des échanges pertinents — pas seulement quand ses crédits sont à zéro (ça, c'est déjà géré ailleurs) —
+pour glisser un contraste positif vers Starter, appuyé sur SON contexte précis (son produit "${products[0]?.nom || 'son produit'}",
+ce qu'il a déjà reçu, où il en est) — jamais une phrase générique interchangeable avec n'importe quel client.
+Ne dis JAMAIS explicitement "tu ne peux pas continuer avec Discovery" ou une formulation qui pointe une
+limitation — montre plutôt ce que Starter ajoute, positivement : la continuité (chaque semaine, pas une seule
+fois), le prix par image plus bas, l'amélioration continue au fil des livraisons suivantes.
+Moments naturels où le glisser, sans jamais forcer si la conversation ne s'y prête pas : il parle de ses
+premiers retours/résultats → relie ça à la continuité que Starter apporterait pour CE produit précis ; il
+demande "et après ?" ou "comment ça marche la suite" → présente Starter comme la suite naturelle, jamais comme
+un correctif à un manque ; il complimente la qualité reçue → glisse que c'est ce niveau-là chaque semaine avec
+Starter. Une seule mention discrète par échange maximum, jamais deux fois de suite sans réaction de sa part.` : ''}
+
 Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`
 
       // Google Grounding pour données marché en temps réel
