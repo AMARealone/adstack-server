@@ -4082,7 +4082,7 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
 
     // ── Rappel de renouvellement — chaque jour à partir de J-5 avant expiration ──
     try {
-      const subsRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?active=eq.true&select=user_id,plan,expires_at`, {
+      const subsRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?active=eq.true&select=user_id,plan,expires_at,started_at`, {
         headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
       });
       const activeSubs = await subsRes.json();
@@ -4106,6 +4106,55 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
           });
           await markSequenceSent(sub.user_id, dailyKey);
           sentCount++;
+        }
+
+        // ── Séquence Discovery → Starter — cible spécifiquement les comptes ayant acheté
+        // Discovery (le système principal plus haut s'arrête dès qu'un abonnement actif existe,
+        // donc ne couvre jamais ce cas). 4 emails + 3 push sur ~10 jours, ancrés sur le vrai
+        // point de bascule du pack Discovery (9 images, une seule fois, jamais renouvelé
+        // automatiquement) plutôt qu'un calendrier générique déconnecté de l'usage réel.
+        // Réutilise activeSubs déjà chargé juste au-dessus — pas de fetch redondant.
+        const discoveryUsers = activeSubs.filter(s => s.plan === 'discovery' && s.started_at);
+        const D2S_STEPS = [
+          { day: 0,  key: 'd2s_j0',              type: 'email' },
+          { day: 2,  key: 'd2s_checkin_1',       type: 'push'  },
+          { day: 4,  key: 'd2s_j4',              type: 'email' },
+          { day: 6,  key: 'd2s_fin_pack_1',      type: 'push'  },
+          { day: 7,  key: 'd2s_j7',              type: 'email' },
+          { day: 9,  key: 'd2s_dernier_rappel_1', type: 'push' },
+          { day: 10, key: 'd2s_j10',             type: 'email' },
+        ];
+        for (const sub of discoveryUsers) {
+          const ageDaysDiscovery = (Date.now() - new Date(sub.started_at).getTime()) / DAY_MS;
+          for (const step of D2S_STEPS) {
+            // Fenêtre ±0.5 jour — même tolérance que le reste de ce cron (fréquence quotidienne).
+            if (ageDaysDiscovery < step.day - 0.5 || ageDaysDiscovery >= step.day + 0.5) continue;
+            const alreadySentD2S = await wasSequenceSent(sub.user_id, step.key);
+            if (alreadySentD2S) continue;
+            if (step.type === 'email') {
+              const uRes = await fetch(`${SUPABASE_URL_INT}/auth/v1/admin/users/${sub.user_id}`, {
+                headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+              });
+              const u = await uRes.json();
+              if (!u?.email) continue;
+              const prodRes3 = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?user_id=eq.${sub.user_id}&select=nom&limit=1`, {
+                headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+              });
+              const prodsD = await prodRes3.json();
+              const okD2S = await sendSequenceEmail(u.email, step.key, {
+                firstName: u.user_metadata?.full_name?.split(' ')[0] || '',
+                productName: prodsD?.[0]?.nom || 'ton produit',
+                currency: u.user_metadata?.currency || 'XOF',
+              });
+              if (okD2S) { await markSequenceSent(sub.user_id, step.key); sentCount++; }
+            } else {
+              const tplPush = await chargerTemplate(`push_${step.key}`);
+              if (!tplPush) continue;
+              await sendPushToUser(sub.user_id, { title: tplPush.titre, body: tplPush.contenu, url: '/adboard/offers' });
+              await markSequenceSent(sub.user_id, step.key);
+              sentCount++;
+            }
+          }
         }
       }
     } catch(e) {
