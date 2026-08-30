@@ -4236,9 +4236,9 @@ if (req.method === 'POST' && req.url === '/chat') {
       } else if ((credits.available||0) >= 9) {
         situationAction = `${isPackClient ? 'A pris Conversion Discovery' : 'Abonné actif'}, ${products.length} produit(s) créé(s), ${credits.available} images DISPONIBLES MAINTENANT → dire d'aller sur "Mes Produits" et cliquer "Demander mes images" sur le produit concerné, livraison sous 48h. NE JAMAIS proposer un plan ni un renouvellement, il en a déjà des images disponibles.`;
       } else if (isPackClient) {
-        situationAction = `A pris Conversion Discovery (pack ponctuel, 18 images), mais les a toutes utilisées (0 disponible) → contrairement à un abonnement classique, ce pack ne se recharge JAMAIS automatiquement. Proposer de passer à un vrai abonnement (Starter/Pro/Scale selon son besoin) pour continuer à recevoir des images chaque semaine. NE JAMAIS dire d'attendre un rechargement — ça n'existe pas pour ce pack.`;
+        situationAction = `A pris Conversion Discovery (pack ponctuel, 18 images), mais les a toutes utilisées (0 disponible) → contrairement à un abonnement classique, ce pack n'inclut JAMAIS de nouvelles images automatiquement. Proposer de passer à un vrai abonnement (Starter/Pro/Scale selon son besoin) pour continuer à recevoir des images chaque semaine. NE JAMAIS dire d'attendre un renouvellement automatique — ça n'existe pas pour ce pack.`;
       } else {
-        situationAction = `Abonné actif, ${products.length} produit(s) créé(s), mais crédits de la semaine épuisés (0 disponible) → c'est normal et temporaire (l'abonnement lui-même reste actif, ce n'est qu'une pause hebdomadaire). Dire que les prochaines images arrivent au rechargement hebdomadaire${credits.nextCreditDate ? ' (' + new Date(credits.nextCreditDate).toLocaleDateString('fr-FR',{day:'numeric',month:'long'}) + ')' : ''}. NE JAMAIS proposer de reprendre un plan ou de "renouveler" — l'abonnement n'a pas expiré, c'est juste le cycle hebdomadaire normal.`;
+        situationAction = `Abonné actif, ${products.length} produit(s) créé(s), mais images de la semaine épuisées (0 disponible) → c'est normal et temporaire (l'abonnement lui-même reste actif, ce n'est qu'une pause hebdomadaire). Dire que les prochaines images arrivent à la prochaine livraison hebdomadaire${credits.nextCreditDate ? ' (' + new Date(credits.nextCreditDate).toLocaleDateString('fr-FR',{day:'numeric',month:'long'}) + ')' : ''}. NE JAMAIS proposer de reprendre un plan ou de "renouveler" — l'abonnement n'a pas expiré, c'est juste le cycle hebdomadaire normal.`;
       }
 
       const { currency='XOF', currencyRate=1 } = context;
@@ -4371,7 +4371,7 @@ genre "hâte de voir tes ventes décoller" ou "on est chauds de bosser sur ton p
 répété, jamais au prix d'avoir l'air d'un vendeur trop pressé.
 
 ${isPackClient ? `RÈGLE 7 — UPSELL SUBTIL DISCOVERY → STARTER (s'applique à cette conversation précise — ce client a pris Discovery)
-Profite des échanges pertinents — pas seulement quand ses crédits sont à zéro (ça, c'est déjà géré ailleurs) —
+Profite des échanges pertinents — pas seulement quand ses images sont à zéro (ça, c'est déjà géré ailleurs) —
 pour glisser un contraste positif vers Starter, appuyé sur SON contexte précis (son produit "${products[0]?.nom || 'son produit'}",
 ce qu'il a déjà reçu, où il en est) — jamais une phrase générique interchangeable avec n'importe quel client.
 Ne dis JAMAIS explicitement "tu ne peux pas continuer avec Discovery" ou une formulation qui pointe une
