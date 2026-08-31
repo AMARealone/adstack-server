@@ -5841,11 +5841,21 @@ if (req.method === 'POST' && req.url === '/track-funnel-event') {
       if (type !== 'ajout_panier' && type !== 'paiement_initie') {
         res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'type invalide' })); return;
       }
-      await fetch(`${SUPABASE_URL_INT}/rest/v1/funnel_events`, {
+      // Cause profonde probable (plus aucun ajout panier depuis la migration Supabase, alors que
+      // le vrai trafic existe côté Clarity) : cette écriture ne vérifiait jamais sa propre
+      // réussite — un {ok:true} était renvoyé au client quelle que soit la réponse réelle de
+      // Supabase. Si la clé service n'a pas été mise à jour vers le nouveau projet en même temps
+      // que l'URL, chaque insertion échoue en 401/403 depuis la migration, en silence total.
+      const rSupa = await fetch(`${SUPABASE_URL_INT}/rest/v1/funnel_events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, Prefer: 'return=minimal' },
         body: JSON.stringify({ type, prospect_id: prospect_id || null, campagne: campagne || null, source: source || 'vente', user_id: user_id || null })
       });
+      if (!rSupa.ok) {
+        const detail = await rSupa.text().catch(() => '');
+        console.error(`[track-funnel-event] Écriture Supabase échouée (${rSupa.status}) :`, detail);
+        res.writeHead(502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Écriture échouée', detail })); return;
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true }));
     } catch(e) {
       console.error('/track-funnel-event error:', e.message);
