@@ -638,7 +638,21 @@ async function renderSequenceEmail(key, { firstName='', productName='', productP
   };
 }
 
-async function sendSequenceEmail(email, key, ctx) {
+// Injecte des UTM sur tous les liens du site pointant vers adstackofficial.com — sans ça,
+// même un clic suivi de clic → achat ne peut jamais être relié à "vient de cet email précis".
+// N'importe où le lien a déjà des paramètres (?...), les UTM s'ajoutent avec & plutôt que
+// de casser l'URL existante.
+function injecterUtmDansHtml(html, emailKey) {
+  return html.replace(
+    /href="(https?:\/\/(?:www\.)?adstackofficial\.com[^"]*)"/g,
+    (match, url) => {
+      const separateur = url.includes('?') ? '&' : '?';
+      return `href="${url}${separateur}utm_source=email&utm_medium=email&utm_campaign=${encodeURIComponent(emailKey)}"`;
+    }
+  );
+}
+
+async function sendSequenceEmail(email, key, ctx, userId) {
   const RESEND_KEY = process.env.RESEND_API_KEY;
   if (!RESEND_KEY) return false;
   const tpl = await renderSequenceEmail(key, ctx);
@@ -652,7 +666,10 @@ async function sendSequenceEmail(email, key, ctx) {
         to: [email],
         reply_to: 'amarbiranediaw@gmail.com',
         subject: tpl.subject,
-        html: tpl.html,
+        html: injecterUtmDansHtml(tpl.html, key),
+        // Tags lus par /webhook/resend pour relier chaque ouverture/clic à cet email précis et
+        // à cet utilisateur précis — sans ça, un événement reçu ne dit rien de qui ni de quoi.
+        tags: [{ name: 'email_key', value: key }, ...(userId ? [{ name: 'user_id', value: userId }] : [])],
       })
     });
     return r.ok;
@@ -3977,7 +3994,7 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
           const prods = await prodRes.json();
           const hasProduct = Array.isArray(prods) && prods.length > 0;
           const emailKey = hasProduct ? 'j1_has_product' : 'j1_no_product';
-          const ok = await sendSequenceEmail(user.email, emailKey, { firstName, productName: hasProduct ? prods[0].nom : '', productPays: hasProduct ? prods[0].pays : '', currency: userCurrency });
+          const ok = await sendSequenceEmail(user.email, emailKey, { firstName, productName: hasProduct ? prods[0].nom : '', productPays: hasProduct ? prods[0].pays : '', currency: userCurrency }, user.id);
           if (ok) { await markSequenceSent(user.id, emailKey); sentCount++; }
         }
       }
@@ -3988,7 +4005,7 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
         if (ageDays >= step.day - 0.5 && ageDays < step.day + 0.5) {
           const alreadySent = await wasSequenceSent(user.id, step.key);
           if (!alreadySent) {
-            const ok = await sendSequenceEmail(user.email, step.key, { firstName, currency: userCurrency });
+            const ok = await sendSequenceEmail(user.email, step.key, { firstName, currency: userCurrency }, user.id);
             if (ok) { await markSequenceSent(user.id, step.key); sentCount++; }
           }
         }
@@ -4094,7 +4111,7 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
         if (ageDays >= targetDay - 1 && ageDays < targetDay + 1) {
           const alreadySent = await wasSequenceSent(user.id, monthlyKey);
           if (!alreadySent) {
-            const ok = await sendSequenceEmail(user.email, templateKey, { firstName, currency: userCurrency });
+            const ok = await sendSequenceEmail(user.email, templateKey, { firstName, currency: userCurrency }, user.id);
             if (ok) { await markSequenceSent(user.id, monthlyKey); sentCount++; }
           }
         }
@@ -4166,12 +4183,14 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
                 firstName: u.user_metadata?.full_name?.split(' ')[0] || '',
                 productName: prodsD?.[0]?.nom || 'ton produit',
                 currency: u.user_metadata?.currency || 'XOF',
-              });
+              }, sub.user_id);
               if (okD2S) { await markSequenceSent(sub.user_id, step.key); sentCount++; }
             } else {
               const tplPush = await chargerTemplate(`push_${step.key}`);
               if (!tplPush) continue;
-              await sendPushToUser(sub.user_id, { title: tplPush.titre, body: tplPush.contenu, url: '/adboard/offers' });
+              // Même logique d'attribution que les emails — utm_campaign porte la clé de
+              // l'étape, pour relier un clic sur cette notif à un ajout panier/achat ensuite.
+              await sendPushToUser(sub.user_id, { title: tplPush.titre, body: tplPush.contenu, url: `/adboard/offers?utm_source=push&utm_medium=push&utm_campaign=${encodeURIComponent(step.key)}` });
               await markSequenceSent(sub.user_id, step.key);
               sentCount++;
             }
@@ -5743,6 +5762,70 @@ if (req.method === 'GET' && req.url === '/setup-thumbnails') {
     res.writeHead(200, {'Content-Type':'application/json'});
     res.end(JSON.stringify(resultats, null, 2));
   })();
+  return;
+}
+
+// POST /webhook/resend — reçoit les événements ouverture/clic/livraison/rebond depuis Resend.
+// Resend signe via Svix (svix-id, svix-timestamp, svix-signature) — vérifié ici manuellement
+// avec crypto natif de Node, sans dépendance supplémentaire à installer. Le secret whsec_...
+// doit être configuré côté Resend (dashboard → Webhooks) ET dans RESEND_WEBHOOK_SECRET ici.
+function verifierSignatureSvix(payloadBrut, svixId, svixTimestamp, svixSignature, secret) {
+  if (!secret || !svixId || !svixTimestamp || !svixSignature) return false;
+  // Anti-rejeu — un webhook dont l'horodatage dépasse 5 min d'écart (passé ou futur) est refusé,
+  // même avec une signature par ailleurs valide.
+  const maintenant = Math.floor(Date.now() / 1000);
+  if (Math.abs(maintenant - parseInt(svixTimestamp, 10)) > 300) return false;
+  const cle = Buffer.from(secret.replace(/^whsec_/, ''), 'base64');
+  const contenuSigne = `${svixId}.${svixTimestamp}.${payloadBrut}`;
+  const signatureAttendue = crypto.createHmac('sha256', cle).update(contenuSigne).digest('base64');
+  // svix-signature peut contenir plusieurs signatures séparées par des espaces (ex: rotation de
+  // clé), chacune préfixée par sa version ("v1,xxxxx") — une seule doit correspondre.
+  return svixSignature.split(' ').some(s => {
+    const sig = s.startsWith('v1,') ? s.slice(3) : s;
+    try { return crypto.timingSafeEqual(Buffer.from(sig, 'base64'), Buffer.from(signatureAttendue, 'base64')); }
+    catch(e) { return false; }
+  });
+}
+
+if (req.method === 'POST' && req.url === '/webhook/resend') {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', async () => {
+    try {
+      const valide = verifierSignatureSvix(
+        body,
+        req.headers['svix-id'],
+        req.headers['svix-timestamp'],
+        req.headers['svix-signature'],
+        process.env.RESEND_WEBHOOK_SECRET
+      );
+      if (!valide) {
+        console.warn('[Webhook Resend] Signature invalide ou manquante — événement ignoré');
+        res.writeHead(401); res.end(); return;
+      }
+      const event = JSON.parse(body);
+      // type ex: "email.opened", "email.clicked", "email.delivered", "email.bounced"...
+      const eventType = (event.type || '').replace('email.', '');
+      const tags = event.data?.tags || [];
+      const emailKeyTag = tags.find(t => t.name === 'email_key');
+      const userIdTag = tags.find(t => t.name === 'user_id');
+      await fetch(`${SUPABASE_URL_INT}/rest/v1/email_events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          email_key: emailKeyTag?.value || null,
+          user_id: userIdTag?.value || null,
+          event_type: eventType,
+          resend_email_id: event.data?.email_id || null,
+          clicked_url: event.data?.click?.link || null,
+        })
+      });
+      res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true }));
+    } catch(e) {
+      console.error('[Webhook Resend] Erreur traitement :', e.message);
+      res.writeHead(200); res.end(); // 200 quand même — éviter des retries en boucle sur une erreur de notre côté
+    }
+  });
   return;
 }
 
