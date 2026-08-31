@@ -81,28 +81,28 @@ const OFFERS = {
     id: 'discovery', name: 'Conversion Discovery', isPack: true,
     tagline: "Achat unique, sans engagement — pour tester avant de s'abonner.",
     imagesPerWeek: 9, produitsPerWeek: '1',
-    once: { price: 12900, priceBarre: 20000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ywk7ik14/checkout' },
+    once: { price: 16900, priceBarre: 26900, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ywk7ik14/checkout' },
   },
   starter: {
     id: 'starter', name: 'Conversion Starter', isPack: false,
     tagline: 'Pour tester ses produits sereinement et obtenir ses premières ventes rentables.',
     imagesPerWeek: 9, produitsPerWeek: '1',
-    monthly: { price: 39900, priceBarre: 80000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
-    annual:  { price: 29900, priceBarre: 40000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_wdya3v9h/checkout' },
+    monthly: { price: 49900, priceBarre: 100000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
+    quarterly: { price: 34900, priceBarre: 50000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_wdya3v9h/checkout' },
   },
   pro: {
     id: 'pro', name: 'Conversion Pro', isPack: false, best: true,
     tagline: 'Pour dominer son marché et écraser ses coûts d\'acquisition.',
     imagesPerWeek: 18, produitsPerWeek: '1 à 2',
-    monthly: { price: 79900, priceBarre: 160000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
-    annual:  { price: 59900, priceBarre: 80000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_lnp4ax0b/checkout' },
+    monthly: { price: 99900, priceBarre: 200000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
+    quarterly: { price: 69900, priceBarre: 100000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_lnp4ax0b/checkout' },
   },
   scale: {
     id: 'scale', name: 'Conversion Scale', isPack: false,
     tagline: "L'arsenal complet pour inonder plusieurs marchés en simultané.",
     imagesPerWeek: 36, produitsPerWeek: '1 à 4',
-    monthly: { price: 119900, priceBarre: 320000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
-    annual:  { price: 89900, priceBarre: 120000,  delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_dn4fb72l/checkout' },
+    monthly: { price: 149900, priceBarre: 400000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
+    quarterly: { price: 104900, priceBarre: 150000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_dn4fb72l/checkout' },
   },
 };
 
@@ -116,9 +116,9 @@ function formatOffresPourPrompt(currency, currencyRate) {
   };
   const { starter, pro, scale, discovery } = OFFERS;
   return `${discovery.name} (achat unique, non abonnement) : ${fmt(discovery.once.price)} — ${discovery.imagesPerWeek} images, livraison ${discovery.once.delivery}
-${starter.name} : ${fmt(starter.monthly.price)}/mois (mensuel) ou ${fmt(starter.annual.price)}/mois (engagement annuel, -${Math.round((1-starter.annual.price/starter.monthly.price)*100)}%) · ${starter.imagesPerWeek} images/sem · ${starter.produitsPerWeek} produit
-${pro.name} : ${fmt(pro.monthly.price)}/mois (mensuel) ou ${fmt(pro.annual.price)}/mois (engagement annuel, -${Math.round((1-pro.annual.price/pro.monthly.price)*100)}%) · ${pro.imagesPerWeek} images/sem · ${pro.produitsPerWeek} produits
-${scale.name} : ${fmt(scale.monthly.price)}/mois (mensuel) ou ${fmt(scale.annual.price)}/mois (engagement annuel, -${Math.round((1-scale.annual.price/scale.monthly.price)*100)}%) · ${scale.imagesPerWeek} images/sem · ${scale.produitsPerWeek} produits`;
+${starter.name} : ${fmt(starter.monthly.price)}/mois (mensuel) ou ${fmt(starter.quarterly.price)}/mois (engagement trimestriel, -${Math.round((1-starter.quarterly.price/starter.monthly.price)*100)}%) · ${starter.imagesPerWeek} images/sem · ${starter.produitsPerWeek} produit
+${pro.name} : ${fmt(pro.monthly.price)}/mois (mensuel) ou ${fmt(pro.quarterly.price)}/mois (engagement trimestriel, -${Math.round((1-pro.quarterly.price/pro.monthly.price)*100)}%) · ${pro.imagesPerWeek} images/sem · ${pro.produitsPerWeek} produits
+${scale.name} : ${fmt(scale.monthly.price)}/mois (mensuel) ou ${fmt(scale.quarterly.price)}/mois (engagement trimestriel, -${Math.round((1-scale.quarterly.price/scale.monthly.price)*100)}%) · ${scale.imagesPerWeek} images/sem · ${scale.produitsPerWeek} produits`;
 }
 
 // Domaines suggérés à Gemini grounding pour la recherche ciblée (V4 — 6 sources enrichies)
@@ -578,19 +578,19 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 const SUPABASE_ANON_KEY_INT = process.env.SUPABASE_ANON_KEY || '';
 
 const PLAN_MAP = {
-  'prd_ywk7ik14': { plan: 'discovery', cycle: 'once',    type: 'pack', total_credits: 9,  price_fcfa: 12900,  prix_img: 1433 },
-  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly', credits_per_week: 9,  price_fcfa: 39900,  prix_img: 1108 },
-  'prd_wdya3v9h': { plan: 'starter', cycle: 'annual',  credits_per_week: 9,  price_fcfa: 29900,  prix_img: 831 },
-  'prd_34w031':   { plan: 'pro',     cycle: 'monthly', credits_per_week: 18, price_fcfa: 79900,  prix_img: 1110 },
-  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'annual',  credits_per_week: 18, price_fcfa: 59900,  prix_img: 832 },
-  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly', credits_per_week: 36, price_fcfa: 119900, prix_img: 833 },
-  'prd_dn4fb72l': { plan: 'scale',   cycle: 'annual',  credits_per_week: 36, price_fcfa: 89900,  prix_img: 624 },
+  'prd_ywk7ik14': { plan: 'discovery', cycle: 'once',    type: 'pack', total_credits: 9,  price_fcfa: 16900,  prix_img: 1878 },
+  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly', credits_per_week: 9,  price_fcfa: 49900,  prix_img: 1386 },
+  'prd_wdya3v9h': { plan: 'starter', cycle: 'quarterly', credits_per_week: 9,  price_fcfa: 34900,  prix_img: 969 },
+  'prd_34w031':   { plan: 'pro',     cycle: 'monthly', credits_per_week: 18, price_fcfa: 99900,  prix_img: 1388 },
+  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'quarterly', credits_per_week: 18, price_fcfa: 69900,  prix_img: 971 },
+  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly', credits_per_week: 36, price_fcfa: 149900, prix_img: 1041 },
+  'prd_dn4fb72l': { plan: 'scale',   cycle: 'quarterly', credits_per_week: 36, price_fcfa: 104900, prix_img: 728 },
 };
 
 const PLAN_LABELS = { discovery: 'Conversion Discovery', starter: 'Conversion Starter', pro: 'Conversion Pro', scale: 'Conversion Scale' };
 
 // ── Séquence email de conversion J1/J5/J12/J21 ─────────────────────────────
-const SEQUENCE_PRICES = { starter: { price: 39900 } }; // Starter mensuel, référence pour les prix cités dans les emails
+const SEQUENCE_PRICES = { starter: { price: 49900 } }; // Starter mensuel, référence pour les prix cités dans les emails
 
 // Convertit un prix FCFA vers la devise de la personne (détectée et mémorisée côté AdBoard).
 // Taux récupéré à chaque envoi — jamais de taux périmé, contrairement à un taux figé au moment de l'inscription.
@@ -772,7 +772,7 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      const cycleLabel = isPack ? 'Achat unique' : (cycle === 'annual' ? 'Abonnement annuel' : 'Abonnement mensuel');
+      const cycleLabel = isPack ? 'Achat unique' : (cycle === 'quarterly' ? 'Abonnement trimestriel' : 'Abonnement mensuel');
       const weeksInPeriod = Math.round((expiresAt.getTime() - paymentDate.getTime()) / (7*24*60*60*1000));
       const totalImages = isPack ? (totalCredits || 0) : weeksInPeriod * (creditsPerWeek || 0);
 
@@ -865,7 +865,7 @@ async function sendPaymentConfirmationEmail({ email, name, plan, cycle, creditsP
   }
 
   const planLabel = PLAN_LABELS[plan] || plan;
-  const cycleLabel = isPack ? 'achat unique' : (cycle === 'annual' ? 'annuel' : 'mensuel');
+  const cycleLabel = isPack ? 'achat unique' : (cycle === 'quarterly' ? 'trimestriel' : 'mensuel');
   const ligneImages = isPack
     ? `<p style="margin:4px 0;"><strong>Images incluses :</strong> ${totalCredits || 0} au total (utilisables librement jusqu'à expiration)</p>`
     : `<p style="margin:4px 0;"><strong>Images livrées :</strong> ${creditsPerWeek || 0} / semaine</p>`;
@@ -1023,7 +1023,9 @@ async function activateSubscription(userId, planInfo, email, name) {
   // Cause profonde évitée (pack traité comme abonnement) : un pack n'a pas de cycle hebdomadaire
   // récurrent — 3 mois fixes pour Discovery, pas de logique "credits_per_week × semaines" qui
   // continuerait à générer de nouvelles images chaque semaine indéfiniment.
-  const dureeJours = isPack ? 90 : (cycle === 'annual' ? 365 : 30);
+  // Cause du changement : le cycle long est passé d'annuel (365j) à trimestriel (91j), même
+  // remise (-30%), pour réduire l'engagement perçu tout en gardant l'avantage prix.
+  const dureeJours = isPack ? 90 : (cycle === 'quarterly' ? 91 : 30);
   let expiresAt = new Date(now.getTime() + dureeJours * 24 * 60 * 60 * 1000);
   let totalCredits = totalCreditsAchat;
 
@@ -4362,10 +4364,10 @@ demande explicitement. En dehors de ce cas : 1 seul bouton par message, jamais 2
 Prospect chaud → bouton checkout DIRECT au message suivant.
 [BTN:login] [BTN:openProductForm]
 [BTN:checkout:starter] [BTN:checkout:pro] [BTN:checkout:scale]
-[BTN:checkout-annual:starter] [BTN:checkout-annual:pro] [BTN:checkout-annual:scale]
+[BTN:checkout-quarterly:starter] [BTN:checkout-quarterly:pro] [BTN:checkout-quarterly:scale]
 [BTN:navigate:suivi] [BTN:navigate:galerie]
 [BTN:whatsapp]
-Utilise checkout-annual quand la personne parle d'engagement long terme, d'économiser, ou demande explicitement
+Utilise checkout-quarterly quand la personne parle d'économiser, ou demande explicitement
 l'annuel. Sinon, checkout (mensuel) reste le choix par défaut.
 Utilise [BTN:whatsapp] UNIQUEMENT dans ces cas précis : (1) la personne a payé mais n'arrive pas à se connecter
 avec le bon compte (probable mauvais email utilisé au paiement — dis-lui d'abord d'essayer de se connecter avec
