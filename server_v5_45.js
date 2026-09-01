@@ -543,7 +543,13 @@ async function callGeminiPro(systemPrompt, contentBlocks, maxOutputTokens, optio
     generationConfig
   };
 
-  const data = await vertexRequest(token, 'gemini-2.5-pro', geminiBody, timeoutMs, typeAppel);
+  // Cause profonde corrigée (commande entière plantée sans aucune image sur une simple erreur
+  // 429 "Resource exhausted" — transitoire par nature) : cette fonction appelait vertexRequest
+  // brut, sans aucun réessai, alors que vertexRequestAvecReessai existe déjà et gère précisément
+  // ce cas (4 tentatives, attente croissante sur limite de débit détectée). callGeminiPro est
+  // le point d'entrée partagé de l'Analyste, du Copywriter et de la Créative — ce seul
+  // changement protège les trois d'un coup.
+  const data = await vertexRequestAvecReessai(token, 'gemini-2.5-pro', geminiBody, timeoutMs, typeAppel);
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
   const cand = data.candidates?.[0];
   // Cause profonde corrigée (texte dupliqué/tronqué au milieu d'une phrase dans les Ad Copies) :
