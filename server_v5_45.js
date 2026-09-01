@@ -5815,7 +5815,12 @@ if (req.method === 'GET' && req.url.startsWith('/admin/migrate-demos-bucket')) {
   if (urlObjMig.searchParams.get('key') !== process.env.SEQUENCE_CRON_SECRET) {
     res.writeHead(403); res.end(JSON.stringify({ error: 'Clé invalide' })); return;
   }
+  // Répond immédiatement — le travail continue en arrière-plan, suivi uniquement dans les logs
+  // Render. Sans ça, la connexion HTTP restait ouverte tout le temps de la migration (plusieurs
+  // minutes possibles avec beaucoup de fichiers), et Render ou le navigateur pouvaient la couper
+  // avant la fin, même si le travail se poursuivait bien côté serveur.
   res.writeHead(200, {'Content-Type':'application/json'});
+  res.end(JSON.stringify({ ok: true, message: 'Migration démarrée en arrière-plan — suis sa progression dans les logs Render (cherche "[Migration Demos]")' }));
   (async () => {
     const ANCIEN_URL = 'https://mifljhsusidgzelnswma.supabase.co';
     const ANCIEN_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pZmxqaHN1c2lkZ3plbG5zd21hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MjI2MzQsImV4cCI6MjA5MzQ5ODYzNH0.AX4Xu0sP2tgjLhZSbCKhtw4Q3sd7GRMJ2aMKK3GfzUc';
@@ -5865,7 +5870,7 @@ if (req.method === 'GET' && req.url.startsWith('/admin/migrate-demos-bucket')) {
       resultat.erreur_globale = e.message;
       console.error('[Migration Demos] Erreur globale :', e.message);
     }
-    res.end(JSON.stringify(resultat, null, 2));
+    console.log('[Migration Demos] Rapport complet :', JSON.stringify(resultat, null, 2));
   })();
   return;
 }
