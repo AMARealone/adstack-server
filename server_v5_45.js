@@ -6758,7 +6758,11 @@ function fetchPageText(targetUrl, depth) {
           resolve(text);
         });
         stream.on('error', reject);
-        res.on('error', reject);
+        // Cause potentielle de blocage indéfini corrigée : .pipe() ne propage JAMAIS
+        // automatiquement une erreur de la source (res) vers la destination (stream de
+        // décompression) — sans ce forward explicite, une connexion qui s'interrompt en cours de
+        // décompression ne fait ni resolve ni reject, la promesse reste pendante pour toujours.
+        res.on('error', (e) => { stream.destroy(e); reject(e); });
       });
       r.on('error', reject);
       r.on('timeout', () => { r.destroy(); reject(new Error('Timeout URL')); });
