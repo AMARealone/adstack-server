@@ -6704,17 +6704,35 @@ function buildTeaserSvg({ marque, score }) {
 function fetchPageText(targetUrl, depth) {
   depth = depth || 0;
   return new Promise((resolve, reject) => {
-    // Cause probable du blocage silencieux total (aucun log, aucune erreur, même après 20s+) :
-    // l'option `timeout` de Node protège un socket déjà connecté mais inactif — elle ne couvre
-    // pas forcément un blocage PENDANT la résolution DNS ou l'établissement de la connexion
-    // elle-même, avant qu'un socket existe. Timeout global garanti ici, indépendant de tout
-    // comportement de socket — déclenche toujours, quoi qu'il arrive.
+    // Cause confirmée par les logs : connexion réussie, en-têtes reçus (HTTP 200, gzip), mais le
+    // flux ne se termine jamais proprement — le serveur distant garde la connexion ouverte malgré
+    // Connection: close. Plutôt que d'attendre une fin propre qui n'arrive jamais, le timeout
+    // utilise maintenant ce qui a déjà été reçu (souvent déjà complet ou quasi complet) au lieu
+    // de tout rejeter — bien plus utile qu'un échec sec sur une page qu'on a en réalité déjà.
     let reglee = false;
+    let data = '';
+    const nettoyer = (dataBrute) => dataBrute
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<nav[\s\S]*?<\/nav>/gi, ' ')
+      .replace(/<footer[\s\S]*?<\/footer>/gi, ' ')
+      .replace(/<header[\s\S]*?<\/header>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+      .replace(/\s{2,}/g, ' ').trim()
+      .slice(0, 12000);
     const finirUneFois = (fn, arg) => { if (reglee) return; reglee = true; clearTimeout(timeoutGlobal); fn(arg); };
     const timeoutGlobal = setTimeout(() => {
-      console.log(`   ⏱️ [fetchPageText] Timeout global (25s) atteint pour ${targetUrl} — aucune réponse reçue à temps`);
       if (req) req.destroy();
-      finirUneFois(reject, new Error('Timeout global 25s — aucune réponse'));
+      if (data.length >= 80) {
+        console.log(`   ⏱️ [fetchPageText] Timeout global (25s) — flux jamais terminé proprement, mais ${data.length} chars déjà reçus, utilisés tels quels`);
+        finirUneFois(resolve, nettoyer(data));
+      } else {
+        console.log(`   ⏱️ [fetchPageText] Timeout global (25s) atteint pour ${targetUrl} — aucune donnée exploitable reçue`);
+        finirUneFois(reject, new Error('Timeout global 25s — aucune réponse'));
+      }
     }, 25000);
     let req;
     try {
@@ -6756,22 +6774,10 @@ function fetchPageText(targetUrl, depth) {
           else if (encoding === 'deflate') stream = res.pipe(zlib.createInflate());
           else if (encoding === 'br') stream = res.pipe(zlib.createBrotliDecompress());
         } catch(eDecomp) { stream = res; } // repli sur le flux brut si la décompression elle-même échoue à démarrer
-        let data = '';
         stream.on('data', c => { data += c; if (data.length > 200000) res.destroy(); });
         stream.on('end', () => {
           console.log(`   [fetchPageText] Flux terminé — ${data.length} chars bruts reçus`);
-          const text = data
-            .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-            .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-            .replace(/<nav[\s\S]*?<\/nav>/gi, ' ')
-            .replace(/<footer[\s\S]*?<\/footer>/gi, ' ')
-            .replace(/<header[\s\S]*?<\/header>/gi, ' ')
-            .replace(/<[^>]+>/g, ' ')
-            .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
-            .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-            .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-            .replace(/\s{2,}/g, ' ').trim()
-            .slice(0, 12000);
+          const text = nettoyer(data);
           console.log(`   [fetchPageText] ✓ ${text.length} chars de texte nettoyé`);
           finirUneFois(resolve, text);
         });
