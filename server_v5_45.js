@@ -6798,14 +6798,15 @@ function fetchPageText(targetUrl, depth, avecImages) {
         brutes = viaJsonLd;
       } else {
         // Repli — aucun JSON-LD Product exploitable, balayage brut de la page comme avant.
+        // html est déjà passé au filtre anti-vente-croisée par emballer() en amont — pas de
+        // second passage nécessaire ici.
         console.log('   [fetchPageText] Pas de JSON-LD Product exploitable, repli sur balayage brut');
-        const htmlFiltre = retirerWidgetsVenteCroisee(html);
         const urls = new Set();
         const reSrc = /<img[^>]+(?:data-src|src)=["']([^"']+)["']/gi;
         const reOg = /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/gi;
         let m;
-        while ((m = reOg.exec(htmlFiltre))) urls.add(m[1]);
-        while ((m = reSrc.exec(htmlFiltre))) urls.add(m[1]);
+        while ((m = reOg.exec(html))) urls.add(m[1]);
+        while ((m = reSrc.exec(html))) urls.add(m[1]);
         brutes = [...urls].map(u => { try { return new URL(u, baseUrl).href; } catch(e) { return null; } }).filter(Boolean);
       }
       const vues = new Set();
@@ -6826,9 +6827,18 @@ function fetchPageText(targetUrl, depth, avecImages) {
       .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
       .replace(/\s{2,}/g, ' ').trim()
       .slice(0, 12000);
-    const emballer = (dataBrute) => avecImages
-      ? { text: nettoyer(dataBrute), images: extraireImages(dataBrute, targetUrl) }
-      : nettoyer(dataBrute);
+    // Filtre de widgets de vente croisée appliqué UNE FOIS ici, en amont — partagé par le texte
+    // (nettoyer) ET les images (extraireImages) ci-dessous. Avant ce correctif, seul le chemin
+    // image en bénéficiait ; le texte envoyé à Gemini restait pollué par le widget comparateur
+    // ("Quel produit choisir", listant plusieurs produits avec leur propre prix côte à côte),
+    // brouillant "de quel produit parle vraiment cette page" — cause du "confiance basse"
+    // persistant sur des pages pourtant parfaitement exploitables.
+    const emballer = (dataBrute) => {
+      const filtre = retirerWidgetsVenteCroisee(dataBrute);
+      return avecImages
+        ? { text: nettoyer(filtre), images: extraireImages(filtre, targetUrl) }
+        : nettoyer(filtre);
+    };
     const finirUneFois = (fn, arg) => { if (reglee) return; reglee = true; clearTimeout(timeoutGlobal); fn(arg); };
     const timeoutGlobal = setTimeout(() => {
       if (req) req.destroy();
