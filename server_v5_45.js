@@ -2086,16 +2086,18 @@ PLAN DE RECHERCHE (effectue PLUSIEURS requêtes Google distinctes pour couvrir c
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 0. PAGE PRODUIT OFFICIELLE : ${lien_page_produit ? `accède à cette URL et extrais son contenu exact (prix, ingrédients, descriptions, avis) : ${lien_page_produit}` : '(non fourni)'}
-1. VÉRIFICATION RAPIDE DU NOM EXACT : "${produit}" "${marque}" + avis OU reviews (pays ${pays}) — UNE seule requête ici, pas plus. La grande majorité des produits e-commerce que tu analyses sont des marques neuves, créées récemment par le client — ça ne renvoie presque toujours rien, et c'est normal, pas un échec. Ne LES INSISTE PAS. L'essentiel du volume de recherche doit porter sur les points suivants (catégorie/problème), qui ont une vraie chance de ramener de la donnée réelle.
+1. VÉRIFICATION RAPIDE DU NOM EXACT : "${produit}"${marque ? ` "${marque}"` : ''} + avis OU reviews (pays ${pays}) — UNE seule requête ici, pas plus. La grande majorité des produits e-commerce que tu analyses sont des marques neuves, créées récemment par le client — ça ne renvoie presque toujours rien, et c'est normal, pas un échec. Ne LES INSISTE PAS. L'essentiel du volume de recherche doit porter sur les points suivants (catégorie/problème), qui ont une vraie chance de ramener de la donnée réelle.
 2. AVIS CATÉGORIE : "${produit}" + verbatims/témoignages (élargis à la catégorie produit, francophone)
 3. REDDIT : "${produit}" reddit OR sous-reddits liés (ex : r/Skincareaddiction, r/Nutrition, r/Senegal, r/CoteDIvoire)
-4. TRUSTPILOT : recherche avis sur "${marque}" + 2-3 concurrents directs identifiés — pour chaque concurrent, cherche spécifiquement CE QUI REVIENT dans les avis positifs (pourquoi les gens ont acheté, ce qu'ils apprécient) ET dans les avis négatifs (pourquoi ils regrettent, ce qui les a fait hésiter avant d'acheter)
+4. TRUSTPILOT : ${marque ? `recherche avis sur "${marque}" + ` : 'recherche avis sur '}2-3 concurrents directs identifiés — pour chaque concurrent, cherche spécifiquement CE QUI REVIENT dans les avis positifs (pourquoi les gens ont acheté, ce qu'ils apprécient) ET dans les avis négatifs (pourquoi ils regrettent, ce qui les a fait hésiter avant d'acheter)
 5. ALIEXPRESS / AMAZON : reviews sur produits équivalents de la catégorie — extraits 1★ ET 5★, en notant explicitement la RAISON derrière chaque type d'avis (1★ = objection ou déception réelle, 5★ = déclencheur d'achat réel)
-6. X/TWITTER : mentions "${marque}" + hashtags liés à la catégorie + pays ${pays}
+6. X/TWITTER : ${marque ? `mentions "${marque}" + ` : 'mentions '}hashtags liés à la catégorie + pays ${pays}
 7. PRIX LOCAL ET CONCURRENTS : prix observés en ${pays} (devise locale) sur Jumia, sites locaux, groupes Facebook
 8. CONTEXTE CULTUREL PAYS : comment cette catégorie de produit est perçue/consommée dans ${pays}
 9. TAILLE ET CROISSANCE DU MARCHÉ : cherche des données chiffrées sur la taille de ce marché dans ${pays} ou en Afrique francophone (nombre de personnes concernées, volume de ventes estimé, valeur en FCFA/USD si trouvable), et des signaux de tendance (recherches Google Trends, articles sectoriels, croissance du e-commerce dans cette catégorie). Si aucun chiffre fiable n'est trouvé, écris explicitement [AUCUNE DONNÉE DE TAILLE DE MARCHÉ TROUVÉE] plutôt que d'estimer.
 10. SCEPTICISME DU MARCHÉ : sur les sites de concurrents et d'alternatives à ce produit (pas seulement la marque du client), cherche explicitement POURQUOI les gens achètent ce type de produit et POURQUOI ils ne l'achètent pas ou le regrettent — objections récurrentes (prix, doute sur l'efficacité, peur d'un effet indésirable, déception passée avec un produit similaire), et raisons d'achat récurrentes (recommandation, urgence d'un problème, réassurance trouvée quelque part). Cite les formulations réelles trouvées, pas une reformulation générique.
+
+RÈGLE ANTI-DOUBLON : avant chaque nouvelle requête, vérifie que tu n'as pas déjà posé une requête identique ou quasi identique (même mots, même ordre) plus tôt dans cette recherche. Reformule ou passe au point suivant plutôt que de répéter — chaque requête doit apporter un angle réellement nouveau.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ GARDE-FOU CRITIQUE — NE JAMAIS MÉLANGER PRODUIT EXACT ET CATÉGORIE
@@ -2163,26 +2165,27 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
           console.log('   ✗ erreur Gemini :', e.message);
         }
 
+        // Terme de catégorie/problème dérivé une seule fois, partagé par Trends ET YouTube
+        // ci-dessous — évite un second appel Gemini redondant pour le même besoin.
+        let termeCategorieDerivee = produit;
+        try {
+          const tokenCat = await getToken();
+          const catBody = {
+            contents: [{ role: 'user', parts: [{ text: `Produit : "${produit}"${marque ? ` (marque : ${marque})` : ''}. En 2-4 mots maximum, donne UNIQUEMENT la catégorie générique ou le problème que ce produit résout — jamais le nom de marque, jamais le nom de produit exact, jamais un thème/motif visuel du produit (ex: un t-shirt à motif voiture reste un t-shirt, pas une voiture). Réponds uniquement ces 2-4 mots, rien d'autre, pas de ponctuation finale. Exemple : pour "Vitalina Energy" (complément énergisant), réponds "complément énergisant" ou "fatigue chronique".` }] }],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 30, thinkingConfig: { thinkingBudget: 0 } }
+          };
+          const catData = await vertexRequest(tokenCat, 'gemini-2.5-flash', catBody, 15000, 'trends_categorie');
+          const catTerme = catData.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+          if (catTerme && catTerme.length > 2 && catTerme.length < 60) { termeCategorieDerivee = catTerme; console.log(`   → terme de catégorie dérivé (partagé Trends/YouTube) : "${termeCategorieDerivee}"`); }
+        } catch(eCat) { console.log('   ✗ dérivation catégorie échouée, repli sur le nom exact :', eCat.message); }
+
         // ── SOURCE 2/5 — Google Trends (requêtes associées) ──
         console.log('\n[2/4] Google Trends...');
         try {
           // Cause profonde corrigée (quasi toujours 0 requête associée trouvée) : interroger le
           // NOM DE MARQUE exact du produit — une marque neuve n'a structurellement aucun volume
-          // de recherche, Trends ne peut rien renvoyer. Dérivé maintenant un terme de catégorie/
-          // problème générique via un petit appel Gemini dédié (rapide, pas cher, thinkingBudget
-          // à 0 — tâche d'extraction pure), qui LUI a une vraie chance d'avoir du volume.
-          let termeTrends = produit;
-          try {
-            const tokenCat = await getToken();
-            const catBody = {
-              contents: [{ role: 'user', parts: [{ text: `Produit : "${produit}"${marque ? ` (marque : ${marque})` : ''}. En 2-4 mots maximum, donne UNIQUEMENT la catégorie générique ou le problème que ce produit résout — jamais le nom de marque, jamais le nom de produit exact. Réponds uniquement ces 2-4 mots, rien d'autre, pas de ponctuation finale. Exemple : pour "Vitalina Energy" (complément énergisant), réponds "complément énergisant" ou "fatigue chronique".` }] }],
-              generationConfig: { temperature: 0.2, maxOutputTokens: 30, thinkingConfig: { thinkingBudget: 0 } }
-            };
-            const catData = await vertexRequest(tokenCat, 'gemini-2.5-flash', catBody, 15000, 'trends_categorie');
-            const catTerme = catData.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-            if (catTerme && catTerme.length > 2 && catTerme.length < 60) { termeTrends = catTerme; console.log(`   → terme de catégorie dérivé : "${termeTrends}" (au lieu du nom exact)`); }
-          } catch(eCat) { console.log('   ✗ dérivation catégorie échouée, repli sur le nom exact :', eCat.message); }
-
+          // de recherche, Trends ne peut rien renvoyer.
+          const termeTrends = termeCategorieDerivee;
           const geo = PAYS_TO_GEO[pays] || '';
           const googleTrends = require('google-trends-api');
           const raw = await googleTrends.relatedQueries({ keyword: termeTrends, geo, hl: 'fr' });
@@ -2204,8 +2207,15 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
         // ── SOURCE 3/5 — YouTube (recherche + commentaires) ──
         console.log('\n[3/4] YouTube Data API...');
         try {
-          let ytQuery = `${produit} ${marque} avis test`;
+          // Cause profonde corrigée (vidéos hors-sujet — ex: contenu sur des voitures Mercedes
+          // AMG réelles pour un produit "T-SHIRT MERCEDES AMG - RACEMODE") : chercher le nom
+          // exact du produit laisse des termes de marque à fort volume (ici "Mercedes AMG")
+          // dominer la pertinence YouTube, qui n'a aucun moyen de savoir qu'il s'agit d'un
+          // vêtement et non d'une voiture. Le terme de catégorie dérivé plus haut sert de
+          // requête principale — bien plus fiable pour rester sur la vraie nature du produit.
+          let ytQuery = `${termeCategorieDerivee} avis test`;
           let ytQ = encodeURIComponent(ytQuery);
+
           let searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=3&relevanceLanguage=fr&q=${ytQ}&key=${YOUTUBE_API_KEY}`;
           let searchData = await httpsGetJson(searchUrl);
           if (searchData.error) throw new Error(searchData.error.message);
@@ -2213,7 +2223,8 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
           console.log(`   → ${videos.length} vidéo(s) trouvée(s) pour "${ytQuery}"`);
 
           if (!videos.length) {
-            // Fallback : élargir en retirant la marque (l'ingrédient/produit seul est souvent plus connu)
+            // Repli — si la catégorie générique ne ramène rien, tenter le nom exact du produit
+            // en dernier recours (rare mais possible sur une marque déjà connue/référencée).
             ytQuery = `${produit} avis`;
             ytQ = encodeURIComponent(ytQuery);
             searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=3&relevanceLanguage=fr&q=${ytQ}&key=${YOUTUBE_API_KEY}`;
