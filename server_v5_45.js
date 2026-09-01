@@ -6704,7 +6704,21 @@ function buildTeaserSvg({ marque, score }) {
 function fetchPageText(targetUrl, depth) {
   depth = depth || 0;
   return new Promise((resolve, reject) => {
+    // Cause probable du blocage silencieux total (aucun log, aucune erreur, même après 20s+) :
+    // l'option `timeout` de Node protège un socket déjà connecté mais inactif — elle ne couvre
+    // pas forcément un blocage PENDANT la résolution DNS ou l'établissement de la connexion
+    // elle-même, avant qu'un socket existe. Timeout global garanti ici, indépendant de tout
+    // comportement de socket — déclenche toujours, quoi qu'il arrive.
+    let reglee = false;
+    const finirUneFois = (fn, arg) => { if (reglee) return; reglee = true; clearTimeout(timeoutGlobal); fn(arg); };
+    const timeoutGlobal = setTimeout(() => {
+      console.log(`   ⏱️ [fetchPageText] Timeout global (25s) atteint pour ${targetUrl} — aucune réponse reçue à temps`);
+      if (req) req.destroy();
+      finirUneFois(reject, new Error('Timeout global 25s — aucune réponse'));
+    }, 25000);
+    let req;
     try {
+      console.log(`   [fetchPageText] Résolution/connexion vers ${targetUrl}...`);
       const urlObj = new URL(targetUrl);
       const isHttps = urlObj.protocol === 'https:';
       const lib = isHttps ? https : http;
@@ -6722,10 +6736,12 @@ function fetchPageText(targetUrl, depth) {
         },
         timeout: 20000
       };
-      const r = lib.request(options, (res) => {
+      req = lib.request(options, (res) => {
+        console.log(`   [fetchPageText] Réponse reçue — HTTP ${res.statusCode}, content-encoding: ${res.headers['content-encoding'] || '(aucun)'}`);
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && depth < 3) {
           const redir = new URL(res.headers.location, targetUrl).href;
-          fetchPageText(redir, depth + 1).then(resolve).catch(reject);
+          console.log(`   [fetchPageText] Redirection vers ${redir}`);
+          fetchPageText(redir, depth + 1).then(t => finirUneFois(resolve, t)).catch(e => finirUneFois(reject, e));
           return;
         }
         // Cause profonde corrigée (fiche produit jamais remplie automatiquement) : la requête
@@ -6743,6 +6759,7 @@ function fetchPageText(targetUrl, depth) {
         let data = '';
         stream.on('data', c => { data += c; if (data.length > 200000) res.destroy(); });
         stream.on('end', () => {
+          console.log(`   [fetchPageText] Flux terminé — ${data.length} chars bruts reçus`);
           const text = data
             .replace(/<script[\s\S]*?<\/script>/gi, ' ')
             .replace(/<style[\s\S]*?<\/style>/gi, ' ')
@@ -6755,19 +6772,20 @@ function fetchPageText(targetUrl, depth) {
             .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
             .replace(/\s{2,}/g, ' ').trim()
             .slice(0, 12000);
-          resolve(text);
+          console.log(`   [fetchPageText] ✓ ${text.length} chars de texte nettoyé`);
+          finirUneFois(resolve, text);
         });
-        stream.on('error', reject);
+        stream.on('error', (e) => { console.log(`   [fetchPageText] ✗ Erreur flux décompression : ${e.message}`); finirUneFois(reject, e); });
         // Cause potentielle de blocage indéfini corrigée : .pipe() ne propage JAMAIS
         // automatiquement une erreur de la source (res) vers la destination (stream de
         // décompression) — sans ce forward explicite, une connexion qui s'interrompt en cours de
         // décompression ne fait ni resolve ni reject, la promesse reste pendante pour toujours.
-        res.on('error', (e) => { stream.destroy(e); reject(e); });
+        res.on('error', (e) => { console.log(`   [fetchPageText] ✗ Erreur réponse brute : ${e.message}`); stream.destroy(e); finirUneFois(reject, e); });
       });
-      r.on('error', reject);
-      r.on('timeout', () => { r.destroy(); reject(new Error('Timeout URL')); });
-      r.end();
-    } catch(e) { reject(e); }
+      req.on('error', (e) => { console.log(`   [fetchPageText] ✗ Erreur requête : ${e.message}`); finirUneFois(reject, e); });
+      req.on('timeout', () => { console.log(`   [fetchPageText] ✗ Timeout socket Node (20s)`); req.destroy(); finirUneFois(reject, new Error('Timeout URL')); });
+      req.end();
+    } catch(e) { finirUneFois(reject, e); }
   });
 }
 
