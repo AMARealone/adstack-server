@@ -3487,20 +3487,33 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
       //    Trouvée et validée → nettoyage de CELLE-LÀ. Rien de trouvé → on nettoie quand même
       //    l'originale plutôt que de bloquer la production.
       if (!briefs[idx].photo_nobg) {
-        const photoOriginale = briefs[idx].product?.photo_base64 || briefs[idx].product?.photo_url;
+        // Carrousel — si le client a plusieurs images (récupérées de sa page produit ou
+        // uploadées), on choisit d'abord LAQUELLE est la vraie photo produit, avant même de
+        // dériver photoOriginale ci-dessous. Prioritaire sur photo_url/photo_base64 seules —
+        // celles-ci ne servent de repli que si aucun carrousel n'est présent ou exploitable.
+        const galerie = briefs[idx].product?.galerie_images;
+        let photoOriginale;
+        if (Array.isArray(galerie) && galerie.length > 1) {
+          console.log(`[Photo Pipeline] Carrousel de ${galerie.length} image(s) reçu — sélection de la vraie photo produit...`);
+          photoOriginale = await choisirPhotoProduitDuCarrousel(galerie);
+          if (photoOriginale) console.log('[Photo Pipeline] → Photo produit retenue du carrousel.');
+        }
+        if (!photoOriginale) {
+          photoOriginale = briefs[idx].product?.photo_base64 || briefs[idx].product?.photo_url;
+        }
         let photoBase64Source = null;
         if (photoOriginale && photoOriginale.startsWith('data:')) {
           photoBase64Source = photoOriginale;
-        } else if (briefs[idx].product?.photo_url) {
+        } else if (photoOriginale) {
           try {
-            const imgResp = await fetch(briefs[idx].product.photo_url, { signal: AbortSignal.timeout(15000) });
+            const imgResp = await fetch(photoOriginale, { signal: AbortSignal.timeout(15000) });
             if (imgResp.ok) {
               const ct = imgResp.headers.get('content-type') || 'image/jpeg';
               const buf = Buffer.from(await imgResp.arrayBuffer());
               photoBase64Source = `data:${ct};base64,${buf.toString('base64')}`;
             }
           } catch(e) {
-            console.warn('[Photo Pipeline] Récupération photo_url échouée :', e.message);
+            console.warn('[Photo Pipeline] Récupération de la photo échouée :', e.message);
           }
         }
 
@@ -6979,6 +6992,52 @@ async function chercherMeilleurePhotoProduit(photoBase64, mime) {
 // ── Analyse qualité photo produit (Gemini Vision) ──
 // Sert de déclencheur au pipeline photo complet (voir /commandes/:id/start) : une qualité
 // jugée mauvaise déclenche chercherMeilleurePhotoProduit() avant l'effacement de fond.
+// Sélection dans le carrousel — quand le client a plusieurs images (récupérées de sa page
+// produit ou uploadées), identifie laquelle est une VRAIE photo produit (le produit seul, net,
+// sans mise en scène ni texte promo superposé) plutôt qu'une bannière marketing, une photo
+// lifestyle avec un mannequin, ou un visuel de grille multi-produits — avant même de lancer le
+// contrôle qualité habituel dessus. Étape 1 d'un pipeline en deux temps : celle-ci choisit LA
+// bonne image, checkPhotoQuality juge ensuite si CETTE image précise est assez nette/propre.
+async function choisirPhotoProduitDuCarrousel(imagesUrls) {
+  if (!imagesUrls || imagesUrls.length <= 1) return null; // rien à trancher, une seule ou zéro image
+  const candidats = imagesUrls.slice(0, 6); // plafonné — au-delà, coût/temps disproportionnés pour peu de gain
+  try {
+    const images = [];
+    for (const url of candidats) {
+      try {
+        const imgResp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+        if (!imgResp.ok) continue;
+        const ct = imgResp.headers.get('content-type') || 'image/jpeg';
+        if (!ct.startsWith('image/')) continue;
+        const buf = Buffer.from(await imgResp.arrayBuffer());
+        images.push({ url, mime: ct, base64: buf.toString('base64') });
+      } catch(e) { /* image individuelle inaccessible — ignorée, pas bloquant pour les autres */ }
+    }
+    if (images.length < 2) return images[0]?.url || null; // 0 ou 1 image récupérable, rien à comparer
+
+    const contentBlocks = [
+      { type: 'text', text: `Tu vois ${images.length} images issues de la galerie d'une fiche produit e-commerce, numérotées de 1 à ${images.length} dans l'ordre où elles apparaissent ci-dessous. Identifie celle qui est LA VRAIE PHOTO PRODUIT — le produit seul, net, sur fond simple ou neutre, sans mannequin/mise en scène lifestyle, sans texte promotionnel superposé, sans grille multi-produits/multi-couleurs. Réponds UNIQUEMENT par un JSON strict : {"index":N,"raison":"..."} où N est le numéro (1 à ${images.length}) de la meilleure image, raison en une phrase courte. Si aucune ne convient vraiment, choisis quand même la moins mauvaise.` },
+    ];
+    images.forEach(img => contentBlocks.push({ type: 'image', source: { media_type: img.mime, data: img.base64 } }));
+
+    const result = await callGeminiPro(
+      'Tu identifies la vraie photo produit (isolée, nette, sans mise en scène) parmi plusieurs images d\'une galerie e-commerce. Réponds uniquement en JSON strict.',
+      contentBlocks, 200,
+      { temperature: 0.1, thinkingBudget: 256, logLabel: 'Sélection Carrousel', timeoutMs: 30000 }
+    );
+    const parsed = JSON.parse(result.replace(/```json|```/g, '').trim());
+    const idx = parseInt(parsed.index, 10) - 1;
+    if (idx >= 0 && idx < images.length) {
+      console.log(`[Carrousel] Photo produit choisie : image ${idx+1}/${images.length} — ${parsed.raison || ''}`);
+      return images[idx].url;
+    }
+    return images[0].url;
+  } catch(e) {
+    console.warn('[Carrousel] Sélection échouée, repli sur la première image :', e.message);
+    return imagesUrls[0] || null;
+  }
+}
+
 async function checkPhotoQuality(photoBase64) {
   try {
     const m = photoBase64.match(/^data:(image\/[a-z]+);base64,(.+)$/);
