@@ -1696,7 +1696,7 @@ const server = http.createServer(async (req, res) => {
         const extractPrompt = `Tu reçois le texte brut d'une page web. Détermine si c'est une fiche produit e-commerce, et si oui, extrais UNIQUEMENT les informations explicitement présentes — n'invente rien, ne déduis rien qui ne soit pas écrit noir sur blanc.
 
 Réponds en JSON strict, uniquement l'objet, aucun texte autour, aucun bloc markdown :
-{"nom":"nom du produit ou null","prix":"prix actuel affiché, AVEC sa devise telle qu'elle apparaît sur la page (ex: '13 900 FCFA', '10 dollars', '25€') — jamais un nombre seul sans devise, ou null si aucune devise n'est identifiable","pays":"pays/marché de vente si explicitement mentionné (plusieurs possibles séparés par virgule) ou null","utilite":"à quoi sert le produit, en une phrase de deux lignes maximum, basée sur la description de la page, ou null","promo":"offre promotionnelle actuelle si présente (ex: -20%, 2+1 gratuit) ou null","confiance":"haute|moyenne|basse"}
+{"nom":"nom du produit ou null","prix":"le prix COMPLET du produit, AVEC sa devise. S'il n'y a qu'un seul prix, donne-le simplement (ex: '13 900 FCFA'). S'il y a PLUSIEURS paliers/formules (ex: 1 mois / 2 mois / 3 mois, ou 1 unité / pack de 3 / pack de 5), liste-les TOUS, séparés par ' · ', chacun avec son propre prix et sa remise si affichée (ex: '19 000 FCFA (1 mois) · 36 100 FCFA (2 mois, -5%) · 51 300 FCFA (3 mois, -10%)') — jamais un seul prix choisi arbitrairement parmi plusieurs, jamais un nombre seul sans devise, null si aucun prix identifiable","pays":"pays/marché de vente si explicitement mentionné (plusieurs possibles séparés par virgule) ou null","utilite":"à quoi sert le produit, en une phrase de deux lignes maximum, basée sur la description de la page, ou null","promo":"offre promotionnelle GÉNÉRALE, distincte des paliers de prix ci-dessus — seuil de livraison gratuite, BOGO (achetez-en X recevez-en Y), cadeau offert, code promo affiché, etc. (ex: 'Livraison gratuite dès 50 000 FCFA', '2 achetés = 1 offert') — jamais une remise déjà comptée dans un palier de prix, null si aucune","confiance":"haute|moyenne|basse"}
 
 Si la page n'est pas une fiche produit exploitable (site général, accueil, blog, catégorie...), tous les champs à null et confiance:"basse".
 
@@ -1710,7 +1710,7 @@ ${pageText}`;
         const vertexBody = {
           system_instruction: { parts: [{ text: 'Tu extrais des données structurées depuis du texte web brut. Tu ne réponds qu\'en JSON strict, jamais de texte autour.' }] },
           contents: [{ role: 'user', parts: [{ text: extractPrompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 500, thinkingConfig: { thinkingBudget: 0 } }
+          generationConfig: { temperature: 0.1, maxOutputTokens: 700, thinkingConfig: { thinkingBudget: 0 } }
         };
         // Corrigé pour utiliser le retry existant (vertexRequestAvecReessai) — cet appel pouvait
         // échouer sec sur une simple limite de débit transitoire, comme observé en pratique.
@@ -6772,6 +6772,24 @@ function fetchPageText(targetUrl, depth, avecImages) {
         return url.origin + url.pathname;
       } catch(e) { return u; }
     };
+    // Retire les blocs identifiables comme vente croisée / comparateur / produits liés avant le
+    // balayage brut — sans ça, ces widgets (très courants, intégrés DANS la page produit elle-
+    // même sur beaucoup de thèmes, pas dans une barre latérale séparée) ramènent des images
+    // d'AUTRES produits. Fenêtre de taille fixe après chaque marqueur trouvé plutôt qu'un vrai
+    // parsing de balises équilibrées (impossible en regex pur) — approximatif mais couvre
+    // largement ces widgets sans risquer de tout retirer la page.
+    const retirerWidgetsVenteCroisee = (html) => {
+      const marqueurs = /class=["'][^"']*(related|recommend|cross-sell|crosssell|frequently|also-like|similar-product|upsell|popular-product|produits?-populaire|acheté[ -]fréquemment|comparateur|comparison|you-may-also|also-bought)[^"']*["']/gi;
+      let resultat = html;
+      let m;
+      const positions = [];
+      while ((m = marqueurs.exec(html))) positions.push(m.index);
+      // Retire du plus loin au plus proche pour ne pas décaler les positions déjà trouvées.
+      for (let i = positions.length - 1; i >= 0; i--) {
+        resultat = resultat.slice(0, positions[i]) + resultat.slice(positions[i] + 3000);
+      }
+      return resultat;
+    };
     const extraireImages = (html, baseUrl) => {
       const viaJsonLd = extraireImagesJsonLd(html, baseUrl);
       let brutes;
@@ -6781,12 +6799,13 @@ function fetchPageText(targetUrl, depth, avecImages) {
       } else {
         // Repli — aucun JSON-LD Product exploitable, balayage brut de la page comme avant.
         console.log('   [fetchPageText] Pas de JSON-LD Product exploitable, repli sur balayage brut');
+        const htmlFiltre = retirerWidgetsVenteCroisee(html);
         const urls = new Set();
         const reSrc = /<img[^>]+(?:data-src|src)=["']([^"']+)["']/gi;
         const reOg = /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/gi;
         let m;
-        while ((m = reOg.exec(html))) urls.add(m[1]);
-        while ((m = reSrc.exec(html))) urls.add(m[1]);
+        while ((m = reOg.exec(htmlFiltre))) urls.add(m[1]);
+        while ((m = reSrc.exec(htmlFiltre))) urls.add(m[1]);
         brutes = [...urls].map(u => { try { return new URL(u, baseUrl).href; } catch(e) { return null; } }).filter(Boolean);
       }
       const vues = new Set();
