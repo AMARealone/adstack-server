@@ -1682,7 +1682,11 @@ const server = http.createServer(async (req, res) => {
         const { url } = JSON.parse(body);
         if (!url || !/^https?:\/\//.test(url)) throw new Error('URL invalide');
         console.log(`→ Fetch fiche produit: ${url}`);
-        const pageText = await fetchPageText(url);
+        // avecImages=true — récupère aussi les URLs d'images de la page (galerie/carrousel),
+        // en plus du texte habituel. Voir fetchPageText pour l'extraction elle-même.
+        const paquet = await fetchPageText(url, 0, true);
+        const pageText = paquet.text;
+        const images = paquet.images || [];
         if (!pageText || pageText.length < 80) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: true, data: null, reason: 'page_vide' }));
@@ -1692,7 +1696,7 @@ const server = http.createServer(async (req, res) => {
         const extractPrompt = `Tu reçois le texte brut d'une page web. Détermine si c'est une fiche produit e-commerce, et si oui, extrais UNIQUEMENT les informations explicitement présentes — n'invente rien, ne déduis rien qui ne soit pas écrit noir sur blanc.
 
 Réponds en JSON strict, uniquement l'objet, aucun texte autour, aucun bloc markdown :
-{"nom":"nom du produit ou null","prix":"prix actuel affiché, nombre seul sans devise, ou null","pays":"pays/marché de vente si explicitement mentionné (plusieurs possibles séparés par virgule) ou null","utilite":"à quoi sert le produit en une phrase courte ou null","promo":"offre promotionnelle actuelle si présente (ex: -20%, 2+1 gratuit) ou null","confiance":"haute|moyenne|basse"}
+{"nom":"nom du produit ou null","prix":"prix actuel affiché, AVEC sa devise telle qu'elle apparaît sur la page (ex: '13 900 FCFA', '10 dollars', '25€') — jamais un nombre seul sans devise, ou null si aucune devise n'est identifiable","pays":"pays/marché de vente si explicitement mentionné (plusieurs possibles séparés par virgule) ou null","utilite":"à quoi sert le produit, en une phrase de deux lignes maximum, basée sur la description de la page, ou null","promo":"offre promotionnelle actuelle si présente (ex: -20%, 2+1 gratuit) ou null","confiance":"haute|moyenne|basse"}
 
 Si la page n'est pas une fiche produit exploitable (site général, accueil, blog, catégorie...), tous les champs à null et confiance:"basse".
 
@@ -1708,7 +1712,9 @@ ${pageText}`;
           contents: [{ role: 'user', parts: [{ text: extractPrompt }] }],
           generationConfig: { temperature: 0.1, maxOutputTokens: 500, thinkingConfig: { thinkingBudget: 0 } }
         };
-        const data = await vertexRequest(token, 'gemini-2.5-flash', vertexBody);
+        // Corrigé pour utiliser le retry existant (vertexRequestAvecReessai) — cet appel pouvait
+        // échouer sec sur une simple limite de débit transitoire, comme observé en pratique.
+        const data = await vertexRequestAvecReessai(token, 'gemini-2.5-flash', vertexBody, 90000, 'fetch_product_info');
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
         let raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         raw = raw.replace(/```json\s*|\s*```/g, '').trim();
@@ -1729,9 +1735,9 @@ ${pageText}`;
           if (parsed[k] && String(parsed[k]).toLowerCase() !== 'null') cleaned[k] = String(parsed[k]).trim();
         });
 
-        console.log(`✓ Fiche produit extraite (confiance: ${parsed.confiance}) — champs: ${Object.keys(cleaned).join(', ') || 'aucun'}`);
+        console.log(`✓ Fiche produit extraite (confiance: ${parsed.confiance}) — champs: ${Object.keys(cleaned).join(', ') || 'aucun'} · ${images.length} image(s)`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, data: cleaned, confiance: parsed.confiance }));
+        res.end(JSON.stringify({ ok: true, data: cleaned, confiance: parsed.confiance, images }));
       } catch(e) {
         console.error('✗ Erreur fetch-product-info:', e.message);
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -6701,7 +6707,7 @@ function buildTeaserSvg({ marque, score }) {
 }
 
 // ── URL Page Fetcher ────────────────────────────
-function fetchPageText(targetUrl, depth) {
+function fetchPageText(targetUrl, depth, avecImages) {
   depth = depth || 0;
   return new Promise((resolve, reject) => {
     // Cause confirmée par les logs : connexion réussie, en-têtes reçus (HTTP 200, gzip), mais le
@@ -6711,6 +6717,24 @@ function fetchPageText(targetUrl, depth) {
     // de tout rejeter — bien plus utile qu'un échec sec sur une page qu'on a en réalité déjà.
     let reglee = false;
     let data = '';
+    // Extraction d'images — cherche AVANT le nettoyage qui retire toutes les balises (dont
+    // src="...", perdu pour toujours une fois passé à la moulinette texte). Couvre src, data-src
+    // (lazy-loading, très courant) et og:image (fiable même quand la galerie est en JS pur).
+    // URLs relatives résolues contre l'URL de la page ; filtre les icônes/logos évidents.
+    const extraireImages = (html, baseUrl) => {
+      const urls = new Set();
+      const reSrc = /<img[^>]+(?:data-src|src)=["']([^"']+)["']/gi;
+      const reOg = /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/gi;
+      let m;
+      while ((m = reOg.exec(html))) urls.add(m[1]);
+      while ((m = reSrc.exec(html))) urls.add(m[1]);
+      return [...urls]
+        .map(u => { try { return new URL(u, baseUrl).href; } catch(e) { return null; } })
+        .filter(Boolean)
+        .filter(u => !/logo|icon|favicon|sprite|placeholder|avatar|\.svg(\?|$)/i.test(u))
+        .filter((u, i, arr) => arr.indexOf(u) === i)
+        .slice(0, 10);
+    };
     const nettoyer = (dataBrute) => dataBrute
       .replace(/<script[\s\S]*?<\/script>/gi, ' ')
       .replace(/<style[\s\S]*?<\/style>/gi, ' ')
@@ -6723,12 +6747,15 @@ function fetchPageText(targetUrl, depth) {
       .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
       .replace(/\s{2,}/g, ' ').trim()
       .slice(0, 12000);
+    const emballer = (dataBrute) => avecImages
+      ? { text: nettoyer(dataBrute), images: extraireImages(dataBrute, targetUrl) }
+      : nettoyer(dataBrute);
     const finirUneFois = (fn, arg) => { if (reglee) return; reglee = true; clearTimeout(timeoutGlobal); fn(arg); };
     const timeoutGlobal = setTimeout(() => {
       if (req) req.destroy();
       if (data.length >= 80) {
         console.log(`   ⏱️ [fetchPageText] Timeout global (25s) — flux jamais terminé proprement, mais ${data.length} chars déjà reçus, utilisés tels quels`);
-        finirUneFois(resolve, nettoyer(data));
+        finirUneFois(resolve, emballer(data));
       } else {
         console.log(`   ⏱️ [fetchPageText] Timeout global (25s) atteint pour ${targetUrl} — aucune donnée exploitable reçue`);
         finirUneFois(reject, new Error('Timeout global 25s — aucune réponse'));
@@ -6759,7 +6786,7 @@ function fetchPageText(targetUrl, depth) {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && depth < 3) {
           const redir = new URL(res.headers.location, targetUrl).href;
           console.log(`   [fetchPageText] Redirection vers ${redir}`);
-          fetchPageText(redir, depth + 1).then(t => finirUneFois(resolve, t)).catch(e => finirUneFois(reject, e));
+          fetchPageText(redir, depth + 1, avecImages).then(t => finirUneFois(resolve, t)).catch(e => finirUneFois(reject, e));
           return;
         }
         // Cause profonde corrigée (fiche produit jamais remplie automatiquement) : la requête
@@ -6777,9 +6804,9 @@ function fetchPageText(targetUrl, depth) {
         stream.on('data', c => { data += c; if (data.length > 200000) res.destroy(); });
         stream.on('end', () => {
           console.log(`   [fetchPageText] Flux terminé — ${data.length} chars bruts reçus`);
-          const text = nettoyer(data);
-          console.log(`   [fetchPageText] ✓ ${text.length} chars de texte nettoyé`);
-          finirUneFois(resolve, text);
+          const paquet = emballer(data);
+          console.log(`   [fetchPageText] ✓ ${(avecImages ? paquet.text : paquet).length} chars de texte nettoyé${avecImages ? ` · ${paquet.images.length} image(s) trouvée(s)` : ''}`);
+          finirUneFois(resolve, paquet);
         });
         stream.on('error', (e) => { console.log(`   [fetchPageText] ✗ Erreur flux décompression : ${e.message}`); finirUneFois(reject, e); });
         // Cause potentielle de blocage indéfini corrigée : .pipe() ne propage JAMAIS
