@@ -6734,18 +6734,65 @@ function fetchPageText(targetUrl, depth, avecImages) {
     // src="...", perdu pour toujours une fois passé à la moulinette texte). Couvre src, data-src
     // (lazy-loading, très courant) et og:image (fiable même quand la galerie est en JS pur).
     // URLs relatives résolues contre l'URL de la page ; filtre les icônes/logos évidents.
-    const extraireImages = (html, baseUrl) => {
-      const urls = new Set();
-      const reSrc = /<img[^>]+(?:data-src|src)=["']([^"']+)["']/gi;
-      const reOg = /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/gi;
+    // Cause profonde corrigée (images d'autres produits récupérées, doublons multiples) : le
+    // balayage de tous les <img> de la page attrapait aussi la barre latérale "Produits
+    // Populaire"/"Vous aimerez aussi", présente sur la quasi-totalité des pages produit Shopify
+    // — ce ne sont jamais des images DE ce produit. Et les mêmes images de galerie apparaissent
+    // souvent plusieurs fois dans le HTML (miniature + visionneuse + lightbox), chacune avec un
+    // paramètre de taille différent (?width=150 vs sans), donc jamais détectées comme doublons
+    // par une simple comparaison d'URL exacte.
+    // Priorité 1 — JSON-LD structuré (schema.org Product), quand présent : LA source de vérité
+    // du produit lui-même, jamais mélangée à la barre latérale, quel que soit le thème Shopify.
+    const extraireImagesJsonLd = (html, baseUrl) => {
+      const urls = [];
+      const reScripts = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
       let m;
-      while ((m = reOg.exec(html))) urls.add(m[1]);
-      while ((m = reSrc.exec(html))) urls.add(m[1]);
-      return [...urls]
+      while ((m = reScripts.exec(html))) {
+        try {
+          const bloc = JSON.parse(m[1].trim());
+          const items = Array.isArray(bloc) ? bloc : (bloc['@graph'] || [bloc]);
+          for (const item of items) {
+            if (item?.['@type'] !== 'Product' || !item.image) continue;
+            const imgs = Array.isArray(item.image) ? item.image : [item.image];
+            imgs.forEach(u => { if (typeof u === 'string') urls.push(u); });
+          }
+        } catch(e) { /* bloc JSON-LD invalide ou non-Product — ignoré, pas bloquant */ }
+      }
+      return urls
         .map(u => { try { return new URL(u, baseUrl).href; } catch(e) { return null; } })
-        .filter(Boolean)
+        .filter(Boolean);
+    };
+    // Normalise une URL image Shopify pour comparaison — retire les paramètres de taille/version
+    // (&width=, &height=, ?v=) qui font apparaître la MÊME image comme plusieurs URLs distinctes.
+    const cleUniqueImage = (u) => {
+      try {
+        const url = new URL(u);
+        url.searchParams.delete('width'); url.searchParams.delete('height');
+        url.searchParams.delete('v'); url.searchParams.delete('crop'); url.searchParams.delete('pad_color');
+        return url.origin + url.pathname;
+      } catch(e) { return u; }
+    };
+    const extraireImages = (html, baseUrl) => {
+      const viaJsonLd = extraireImagesJsonLd(html, baseUrl);
+      let brutes;
+      if (viaJsonLd.length) {
+        console.log(`   [fetchPageText] Images via JSON-LD (Product) : ${viaJsonLd.length} trouvée(s)`);
+        brutes = viaJsonLd;
+      } else {
+        // Repli — aucun JSON-LD Product exploitable, balayage brut de la page comme avant.
+        console.log('   [fetchPageText] Pas de JSON-LD Product exploitable, repli sur balayage brut');
+        const urls = new Set();
+        const reSrc = /<img[^>]+(?:data-src|src)=["']([^"']+)["']/gi;
+        const reOg = /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/gi;
+        let m;
+        while ((m = reOg.exec(html))) urls.add(m[1]);
+        while ((m = reSrc.exec(html))) urls.add(m[1]);
+        brutes = [...urls].map(u => { try { return new URL(u, baseUrl).href; } catch(e) { return null; } }).filter(Boolean);
+      }
+      const vues = new Set();
+      return brutes
         .filter(u => !/logo|icon|favicon|sprite|placeholder|avatar|\.svg(\?|$)/i.test(u))
-        .filter((u, i, arr) => arr.indexOf(u) === i)
+        .filter(u => { const cle = cleUniqueImage(u); if (vues.has(cle)) return false; vues.add(cle); return true; })
         .slice(0, 10);
     };
     const nettoyer = (dataBrute) => dataBrute
