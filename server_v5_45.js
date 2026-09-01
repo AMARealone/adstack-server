@@ -5804,7 +5804,73 @@ if (req.method === 'GET' && req.url === '/setup-thumbnails') {
   return;
 }
 
-// POST /webhook/resend — reçoit les événements ouverture/clic/livraison/rebond depuis Resend.
+// GET /admin/migrate-demos-bucket?key=... — migration à usage unique du bucket "demos" complet
+// (HTML de démos, miniatures PNG, images statiques AdStack) depuis l'ancien projet Supabase
+// vers le nouveau. Liste tout ce qui existe réellement dans le bucket source plutôt que de
+// deviner une liste depuis le code — garantit qu'aucun fichier n'est oublié. Protégé par le même
+// secret que les autres endpoints admin (SEQUENCE_CRON_SECRET) — à retirer une fois la migration
+// confirmée réussie, ce n'est pas fait pour rester en place.
+if (req.method === 'GET' && req.url.startsWith('/admin/migrate-demos-bucket')) {
+  const urlObjMig = new URL(req.url, `http://${req.headers.host}`);
+  if (urlObjMig.searchParams.get('key') !== process.env.SEQUENCE_CRON_SECRET) {
+    res.writeHead(403); res.end(JSON.stringify({ error: 'Clé invalide' })); return;
+  }
+  res.writeHead(200, {'Content-Type':'application/json'});
+  (async () => {
+    const ANCIEN_URL = 'https://mifljhsusidgzelnswma.supabase.co';
+    const ANCIEN_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pZmxqaHN1c2lkZ3plbG5zd21hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MjI2MzQsImV4cCI6MjA5MzQ5ODYzNH0.AX4Xu0sP2tgjLhZSbCKhtw4Q3sd7GRMJ2aMKK3GfzUc';
+    const resultat = { total: 0, reussis: 0, echoues: [], bucket_cree: false };
+    try {
+      // 1. Créer le bucket "demos" sur le nouveau projet, public, s'il n'existe pas déjà.
+      const creationBucket = await fetch(`${SUPABASE_URL_INT}/storage/v1/bucket`, {
+        method: 'POST',
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: 'demos', name: 'demos', public: true })
+      });
+      resultat.bucket_cree = creationBucket.ok;
+
+      // 2. Lister tout ce qui existe réellement dans le bucket source — jamais une liste devinée.
+      const listeRes = await fetch(`${ANCIEN_URL}/storage/v1/object/list/demos`, {
+        method: 'POST',
+        headers: { apikey: ANCIEN_KEY, Authorization: `Bearer ${ANCIEN_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prefix: '', limit: 1000, sortBy: { column: 'name', order: 'asc' } })
+      });
+      const fichiers = await listeRes.json();
+      if (!Array.isArray(fichiers)) throw new Error('Liste du bucket source invalide : ' + JSON.stringify(fichiers));
+      resultat.total = fichiers.length;
+      console.log(`[Migration Demos] ${fichiers.length} fichier(s) trouvé(s) dans le bucket source`);
+
+      // 3. Télécharger chaque fichier depuis l'ancien projet, ré-uploader vers le nouveau.
+      for (const f of fichiers) {
+        try {
+          const dl = await fetch(`${ANCIEN_URL}/storage/v1/object/public/demos/${encodeURIComponent(f.name)}`);
+          if (!dl.ok) throw new Error(`Téléchargement échoué (HTTP ${dl.status})`);
+          const buf = Buffer.from(await dl.arrayBuffer());
+          const ct = dl.headers.get('content-type') || 'application/octet-stream';
+          const up = await fetch(`${SUPABASE_URL_INT}/storage/v1/object/demos/${encodeURIComponent(f.name)}`, {
+            method: 'POST',
+            headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': ct, 'x-upsert': 'true' },
+            body: buf
+          });
+          if (!up.ok) throw new Error(`Upload échoué (HTTP ${up.status}) : ${await up.text()}`);
+          resultat.reussis++;
+          console.log(`[Migration Demos] ✓ ${f.name}`);
+        } catch(eFichier) {
+          resultat.echoues.push({ nom: f.name, erreur: eFichier.message });
+          console.error(`[Migration Demos] ✗ ${f.name} :`, eFichier.message);
+        }
+      }
+      console.log(`[Migration Demos] Terminé — ${resultat.reussis}/${resultat.total} réussis, ${resultat.echoues.length} échec(s)`);
+    } catch(e) {
+      resultat.erreur_globale = e.message;
+      console.error('[Migration Demos] Erreur globale :', e.message);
+    }
+    res.end(JSON.stringify(resultat, null, 2));
+  })();
+  return;
+}
+
+
 // Resend signe via Svix (svix-id, svix-timestamp, svix-signature) — vérifié ici manuellement
 // avec crypto natif de Node, sans dépendance supplémentaire à installer. Le secret whsec_...
 // doit être configuré côté Resend (dashboard → Webhooks) ET dans RESEND_WEBHOOK_SECRET ici.
