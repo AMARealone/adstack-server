@@ -5,6 +5,7 @@ const { Resvg } = require('@resvg/resvg-js');
 const PDFDocument = require('pdfkit');
 const webpush = require('web-push');
 const crypto = require('crypto');
+const zlib = require('zlib');
 const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
@@ -6710,9 +6711,21 @@ function fetchPageText(targetUrl, depth) {
           fetchPageText(redir, depth + 1).then(resolve).catch(reject);
           return;
         }
+        // Cause profonde corrigée (fiche produit jamais remplie automatiquement) : la requête
+        // annonçait Accept-Encoding: gzip, deflate mais la réponse n'était jamais décompressée —
+        // sur un site répondant en gzip (la majorité), le texte accumulé était du binaire brut,
+        // les regex de nettoyage HTML ne faisaient qu'abîmer davantage ce charabia, et Gemini ne
+        // pouvait rien y reconnaître. Décompression réelle ajoutée selon l'en-tête reçu.
+        let stream = res;
+        const encoding = (res.headers['content-encoding'] || '').toLowerCase();
+        try {
+          if (encoding === 'gzip') stream = res.pipe(zlib.createGunzip());
+          else if (encoding === 'deflate') stream = res.pipe(zlib.createInflate());
+          else if (encoding === 'br') stream = res.pipe(zlib.createBrotliDecompress());
+        } catch(eDecomp) { stream = res; } // repli sur le flux brut si la décompression elle-même échoue à démarrer
         let data = '';
-        res.on('data', c => { data += c; if (data.length > 200000) res.destroy(); });
-        res.on('end', () => {
+        stream.on('data', c => { data += c; if (data.length > 200000) res.destroy(); });
+        stream.on('end', () => {
           const text = data
             .replace(/<script[\s\S]*?<\/script>/gi, ' ')
             .replace(/<style[\s\S]*?<\/style>/gi, ' ')
@@ -6727,6 +6740,7 @@ function fetchPageText(targetUrl, depth) {
             .slice(0, 12000);
           resolve(text);
         });
+        stream.on('error', reject);
         res.on('error', reject);
       });
       r.on('error', reject);
