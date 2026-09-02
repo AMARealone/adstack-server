@@ -1378,8 +1378,14 @@ const server = http.createServer(async (req, res) => {
             });
 
             if (uploadRes.status === 200 || uploadRes.status === 201) {
-              ogImageUrl = `${SB_URL}/storage/v1/object/public/demos/${imgFilename}`;
-              console.log(`   → OG image Supabase : ${ogImageUrl}`);
+              // Cause profonde corrigée (grosse part de l'egress Supabase) : ogImageUrl était
+              // réécrite ici pour pointer DIRECTEMENT vers Supabase — chaque partage WhatsApp/
+              // réseaux du lien de démo déclenchait alors une requête directe à Supabase pour
+              // l'aperçu, sans jamais passer par le cache local de Render. Reste maintenant sur
+              // l'URL Render (déjà écrite en local juste avant ce bloc) — Supabase ne sert plus
+              // que de sauvegarde de secours, lue uniquement si le disque local a été effacé
+              // (voir /demo/:slug.ext, qui a maintenant son propre repli Supabase avec cache).
+              console.log(`   → OG image sauvegardée sur Supabase (secours) : ${SB_URL}/storage/v1/object/public/demos/${imgFilename}`);
             } else {
               console.log(`   ⚠️  Supabase upload échoué (${uploadRes.status}) : ${uploadRes.body.substring(0,100)}`);
             }
@@ -1496,9 +1502,27 @@ const server = http.createServer(async (req, res) => {
       if (fs.existsSync(filepath)) {
         res.writeHead(200, { 'Content-Type': contentTypes[ext], 'Cache-Control': 'public, max-age=86400' });
         res.end(fs.readFileSync(filepath));
-      } else {
-        res.writeHead(404); res.end('Not found');
+        return;
       }
+      // Cause profonde corrigée : cette image n'avait AUCUN repli Supabase — elle 404ait dès que
+      // le disque local était vide (chaque redéploiement), même si le fichier existait bien sur
+      // Supabase. Ajouté ici le même mécanisme que pour le HTML : récupération + réécriture en
+      // cache local, pour ne plus jamais retélécharger le même fichier à chaque requête.
+      const supabaseImgUrl = `https://mifljhsusidgzelnswma.supabase.co/storage/v1/object/public/demos/${raw}`;
+      https.get(supabaseImgUrl, sbRes => {
+        if (sbRes.statusCode === 200) {
+          let chunks = [];
+          sbRes.on('data', c => chunks.push(c));
+          sbRes.on('end', () => {
+            const buf = Buffer.concat(chunks);
+            try { fs.writeFileSync(filepath, buf); } catch(eCache) { console.warn('[Demo] Réécriture cache image locale échouée :', eCache.message); }
+            res.writeHead(200, { 'Content-Type': contentTypes[ext], 'Cache-Control': 'public, max-age=86400' });
+            res.end(buf);
+          });
+        } else {
+          res.writeHead(404); res.end('Not found');
+        }
+      }).on('error', () => { res.writeHead(404); res.end('Not found'); });
       return;
     }
 
@@ -1515,6 +1539,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── Fallback Supabase — le fichier local a disparu (redéploiement du serveur = disque effacé) ──
+    // Cause probable d'une grosse partie de l'egress Supabase : ce repli ne réécrivait jamais le
+    // fichier récupéré sur le disque local. Chaque requête suivante (potentiellement des dizaines
+    // par démo, vu la fréquence des redéploiements sur ce projet) retéléchargeait les mêmes 300+
+    // Ko depuis Supabase, encore et encore, plutôt qu'une seule fois jusqu'au prochain déploiement.
     const notFoundHtml = '<h1 style="font-family:sans-serif;color:#999;text-align:center;padding:80px;">Mindmap introuvable ou expirée</h1>';
     const supabaseHtmlUrl = `https://mifljhsusidgzelnswma.supabase.co/storage/v1/object/public/demos/${slug}.html`;
     https.get(supabaseHtmlUrl, sbRes => {
@@ -1522,11 +1550,13 @@ const server = http.createServer(async (req, res) => {
         let chunks = [];
         sbRes.on('data', c => chunks.push(c));
         sbRes.on('end', () => {
+          const buf = Buffer.concat(chunks);
+          try { fs.writeFileSync(filepath, buf); } catch(eCache) { console.warn('[Demo] Réécriture cache locale échouée :', eCache.message); }
           res.writeHead(200, {
             'Content-Type': 'text/html; charset=utf-8',
             'Cache-Control': 'public, max-age=3600'
           });
-          res.end(Buffer.concat(chunks));
+          res.end(buf);
         });
       } else {
         res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -5804,76 +5834,6 @@ if (req.method === 'GET' && req.url === '/setup-thumbnails') {
   return;
 }
 
-// GET /admin/migrate-demos-bucket?key=... — migration à usage unique du bucket "demos" complet
-// (HTML de démos, miniatures PNG, images statiques AdStack) depuis l'ancien projet Supabase
-// vers le nouveau. Liste tout ce qui existe réellement dans le bucket source plutôt que de
-// deviner une liste depuis le code — garantit qu'aucun fichier n'est oublié. Protégé par le même
-// secret que les autres endpoints admin (SEQUENCE_CRON_SECRET) — à retirer une fois la migration
-// confirmée réussie, ce n'est pas fait pour rester en place.
-if (req.method === 'GET' && req.url.startsWith('/admin/migrate-demos-bucket')) {
-  const urlObjMig = new URL(req.url, `http://${req.headers.host}`);
-  if (urlObjMig.searchParams.get('key') !== process.env.SEQUENCE_CRON_SECRET) {
-    res.writeHead(403); res.end(JSON.stringify({ error: 'Clé invalide' })); return;
-  }
-  // Répond immédiatement — le travail continue en arrière-plan, suivi uniquement dans les logs
-  // Render. Sans ça, la connexion HTTP restait ouverte tout le temps de la migration (plusieurs
-  // minutes possibles avec beaucoup de fichiers), et Render ou le navigateur pouvaient la couper
-  // avant la fin, même si le travail se poursuivait bien côté serveur.
-  res.writeHead(200, {'Content-Type':'application/json'});
-  res.end(JSON.stringify({ ok: true, message: 'Migration démarrée en arrière-plan — suis sa progression dans les logs Render (cherche "[Migration Demos]")' }));
-  (async () => {
-    const ANCIEN_URL = 'https://mifljhsusidgzelnswma.supabase.co';
-    const ANCIEN_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pZmxqaHN1c2lkZ3plbG5zd21hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MjI2MzQsImV4cCI6MjA5MzQ5ODYzNH0.AX4Xu0sP2tgjLhZSbCKhtw4Q3sd7GRMJ2aMKK3GfzUc';
-    const resultat = { total: 0, reussis: 0, echoues: [], bucket_cree: false };
-    try {
-      // 1. Créer le bucket "demos" sur le nouveau projet, public, s'il n'existe pas déjà.
-      const creationBucket = await fetch(`${SUPABASE_URL_INT}/storage/v1/bucket`, {
-        method: 'POST',
-        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: 'demos', name: 'demos', public: true })
-      });
-      resultat.bucket_cree = creationBucket.ok;
-
-      // 2. Lister tout ce qui existe réellement dans le bucket source — jamais une liste devinée.
-      const listeRes = await fetch(`${ANCIEN_URL}/storage/v1/object/list/demos`, {
-        method: 'POST',
-        headers: { apikey: ANCIEN_KEY, Authorization: `Bearer ${ANCIEN_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prefix: '', limit: 1000, sortBy: { column: 'name', order: 'asc' } })
-      });
-      const fichiers = await listeRes.json();
-      if (!Array.isArray(fichiers)) throw new Error('Liste du bucket source invalide : ' + JSON.stringify(fichiers));
-      resultat.total = fichiers.length;
-      console.log(`[Migration Demos] ${fichiers.length} fichier(s) trouvé(s) dans le bucket source`);
-
-      // 3. Télécharger chaque fichier depuis l'ancien projet, ré-uploader vers le nouveau.
-      for (const f of fichiers) {
-        try {
-          const dl = await fetch(`${ANCIEN_URL}/storage/v1/object/public/demos/${encodeURIComponent(f.name)}`);
-          if (!dl.ok) throw new Error(`Téléchargement échoué (HTTP ${dl.status})`);
-          const buf = Buffer.from(await dl.arrayBuffer());
-          const ct = dl.headers.get('content-type') || 'application/octet-stream';
-          const up = await fetch(`${SUPABASE_URL_INT}/storage/v1/object/demos/${encodeURIComponent(f.name)}`, {
-            method: 'POST',
-            headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': ct, 'x-upsert': 'true' },
-            body: buf
-          });
-          if (!up.ok) throw new Error(`Upload échoué (HTTP ${up.status}) : ${await up.text()}`);
-          resultat.reussis++;
-          console.log(`[Migration Demos] ✓ ${f.name}`);
-        } catch(eFichier) {
-          resultat.echoues.push({ nom: f.name, erreur: eFichier.message });
-          console.error(`[Migration Demos] ✗ ${f.name} :`, eFichier.message);
-        }
-      }
-      console.log(`[Migration Demos] Terminé — ${resultat.reussis}/${resultat.total} réussis, ${resultat.echoues.length} échec(s)`);
-    } catch(e) {
-      resultat.erreur_globale = e.message;
-      console.error('[Migration Demos] Erreur globale :', e.message);
-    }
-    console.log('[Migration Demos] Rapport complet :', JSON.stringify(resultat, null, 2));
-  })();
-  return;
-}
 
 
 // Resend signe via Svix (svix-id, svix-timestamp, svix-signature) — vérifié ici manuellement
