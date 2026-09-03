@@ -82,7 +82,7 @@ const OFFERS = {
     id: 'discovery', name: 'Conversion Discovery', isPack: true,
     tagline: "Achat unique, sans engagement — pour tester avant de s'abonner.",
     imagesPerWeek: 9, produitsPerWeek: '1',
-    once: { price: 16900, priceBarre: 26900, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ywk7ik14/checkout' },
+    once: { price: 16900, priceBarre: 20000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ywk7ik14/checkout' },
   },
   starter: {
     id: 'starter', name: 'Conversion Starter', isPack: false,
