@@ -6047,7 +6047,11 @@ if (req.method === 'GET' && req.url.startsWith('/s/')) {
     }
 
     if (link.thumbnail) {
-      const imgUrl = `https://mifljhsusidgzelnswma.supabase.co/storage/v1/object/public/demos/${link.thumbnail}.png`;
+      // Cause profonde corrigée (même classe de bug que l'og:image des démos) : cette URL pointait
+      // directement vers Supabase, sollicité à CHAQUE envoi de pitch/J+10/J+21 (potentiellement des
+      // centaines de fois pour seulement 3 fichiers statiques réutilisés). Route maintenant via
+      // /demo/:slug.png sur ce serveur, qui a déjà son propre cache local + repli Supabase.
+      const imgUrl = `${RENDER_URL_PUBLIC}/demo/${link.thumbnail}.png`;
       const escAttr = (s) => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
       const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
 <meta property="og:type" content="website">
