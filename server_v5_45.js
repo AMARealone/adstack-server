@@ -1523,7 +1523,11 @@ const server = http.createServer(async (req, res) => {
       // le disque local était vide (chaque redéploiement), même si le fichier existait bien sur
       // Supabase. Ajouté ici le même mécanisme que pour le HTML : récupération + réécriture en
       // cache local, pour ne plus jamais retélécharger le même fichier à chaque requête.
-      const supabaseImgUrl = `https://mifljhsusidgzelnswma.supabase.co/storage/v1/object/public/demos/${raw}`;
+      // Repli vers le projet ACTIF (pas l'ancien) — ces fichiers y existent aussi depuis la
+      // migration complète du bucket. Reste possible que ça échoue quand même si le quota
+      // d'egress est partagé au niveau de l'organisation entière (les deux projets dans le même
+      // pot commun) plutôt que par projet — à vérifier si le 402 persiste malgré ce changement.
+      const supabaseImgUrl = `${SUPABASE_URL_INT}/storage/v1/object/public/demos/${raw}`;
       console.log(`[/demo/] ✗ Absent du disque local — tentative Supabase : ${supabaseImgUrl}`);
       https.get(supabaseImgUrl, sbRes => {
         console.log(`[/demo/] Réponse Supabase : HTTP ${sbRes.statusCode}`);
@@ -1561,7 +1565,7 @@ const server = http.createServer(async (req, res) => {
     // par démo, vu la fréquence des redéploiements sur ce projet) retéléchargeait les mêmes 300+
     // Ko depuis Supabase, encore et encore, plutôt qu'une seule fois jusqu'au prochain déploiement.
     const notFoundHtml = '<h1 style="font-family:sans-serif;color:#999;text-align:center;padding:80px;">Mindmap introuvable ou expirée</h1>';
-    const supabaseHtmlUrl = `https://mifljhsusidgzelnswma.supabase.co/storage/v1/object/public/demos/${slug}.html`;
+    const supabaseHtmlUrl = `${SUPABASE_URL_INT}/storage/v1/object/public/demos/${slug}.html`;
     https.get(supabaseHtmlUrl, sbRes => {
       if (sbRes.statusCode === 200) {
         let chunks = [];
@@ -3203,7 +3207,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         } else {
           try {
             html = await new Promise((resolve, reject) => {
-              https.get(`https://mifljhsusidgzelnswma.supabase.co/storage/v1/object/public/demos/${slug}.html`, sbRes => {
+              https.get(`${SUPABASE_URL_INT}/storage/v1/object/public/demos/${slug}.html`, sbRes => {
                 if (sbRes.statusCode !== 200) { reject(new Error(`Supabase HTTP ${sbRes.statusCode}`)); return; }
                 let chunks = [];
                 sbRes.on('data', c => chunks.push(c));
