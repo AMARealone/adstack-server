@@ -1346,15 +1346,21 @@ const server = http.createServer(async (req, res) => {
           // ── Upload vers Supabase Storage (URL permanente, indépendante du serveur) ──
           let ogImageUrl = `${PUBLIC_URL}/demo/${imgFilename}`; // fallback local
           try {
-            const SB_URL = 'https://mifljhsusidgzelnswma.supabase.co';
-            const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pZmxqaHN1c2lkZ3plbG5zd21hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MjI2MzQsImV4cCI6MjA5MzQ5ODYzNH0.AX4Xu0sP2tgjLhZSbCKhtw4Q3sd7GRMJ2aMKK3GfzUc';
-            const sbHeaders = { 'Authorization': `Bearer ${SB_KEY}`, 'apikey': SB_KEY };
+            // Cause profonde corrigée (egress/quota Supabase qui grimpe en continu) : ce bloc
+            // écrivait CHAQUE nouvelle démo sur l'ancien projet, celui qu'on garde en lecture
+            // seule pour l'historique — jamais celui qu'on utilise activement. Chaque démo créée
+            // depuis la migration continuait donc de gonfler un projet déjà proche de sa limite,
+            // au lieu du nouveau. Bascule vers SUPABASE_URL_INT (projet actif), clé service
+            // cohérente avec le reste du fichier plutôt que l'ancienne clé anonyme codée en dur.
+            const SB_URL = SUPABASE_URL_INT;
+            const sbHeaders = { 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`, 'apikey': SUPABASE_SERVICE_KEY };
+            const sbHostname = new URL(SUPABASE_URL_INT).hostname;
 
             // Créer le bucket s'il n'existe pas
             await new Promise((res) => {
               const body = JSON.stringify({ id: 'demos', name: 'demos', public: true });
               const r = https.request({
-                hostname: 'mifljhsusidgzelnswma.supabase.co',
+                hostname: sbHostname,
                 path: '/storage/v1/bucket',
                 method: 'POST',
                 headers: { ...sbHeaders, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
@@ -1365,7 +1371,7 @@ const server = http.createServer(async (req, res) => {
             // Upload du PNG
             const uploadRes = await new Promise((resolve, reject) => {
               const r = https.request({
-                hostname: 'mifljhsusidgzelnswma.supabase.co',
+                hostname: sbHostname,
                 path: `/storage/v1/object/demos/${imgFilename}`,
                 method: 'POST',
                 headers: { ...sbHeaders, 'Content-Type': 'image/png', 'Content-Length': png.length, 'x-upsert': 'true' }
@@ -1438,16 +1444,18 @@ const server = http.createServer(async (req, res) => {
 
         // ── Upload HTML vers Supabase Storage — survit aux redéploiements du serveur (disque Render éphémère) ──
         try {
-          const SB_URL = 'https://mifljhsusidgzelnswma.supabase.co';
-          const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pZmxqaHN1c2lkZ3plbG5zd21hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MjI2MzQsImV4cCI6MjA5MzQ5ODYzNH0.AX4Xu0sP2tgjLhZSbCKhtw4Q3sd7GRMJ2aMKK3GfzUc';
-          const sbHeaders = { 'Authorization': `Bearer ${SB_KEY}`, 'apikey': SB_KEY };
+          // Même correctif que le bloc image OG juste au-dessus — voir son commentaire pour la
+          // cause profonde (egress qui grimpait en continu sur l'ancien projet, plus utilisé).
+          const SB_URL = SUPABASE_URL_INT;
+          const sbHeaders = { 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`, 'apikey': SUPABASE_SERVICE_KEY };
+          const sbHostname = new URL(SUPABASE_URL_INT).hostname;
           const htmlBuffer = Buffer.from(finalHtml, 'utf-8');
 
           // Créer le bucket s'il n'existe pas (idempotent, indépendant du bloc image OG plus haut)
           await new Promise((res) => {
             const bBody = JSON.stringify({ id: 'demos', name: 'demos', public: true });
             const r = https.request({
-              hostname: 'mifljhsusidgzelnswma.supabase.co',
+              hostname: sbHostname,
               path: '/storage/v1/bucket',
               method: 'POST',
               headers: { ...sbHeaders, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bBody) }
@@ -1457,7 +1465,7 @@ const server = http.createServer(async (req, res) => {
 
           const uploadRes = await new Promise((resolve, reject) => {
             const r = https.request({
-              hostname: 'mifljhsusidgzelnswma.supabase.co',
+              hostname: sbHostname,
               path: `/storage/v1/object/demos/${filename}.html`,
               method: 'POST',
               headers: { ...sbHeaders, 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': htmlBuffer.length, 'x-upsert': 'true' }
