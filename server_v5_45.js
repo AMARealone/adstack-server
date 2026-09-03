@@ -1500,6 +1500,7 @@ const server = http.createServer(async (req, res) => {
 
   // ── GET /demo/:slug(.ext) — serve a saved mindmap or its OG preview image ──
   if (req.method === 'GET' && req.url.startsWith('/demo/')) {
+    console.log(`[/demo/] Requête reçue : ${req.url}`);
     // Cause profonde corrigée (miniatures fixes introuvables, "Not found" alors qu'elles
     // existent bien) : ce filtre retirait les underscores — "adstack_thumb_main.png" devenait
     // "adstackthumbmain.png", que ni le disque local ni Supabase ne pouvaient jamais trouver.
@@ -1511,7 +1512,9 @@ const server = http.createServer(async (req, res) => {
     if (ext && contentTypes[ext]) {
       // Image OG (miniature WhatsApp/réseaux)
       const filepath = path.join(MINDMAPS_DIR, raw);
+      console.log(`[/demo/] Nom nettoyé : "${raw}" · Chemin local vérifié : ${filepath}`);
       if (fs.existsSync(filepath)) {
+        console.log(`[/demo/] ✓ Trouvé sur le disque local`);
         res.writeHead(200, { 'Content-Type': contentTypes[ext], 'Cache-Control': 'public, max-age=86400' });
         res.end(fs.readFileSync(filepath));
         return;
@@ -1521,7 +1524,9 @@ const server = http.createServer(async (req, res) => {
       // Supabase. Ajouté ici le même mécanisme que pour le HTML : récupération + réécriture en
       // cache local, pour ne plus jamais retélécharger le même fichier à chaque requête.
       const supabaseImgUrl = `https://mifljhsusidgzelnswma.supabase.co/storage/v1/object/public/demos/${raw}`;
+      console.log(`[/demo/] ✗ Absent du disque local — tentative Supabase : ${supabaseImgUrl}`);
       https.get(supabaseImgUrl, sbRes => {
+        console.log(`[/demo/] Réponse Supabase : HTTP ${sbRes.statusCode}`);
         if (sbRes.statusCode === 200) {
           let chunks = [];
           sbRes.on('data', c => chunks.push(c));
@@ -1534,7 +1539,7 @@ const server = http.createServer(async (req, res) => {
         } else {
           res.writeHead(404); res.end('Not found');
         }
-      }).on('error', () => { res.writeHead(404); res.end('Not found'); });
+      }).on('error', (eReq) => { console.log(`[/demo/] ✗ Erreur requête Supabase : ${eReq.message}`); res.writeHead(404); res.end('Not found'); });
       return;
     }
 
