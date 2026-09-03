@@ -1500,7 +1500,11 @@ const server = http.createServer(async (req, res) => {
 
   // ── GET /demo/:slug(.ext) — serve a saved mindmap or its OG preview image ──
   if (req.method === 'GET' && req.url.startsWith('/demo/')) {
-    const raw = req.url.slice(6).split('?')[0].replace(/[^a-zA-Z0-9\-.]/g, '');
+    // Cause profonde corrigée (miniatures fixes introuvables, "Not found" alors qu'elles
+    // existent bien) : ce filtre retirait les underscores — "adstack_thumb_main.png" devenait
+    // "adstackthumbmain.png", que ni le disque local ni Supabase ne pouvaient jamais trouver.
+    // Les slugs de démos (UUID/tirets) n'étaient jamais affectés, d'où un bug invisible jusqu'ici.
+    const raw = req.url.slice(6).split('?')[0].replace(/[^a-zA-Z0-9_\-.]/g, '');
     const ext = path.extname(raw).toLowerCase();
     const contentTypes = { '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png', '.webp':'image/webp' };
 
