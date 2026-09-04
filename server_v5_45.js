@@ -1178,8 +1178,22 @@ async function traiterAttributionCRM(userId) {
     const user = await r.json();
     const prospectId = user?.user_metadata?.crm_prospect_id;
     const campagne   = user?.user_metadata?.crm_last_campaign;
+
+    // Écriture générique, indépendante de l'existence d'un prospect CRM — couvre les canaux sans
+    // prospect identifiable (ex: statut WhatsApp, campagne='statut_whatsapp'). N'interfère pas
+    // avec le comptage jc/p.j_plus_achat utilisé par le dashboard pour pitch/démo/J+3/J+10/J+21,
+    // qui reste la source pour ces campagnes-là ; sert uniquement les nouvelles campagnes non
+    // rattachées à un prospect.
+    if (campagne) {
+      fetch(`${SUPABASE_URL_INT}/rest/v1/funnel_events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, Prefer: 'return=minimal' },
+        body: JSON.stringify({ type: 'achat', campagne, source: 'chariow', prospect_id: prospectId || null, user_id: userId })
+      }).catch(e => console.error('[Attribution CRM] Échec écriture achat funnel_events:', e.message));
+    }
+
     if (!prospectId) {
-      console.log('[Attribution CRM] Aucune attribution pour cet utilisateur — achat non lié à un prospect CRM');
+      console.log('[Attribution CRM] Aucun prospect CRM rattaché — achat non lié à un prospect (campagne enregistrée séparément si présente)');
       return;
     }
 
