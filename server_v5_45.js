@@ -4496,6 +4496,10 @@ Prospect chaud → bouton checkout DIRECT au message suivant.
 [BTN:checkout-quarterly:starter] [BTN:checkout-quarterly:pro] [BTN:checkout-quarterly:scale]
 [BTN:navigate:suivi] [BTN:navigate:galerie]
 [BTN:whatsapp]
+INTERDIT ABSOLU : n'écris JAMAIS un lien markdown ([texte](url)) ni une URL brute (chariow, mychariow, ou
+autre) pour proposer un paiement — même trouvée via la recherche Google ou ailleurs dans le contexte. Un lien
+direct saute le popup de paiement intégré (devise, code promo) et peut pointer vers une page obsolète. Le SEUL
+moyen valide de proposer une action est le token [BTN:...] ci-dessus.
 Utilise checkout-quarterly quand la personne parle d'économiser, ou demande explicitement
 l'annuel. Sinon, checkout (mensuel) reste le choix par défaut.
 Utilise [BTN:whatsapp] UNIQUEMENT dans ces cas précis : (1) la personne a payé mais n'arrive pas à se connecter
@@ -4551,7 +4555,7 @@ Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`
         // un bug déjà rencontré et corrigé ailleurs dans ce fichier (le budget de réflexion
         // partage le même total que la sortie — sans budget dédié, la vraie réponse peut être
         // tronquée avant même d'être écrite). maxOutputTokens élargi en conséquence.
-        generationConfig: { maxOutputTokens: 500, temperature: 0.4, thinkingConfig: { thinkingBudget: 512 } },
+        generationConfig: { maxOutputTokens: 900, temperature: 0.4, thinkingConfig: { thinkingBudget: 512 } },
         tools: [{ googleSearch: {} }],
       };
 
@@ -4722,6 +4726,9 @@ RÈGLE 1 — FORMAT (décide AVANT d'écrire)
 → 2-4 éléments = bullets courts, 1 ligne max chacun
 → Jamais de bloc > 4 lignes sans saut de ligne — un paragraphe = une seule idée
 → Toujours finir par UNE courte question (sauf CTA)
+Une question vague ou générale ("dites-m'en plus", "qui êtes-vous", "j'aimerais en savoir plus sur vous") appelle
+une réponse COURTE (2-3 phrases max) qui donne juste assez envie de creuser — jamais un paragraphe complet qui
+déroule toute l'offre d'un coup. Garde de la matière pour les échanges suivants.
 
 RÈGLE 2 — CONCISION
 Maximum d'info, minimum de mots. Jamais d'information superflue déjà visible sur la page — condense, ne répète pas.
@@ -4738,6 +4745,11 @@ RÈGLE 3 — CTA
 0 bouton avant le 3ème échange. 1 seul par message. Jamais 2 de suite.
 [BTN:offres:Voir les offres] [BTN:checkout:starter:Démarrer avec Starter →] [BTN:checkout:pro:Démarrer avec Pro →]
 [BTN:checkout:scale:Démarrer avec Scale →] [BTN:checkout:discovery:Tester avec Discovery →]
+INTERDIT ABSOLU : n'écris JAMAIS un lien markdown ([texte](url)) ni une URL brute (chariow, mychariow, ou
+autre) pour proposer un paiement ou une offre — même si tu la retrouves via la recherche Google ou ailleurs
+dans le contexte. Un lien direct saute le popup de paiement intégré à la page (devise, code promo, expérience
+soignée) et peut pointer vers une page obsolète. Le SEUL moyen valide de proposer une action d'achat est le
+token [BTN:...] ci-dessus — rien d'autre, jamais.
 Prospect chaud (a déjà vu une démo, pose des questions de prix/délai précises) → bouton checkout DIRECT, sur
 l'offre qui correspond à SON profil (voir OFFRES) — jamais Discovery sauf s'il est explicitement hésitant/sensible
 au prix.
@@ -4758,7 +4770,7 @@ Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`;
         // un bug déjà rencontré et corrigé ailleurs dans ce fichier (le budget de réflexion
         // partage le même total que la sortie — sans budget dédié, la vraie réponse peut être
         // tronquée avant même d'être écrite). maxOutputTokens élargi en conséquence.
-        generationConfig: { maxOutputTokens: 500, temperature: 0.4, thinkingConfig: { thinkingBudget: 512 } },
+        generationConfig: { maxOutputTokens: 900, temperature: 0.4, thinkingConfig: { thinkingBudget: 512 } },
         tools: [{ googleSearch: {} }],
       };
 
