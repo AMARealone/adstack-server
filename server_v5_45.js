@@ -3444,6 +3444,46 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
     return;
   }
 
+// POST /x-conversion — envoie l'événement Purchase à l'API Conversions X (Twitter),
+// en complément du pixel navigateur (twq), pour ne pas dépendre des bloqueurs de pub / ITP.
+  if (req.method === 'POST' && req.url === '/x-conversion') {
+    let body = '';
+    req.on('data', d => body += d);
+    req.on('end', async () => {
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok: true }));
+      try {
+        const { email, value, plan_name, conversion_id } = JSON.parse(body);
+        const X_PIXEL_TOKEN = process.env.X_PIXEL_TOKEN || '';
+        const X_PURCHASE_EVENT_ID = process.env.X_PURCHASE_EVENT_ID || '';
+        if (!email || !X_PIXEL_TOKEN || !X_PURCHASE_EVENT_ID) {
+          if (!X_PIXEL_TOKEN) console.warn('[X CAPI] X_PIXEL_TOKEN non configuré');
+          if (!X_PURCHASE_EVENT_ID) console.warn('[X CAPI] X_PURCHASE_EVENT_ID non configuré');
+          return;
+        }
+        const hashedEmail = crypto.createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
+        const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+        const userAgent = req.headers['user-agent'] || '';
+        await fetch(`https://ads-api.x.com/12/measurement/conversions/rf8c2`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Pixel-Token': X_PIXEL_TOKEN,
+          },
+          body: JSON.stringify({
+            conversions: [{
+              conversion_time: new Date().toISOString(),
+              event_id: X_PURCHASE_EVENT_ID,
+              conversion_id: conversion_id || undefined,
+              identifiers: [{ hashed_email: hashedEmail, ip_address: ip, user_agent: userAgent }],
+            }]
+          })
+        });
+      } catch(e) { console.error('[X CAPI] Erreur:', e.message); }
+    });
+    return;
+  }
+
 // POST /webhook/brief — reçoit un ticket de commande depuis AdBoard
   if (req.method === 'POST' && req.url === '/webhook/brief') {
 
