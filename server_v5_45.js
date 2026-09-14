@@ -82,28 +82,28 @@ const OFFERS = {
     id: 'discovery', name: 'Conversion Discovery', isPack: true,
     tagline: "Achat unique, sans engagement — pour tester avant de s'abonner.",
     imagesPerWeek: 9, produitsPerWeek: '1',
-    once: { price: 16900, priceBarre: 20000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ywk7ik14/checkout' },
+    once: { price: 12900, priceBarre: 20000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ywk7ik14/checkout' },
   },
   starter: {
     id: 'starter', name: 'Conversion Starter', isPack: false,
     tagline: 'Pour tester ses produits sereinement et obtenir ses premières ventes rentables.',
     imagesPerWeek: 9, produitsPerWeek: '1',
-    monthly: { price: 49900, priceBarre: 100000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
-    quarterly: { price: 34900, priceBarre: 50000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_wdya3v9h/checkout' },
+    monthly: { price: 34900, priceBarre: 100000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
+    quarterly: { price: 29900, priceBarre: 35000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_wdya3v9h/checkout' },
   },
   pro: {
     id: 'pro', name: 'Conversion Pro', isPack: false, best: true,
     tagline: 'Pour dominer son marché et écraser ses coûts d\'acquisition.',
     imagesPerWeek: 18, produitsPerWeek: '1 à 2',
-    monthly: { price: 99900, priceBarre: 200000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
-    quarterly: { price: 69900, priceBarre: 100000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_lnp4ax0b/checkout' },
+    monthly: { price: 69900, priceBarre: 200000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
+    quarterly: { price: 59900, priceBarre: 70000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_lnp4ax0b/checkout' },
   },
   scale: {
     id: 'scale', name: 'Conversion Scale', isPack: false,
     tagline: "L'arsenal complet pour inonder plusieurs marchés en simultané.",
     imagesPerWeek: 36, produitsPerWeek: '1 à 4',
-    monthly: { price: 149900, priceBarre: 400000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
-    quarterly: { price: 104900, priceBarre: 150000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_dn4fb72l/checkout' },
+    monthly: { price: 104900, priceBarre: 400000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
+    quarterly: { price: 99900, priceBarre: 105000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_dn4fb72l/checkout' },
   },
 };
 
@@ -585,19 +585,19 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 const SUPABASE_ANON_KEY_INT = process.env.SUPABASE_ANON_KEY || '';
 
 const PLAN_MAP = {
-  'prd_ywk7ik14': { plan: 'discovery', cycle: 'once',    type: 'pack', total_credits: 9,  price_fcfa: 16900,  prix_img: 1878 },
-  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly', credits_per_week: 9,  price_fcfa: 49900,  prix_img: 1386 },
-  'prd_wdya3v9h': { plan: 'starter', cycle: 'quarterly', credits_per_week: 9,  price_fcfa: 34900,  prix_img: 969 },
-  'prd_34w031':   { plan: 'pro',     cycle: 'monthly', credits_per_week: 18, price_fcfa: 99900,  prix_img: 1388 },
-  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'quarterly', credits_per_week: 18, price_fcfa: 69900,  prix_img: 971 },
-  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly', credits_per_week: 36, price_fcfa: 149900, prix_img: 1041 },
-  'prd_dn4fb72l': { plan: 'scale',   cycle: 'quarterly', credits_per_week: 36, price_fcfa: 104900, prix_img: 728 },
+  'prd_ywk7ik14': { plan: 'discovery', cycle: 'once',    type: 'pack', total_credits: 9,  price_fcfa: 12900,  prix_img: 1433 },
+  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly', credits_per_week: 9,  price_fcfa: 34900,  prix_img: 969 },
+  'prd_wdya3v9h': { plan: 'starter', cycle: 'quarterly', credits_per_week: 9,  price_fcfa: 29900,  prix_img: 831 },
+  'prd_34w031':   { plan: 'pro',     cycle: 'monthly', credits_per_week: 18, price_fcfa: 69900,  prix_img: 971 },
+  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'quarterly', credits_per_week: 18, price_fcfa: 59900,  prix_img: 832 },
+  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly', credits_per_week: 36, price_fcfa: 104900, prix_img: 728 },
+  'prd_dn4fb72l': { plan: 'scale',   cycle: 'quarterly', credits_per_week: 36, price_fcfa: 99900, prix_img: 694 },
 };
 
 const PLAN_LABELS = { discovery: 'Conversion Discovery', starter: 'Conversion Starter', pro: 'Conversion Pro', scale: 'Conversion Scale' };
 
 // ── Séquence email de conversion J1/J5/J12/J21 ─────────────────────────────
-const SEQUENCE_PRICES = { starter: { price: 49900 } }; // Starter mensuel, référence pour les prix cités dans les emails
+const SEQUENCE_PRICES = { starter: { price: 34900 } }; // Starter mensuel, référence pour les prix cités dans les emails
 
 // Convertit un prix FCFA vers la devise de la personne (détectée et mémorisée côté AdBoard).
 // Taux récupéré à chaque envoi — jamais de taux périmé, contrairement à un taux figé au moment de l'inscription.
