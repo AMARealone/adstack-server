@@ -1040,7 +1040,7 @@ async function sendDeliverablesReadyEmail({ email, produit }) {
 }
 
 
-async function activateSubscription(userId, planInfo, email, name) {
+async function activateSubscription(userId, planInfo, email, name, phone) {
   const { plan, cycle, credits_per_week: creditsPerWeek, price_fcfa: priceFcfa, prix_img: prixImg, type, total_credits: totalCreditsAchat } = planInfo;
   const isPack = type === 'pack';
   const now = new Date();
@@ -1083,6 +1083,7 @@ async function activateSubscription(userId, planInfo, email, name) {
     started_at: now.toISOString(),
     expires_at: expiresAt.toISOString(),
   };
+  if (phone) payload.telephone_whatsapp = phone;
   if (isPack) {
     payload.type = 'pack';
     payload.total_credits = totalCredits;
@@ -1129,6 +1130,7 @@ async function activateSubscription(userId, planInfo, email, name) {
         },
         body: JSON.stringify({
           user_id: userId, email: email || null, nom: name || null,
+          telephone: phone || null,
           plan, cycle,
           montant_fcfa: priceFcfa,
           commission_chariow_fcfa: commission,
@@ -3798,12 +3800,18 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
       const userId = customFields.user_id;
       const productId = product?.id;
       const email = customer?.email;
+      // Chariow n'a pas un nom de champ 100% garanti pour le téléphone selon les intégrations —
+      // on essaie les variantes les plus courantes. Si aucune ne matche, on log le payload
+      // complet juste au-dessus (voir console) pour identifier le bon champ à ajouter ici.
+      const phone = customer?.phone || customer?.telephone || customer?.whatsapp
+        || customer?.phone_number || customer?.tel || null;
+      if (!phone) console.warn('[Pulse] ⚠️ Aucun champ téléphone reconnu dans customer — vérifier le payload complet loggé ci-dessus pour trouver le bon nom de champ.');
       const planInfo = PLAN_MAP[productId];
       if (!planInfo) { console.warn('[Pulse] Produit inconnu:', productId); return; }
       // Si on a le user_id → activer directement
       if (userId) {
         console.log(`[Pulse] user_id trouvé directement dans custom_fields: ${userId}`);
-        await activateSubscription(userId, planInfo, email, customer?.name);
+        await activateSubscription(userId, planInfo, email, customer?.name, phone);
         await traiterAttributionCRM(userId);
         return;
       }
@@ -3813,7 +3821,7 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
         const user = await findUserByEmail(email);
         if (user) {
           console.log(`[Pulse] Fallback email: match trouvé → user_id=${user.id} pour email="${email}"`);
-          await activateSubscription(user.id, planInfo, email, user.user_metadata?.full_name || customer?.name);
+          await activateSubscription(user.id, planInfo, email, user.user_metadata?.full_name || customer?.name, phone);
           await traiterAttributionCRM(user.id);
         } else {
           console.warn(`[Pulse] User introuvable pour email: ${email} — sauvegarde en attente pour rattrapage automatique`);
@@ -3825,7 +3833,7 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
             await fetch(`${SUPABASE_URL_INT}/rest/v1/pending_activations`, {
               method: 'POST',
               headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-              body: JSON.stringify({ email, name: customer?.name || null, plan_id: productId, sale_id: sale?.id || null })
+              body: JSON.stringify({ email, name: customer?.name || null, telephone: phone || null, plan_id: productId, sale_id: sale?.id || null })
             });
           } catch(ePending) {
             console.error('[Pulse] Échec sauvegarde pending_activations :', ePending.message);
@@ -3947,7 +3955,7 @@ if (req.method === 'GET' && req.url.startsWith('/cron/check-pending')) {
         if (!planInfo) continue; // produit inconnu, rien à faire, reste en attente
         const user = await findUserByEmail(pend.email);
         if (!user) continue; // toujours pas de compte avec cet email — on retentera au prochain passage
-        await activateSubscription(user.id, planInfo, pend.email, user.user_metadata?.full_name || pend.name);
+        await activateSubscription(user.id, planInfo, pend.email, user.user_metadata?.full_name || pend.name, pend.telephone);
         await traiterAttributionCRM(user.id);
         await fetch(`${SUPABASE_URL_INT}/rest/v1/pending_activations?id=eq.${pend.id}`, {
           method: 'PATCH',
@@ -5283,6 +5291,7 @@ if (req.method === 'GET' && req.url === '/crm/clients') {
         email: u.email || null,
         nom: u.user_metadata?.full_name || u.user_metadata?.name || null,
         avatar: u.user_metadata?.avatar_url || u.user_metadata?.picture || null,
+        telephone_whatsapp: sub.telephone_whatsapp || null,
         plan: sub.plan, cycle: sub.cycle, type: sub.type, active: sub.active,
         started_at: sub.started_at, expires_at: sub.expires_at,
         credits_used: used, credits_total: Math.max(total, 0),
@@ -5389,7 +5398,7 @@ if (req.method === 'POST' && req.url === '/reconcile-account') {
         for (const pend of pendings) {
           const planInfo = PLAN_MAP[pend.plan_id];
           if (!planInfo) continue; // produit inconnu, laisse le cron gérer/signaler ce cas
-          await activateSubscription(userId, planInfo, email, pend.name);
+          await activateSubscription(userId, planInfo, email, pend.name, pend.telephone);
           await traiterAttributionCRM(userId);
           await fetch(`${SUPABASE_URL_INT}/rest/v1/pending_activations?id=eq.${pend.id}`, {
             method: 'PATCH',
