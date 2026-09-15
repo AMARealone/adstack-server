@@ -9,6 +9,48 @@ const zlib = require('zlib');
 const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+
+// ── Cloudflare R2 — stockage des photos produit (remplace le base64 en base Postgres,
+// qui faisait exploser l'egress Supabase : chaque SELECT sur `commandes` traînait toutes
+// les photos avec lui, et R2 ne facture jamais l'egress, contrairement à Supabase). ──
+const R2_BUCKET = 'adstack-images';
+const R2_PUBLIC_BASE = 'https://images.adstackofficial.com';
+const r2Client = new S3Client({
+  region: 'auto',
+  endpoint: process.env.R2_ENDPOINT,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+  },
+});
+
+// dataUri : chaîne "data:image/png;base64,...." — cheminFichier : ex. "briefs/abc123-original.png"
+// Retourne l'URL publique R2, ou null si l'upload échoue (l'appelant doit alors garder le
+// comportement précédent — ne jamais bloquer la production d'une commande pour ça).
+async function uploaderVersR2(dataUri, cheminFichier) {
+  if (!dataUri || !dataUri.startsWith('data:')) return null;
+  if (!process.env.R2_ACCESS_KEY_ID) {
+    console.warn('[R2] ⚠️ Identifiants R2 non configurés — image gardée en base64 (temporaire).');
+    return null;
+  }
+  try {
+    const match = dataUri.match(/^data:(image\/\w+);base64,(.+)$/);
+    if (!match) return null;
+    const mime = match[1];
+    const buffer = Buffer.from(match[2], 'base64');
+    await r2Client.send(new PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: cheminFichier,
+      Body: buffer,
+      ContentType: mime,
+    }));
+    return `${R2_PUBLIC_BASE}/${cheminFichier}`;
+  } catch(e) {
+    console.error('[R2] ❌ Échec upload:', e.message);
+    return null;
+  }
+}
 // ── Diagnostic temporaire (bug miniatures, échec systématique "vipspng: libpng read error"
 // malgré Node 24 LTS + cache de build vidé) — affiche au démarrage les versions natives
 // réellement chargées par sharp, pour voir s'il y a un mismatch plutôt que de continuer à
@@ -3495,8 +3537,18 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
       try {
         const data = JSON.parse(body);
         const briefs = await loadBriefs();
+        const briefIdPourPhoto = data.brief_id || `brief_${Date.now()}`;
+        // Upload immédiat vers R2 — la base64 originale ne doit JAMAIS toucher Supabase.
+        // Si l'upload échoue (identifiants R2 pas encore configurés, panne ponctuelle...),
+        // on retombe sur l'ancien comportement (base64 en base) plutôt que de bloquer la
+        // commande — pas idéal question egress, mais jamais pire qu'avant.
+        let photoUrlFinale = data.product.photo_base64 || null;
+        if (data.product.photo_base64) {
+          const urlR2 = await uploaderVersR2(data.product.photo_base64, `briefs/${briefIdPourPhoto}-original.png`);
+          if (urlR2) photoUrlFinale = urlR2;
+        }
         const brief = {
-          id: data.brief_id || `brief_${Date.now()}`,
+          id: briefIdPourPhoto,
           created_at: new Date().toISOString(),
           status: 'pending', // pending | in_production | done
           client: {
@@ -3514,7 +3566,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
             utilite: data.product.utilite,
             couleurs: [data.product.couleur1, data.product.couleur2, data.product.couleur3].filter(Boolean),
             photo_url: data.product.photo_url,
-            photo_base64: data.product.photo_base64 || null,
+            photo_base64: photoUrlFinale,
             lien_page_produit: data.product.lien_page_produit || null,
             marque: data.product.marque || null,
           },
@@ -3543,15 +3595,20 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
            <p style="color:#888;font-size:12px">Reçue le ${new Date(brief.created_at).toLocaleString('fr-FR')} — id ${brief.id}</p>`
         ).catch(()=>{});
         // Background removal en arrière-plan + analyse qualité (log seulement, voir checkPhotoQuality)
-        if (brief.product.photo_base64) {
-          checkPhotoQuality(brief.product.photo_base64).then(q => {
+        // Utilise la vraie base64 d'origine (gardée seulement en mémoire ici, jamais persistée) —
+        // brief.product.photo_base64 est déjà l'URL R2 à ce stade, inutilisable pour l'analyse.
+        if (data.product.photo_base64) {
+          checkPhotoQuality(data.product.photo_base64).then(q => {
             console.log(`[Quality Check] ${brief.id} : ${q.ok ? '✓ qualité correcte' : '⚠️  qualité douteuse'} — ${q.note}`);
           });
-          processProductPhoto(brief.product.photo_base64, brief.id).then(async nobg => {
+          processProductPhoto(data.product.photo_base64, brief.id).then(async nobg => {
             if (nobg) {
+              let nobgFinal = nobg;
+              const urlR2Nobg = await uploaderVersR2(nobg, `briefs/${brief.id}-nobg.png`);
+              if (urlR2Nobg) nobgFinal = urlR2Nobg;
               const all = await loadBriefs();
               const idx = all.findIndex(b => b.id === brief.id);
-              if (idx >= 0) { all[idx].photo_nobg = nobg; await saveBriefs([all[idx]]); }
+              if (idx >= 0) { all[idx].photo_nobg = nobgFinal; await saveBriefs([all[idx]]); }
             }
           });
         }
@@ -3667,7 +3724,10 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
 
           const nobg = await processProductPhoto(photoAUtiliser, id);
           if (nobg) {
-            briefs[idx].photo_nobg = nobg;
+            let nobgFinal = nobg;
+            const urlR2Nobg = await uploaderVersR2(nobg, `briefs/${id}-nobg.png`);
+            if (urlR2Nobg) nobgFinal = urlR2Nobg;
+            briefs[idx].photo_nobg = nobgFinal;
             console.log(`[Photo Pipeline] ✅ Terminé pour commande ${id}.`);
           } else {
             console.warn(`[Photo Pipeline] ⚠️ Effacement de fond échoué pour ${id} — photo originale conservée telle quelle.`);

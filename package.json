@@ -7,6 +7,7 @@
     "start": "node server_v5_45.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1133.0",
     "@resvg/resvg-js": "^2.6.2",
     "google-trends-api": "^4.9.2",
     "pdfkit": "^0.19.1",
