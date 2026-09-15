@@ -3564,6 +3564,26 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
   }
 
 // GET /commandes — liste des tickets pour la vue Factory
+// GET /commandes/count — version ultra-légère pour le badge sidebar (polling toutes les 30s
+// depuis chaque onglet Factory ouvert) : ne SELECT que le statut, jamais les photos/deliverables.
+// C'était avant un fetch complet de /commandes (avec photo_base64/photo_nobg inclus) juste pour
+// un chiffre — gros contributeur inutile à l'egress Supabase.
+  if (req.method === 'GET' && req.url === '/commandes/count') {
+    try {
+      const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/commandes?select=status`, {
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+      });
+      const rows = r.ok ? await r.json() : [];
+      const count = rows.filter(b => b.status === 'pending').length;
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ count }));
+    } catch(e) {
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ count: 0 }));
+    }
+    return;
+  }
+
   if (req.method === 'GET' && req.url === '/commandes') {
 
     const briefs = await loadBriefs();
