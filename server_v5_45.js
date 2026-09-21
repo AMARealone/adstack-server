@@ -4505,6 +4505,10 @@ if (req.method === 'POST' && req.url === '/chat') {
       const isConnected = !!user;
       const planActive = subscription?.plan || 'none';
       const isPackClient = subscription?.type === 'pack';
+      // A déjà transigé au moins une fois, même si l'abonnement actuel est expiré/inactif — la
+      // ligne `subscription` existe dès la 1ère activation et n'est jamais supprimée. C'est ce
+      // qui doit bloquer First Payment pour de bon (achat unique à vie), pas juste `hasSubscription`.
+      const everTransacted = !!subscription;
 
       // ── Situation calculée en code, pas laissée à l'appréciation du modèle ──
       // C'est la cause profonde des incohérences passées : donner des faits épars et
@@ -4513,14 +4517,16 @@ if (req.method === 'POST' && req.url === '/chat') {
       let situationAction;
       if (!isConnected) {
         situationAction = "Pas encore connecté → priorité : proposer de se connecter avec Google (bouton login).";
-      } else if (!hasSubscription) {
-        situationAction = "Aucune offre active en ce moment (jamais pris, ou expirée) → proposer Conversion Discovery (achat unique, 18 images, 24 900 FCFA, aucun engagement) si c'est un nouveau visiteur hésitant, sinon un plan classique adapté à son besoin, avec le bouton checkout correspondant.";
+      } else if (!hasSubscription && !everTransacted) {
+        situationAction = "Jamais transigé, aucune offre active → proposer First Payment (achat unique à vie, 99$, une première production stratégique complète — 9 images) si c'est un nouveau visiteur hésitant, sinon un plan classique adapté à son besoin, avec le bouton checkout correspondant.";
+      } else if (!hasSubscription && everTransacted) {
+        situationAction = "Déjà transigé au moins une fois (abonnement actuel expiré/inactif) → NE JAMAIS reproposer First Payment, c'est un achat unique à vie déjà utilisé. Proposer uniquement un plan classique (Starter/Pro/Scale selon son besoin) pour reprendre, avec le bouton checkout correspondant.";
       } else if (products.length === 0) {
-        situationAction = `${isPackClient ? 'A pris Conversion Discovery' : 'Abonné actif'} mais AUCUN produit créé → dire d'aller créer un produit (bouton openProductForm). C'est la seule étape qui manque avant de pouvoir demander des images. Ne JAMAIS proposer un plan, il en a déjà un actif.`;
+        situationAction = `${isPackClient ? 'A pris First Payment' : 'Abonné actif'} mais AUCUN produit créé → dire d'aller créer un produit (bouton openProductForm). C'est la seule étape qui manque avant de pouvoir demander des images. Ne JAMAIS proposer un plan, il en a déjà un actif.`;
       } else if ((credits.available||0) >= 9) {
-        situationAction = `${isPackClient ? 'A pris Conversion Discovery' : 'Abonné actif'}, ${products.length} produit(s) créé(s), ${credits.available} images DISPONIBLES MAINTENANT → dire d'aller sur "Mes Produits" et cliquer "Demander une production" sur le produit concerné, livraison sous 48h. NE JAMAIS proposer un plan ni un renouvellement, il en a déjà des images disponibles.`;
+        situationAction = `${isPackClient ? 'A pris First Payment' : 'Abonné actif'}, ${products.length} produit(s) créé(s), ${credits.available} images DISPONIBLES MAINTENANT → dire d'aller sur "Mes Produits" et cliquer "Demander une production" sur le produit concerné, livraison sous 48h. NE JAMAIS proposer un plan ni un renouvellement, il en a déjà des images disponibles.`;
       } else if (isPackClient) {
-        situationAction = `A pris Conversion Discovery (pack ponctuel, 18 images), mais les a toutes utilisées (0 disponible) → contrairement à un abonnement classique, ce pack n'inclut JAMAIS de nouvelles images automatiquement. Proposer de passer à un vrai abonnement (Starter/Pro/Scale selon son besoin) pour continuer à recevoir des images chaque semaine. NE JAMAIS dire d'attendre un renouvellement automatique — ça n'existe pas pour ce pack.`;
+        situationAction = `A pris First Payment (pack ponctuel, 9 images), mais les a toutes utilisées (0 disponible) → contrairement à un abonnement classique, ce pack n'inclut JAMAIS de nouvelles images automatiquement, et NE PEUT PAS être repris une 2e fois (achat unique à vie). Proposer de compléter avec Starter (bouton checkout-upgrade, 150$ — pas le plein tarif) pour continuer à recevoir des images chaque semaine. NE JAMAIS dire d'attendre un renouvellement automatique — ça n'existe pas pour ce pack. NE JAMAIS proposer de reprendre First Payment.`;
       } else {
         situationAction = `Abonné actif, ${products.length} produit(s) créé(s), mais images de la semaine épuisées (0 disponible) → c'est normal et temporaire (l'abonnement lui-même reste actif, ce n'est qu'une pause hebdomadaire). Dire que les prochaines images arrivent à la prochaine livraison hebdomadaire${credits.nextCreditDate ? ' (' + new Date(credits.nextCreditDate).toLocaleDateString('fr-FR',{day:'numeric',month:'long'}) + ')' : ''}. NE JAMAIS proposer de reprendre un plan ou de "renouveler" — l'abonnement n'a pas expiré, c'est juste le cycle hebdomadaire normal.`;
       }
