@@ -81,48 +81,55 @@ async function getVenteCopyLive() {
 // conversion de devise — Chariow affiche la devise locale uniquement au moment du checkout.
 // Discovery devient « First Payment » : passerelle vers Starter (voir PLAN_MAP prd_c0ga3snp
 // pour le paiement de complétion). Pas de priceBarre : aucune référence USD n'a été fournie.
+// MAJ pricing (le plus récent) : retour aux tarifs en FCFA fixes, avec conversion de devise
+// réactivée (currency/currencyRate à nouveau utilisés) — Chariow reste la source de vérité au
+// moment du checkout, ce formatage n'est qu'indicatif pour le prompt du modèle.
 const OFFERS = {
   discovery: {
     id: 'discovery', name: 'First Payment', isPack: true,
     tagline: "Une première production stratégique complète, pour voir notre travail avant de vous engager sur le mois.",
     imagesPerWeek: 9, produitsPerWeek: '1',
-    once: { price: 99, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ywk7ik14/checkout' },
-    completion: { price: 150, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_c0ga3snp/checkout' },
+    once: { price: 17000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ywk7ik14/checkout' },
+    completion: { price: 33000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_c0ga3snp/checkout' },
   },
   starter: {
     id: 'starter', name: 'Conversion Starter', isPack: false,
     tagline: 'Pour tester ses produits sereinement et obtenir ses premières ventes rentables.',
     imagesPerWeek: 9, produitsPerWeek: '1',
-    monthly: { price: 249, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
-    quarterly: { price: 200, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_wdya3v9h/checkout' },
+    monthly: { price: 49900, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
+    quarterly: { price: 40000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_wdya3v9h/checkout' },
   },
   pro: {
     id: 'pro', name: 'Conversion Pro', isPack: false, best: true,
     tagline: 'Pour dominer son marché et écraser ses coûts d\'acquisition.',
     imagesPerWeek: 18, produitsPerWeek: '1 à 2',
-    monthly: { price: 499, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
-    quarterly: { price: 400, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_lnp4ax0b/checkout' },
+    monthly: { price: 99900, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
+    quarterly: { price: 80000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_lnp4ax0b/checkout' },
   },
   scale: {
     id: 'scale', name: 'Conversion Scale', isPack: false,
     tagline: "L'arsenal complet pour inonder plusieurs marchés en simultané.",
     imagesPerWeek: 36, produitsPerWeek: '1 à 4',
-    monthly: { price: 749, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
-    quarterly: { price: 600, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_dn4fb72l/checkout' },
+    monthly: { price: 149900, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
+    quarterly: { price: 120000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_dn4fb72l/checkout' },
   },
 };
 
 // Formatte le bloc offres pour un prompt système (utilisé par Ava ET le chatbot page de vente).
-// Plus de conversion de devise ici : tarifs fixes en dollars pour tout le monde, quelle que
-// soit la localisation détectée (currency/currencyRate ne sont plus utilisés, gardés en
-// paramètres pour ne pas casser les appelants existants le temps de les nettoyer).
+// Conversion de devise réactivée : si `currency` !== XOF et un `currencyRate` valide est fourni,
+// les montants sont convertis (même coefficient +3.5% que le reste du site) ; sinon FCFA brut.
 function formatOffresPourPrompt(currency, currencyRate) {
-  const fmt = (usd) => '$' + usd;
+  const fmt = (fcfa) => {
+    if (!currency || currency === 'XOF' || currency === 'XAF' || !currencyRate) return fcfa.toLocaleString('fr-FR') + ' FCFA';
+    const val = Math.round(fcfa * currencyRate * 1.035);
+    try { return new Intl.NumberFormat(undefined, {style:'currency', currency, maximumFractionDigits:0}).format(val); }
+    catch(e) { return fcfa.toLocaleString('fr-FR') + ' FCFA'; }
+  };
   const { starter, pro, scale, discovery } = OFFERS;
   return `${discovery.name} (achat unique, passerelle vers Starter, non abonnement) : ${fmt(discovery.once.price)} pour une première production — puis ${fmt(discovery.completion.price)} pour compléter et continuer avec Starter — ${discovery.imagesPerWeek} images, livraison ${discovery.once.delivery}
-${starter.name} : ${fmt(starter.monthly.price)}/mois (mensuel) ou ${fmt(starter.quarterly.price)}/mois (engagement trimestriel) · ${starter.imagesPerWeek} images/sem · ${starter.produitsPerWeek} produit
-${pro.name} : ${fmt(pro.monthly.price)}/mois (mensuel) ou ${fmt(pro.quarterly.price)}/mois (engagement trimestriel) · ${pro.imagesPerWeek} images/sem · ${pro.produitsPerWeek} produits
-${scale.name} : ${fmt(scale.monthly.price)}/mois (mensuel) ou ${fmt(scale.quarterly.price)}/mois (engagement trimestriel) · ${scale.imagesPerWeek} images/sem · ${scale.produitsPerWeek} produits`;
+${starter.name} : ${fmt(starter.monthly.price)}/mois (mensuel) ou ${fmt(starter.quarterly.price)}/mois (engagement trimestriel, -20%) · ${starter.imagesPerWeek} images/sem · ${starter.produitsPerWeek} produit
+${pro.name} : ${fmt(pro.monthly.price)}/mois (mensuel) ou ${fmt(pro.quarterly.price)}/mois (engagement trimestriel, -20%) · ${pro.imagesPerWeek} images/sem · ${pro.produitsPerWeek} produits
+${scale.name} : ${fmt(scale.monthly.price)}/mois (mensuel) ou ${fmt(scale.quarterly.price)}/mois (engagement trimestriel, -20%) · ${scale.imagesPerWeek} images/sem · ${scale.produitsPerWeek} produits`;
 }
 
 // Domaines suggérés à Gemini grounding pour la recherche ciblée (V4 — 6 sources enrichies)
@@ -588,7 +595,7 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 const SUPABASE_ANON_KEY_INT = process.env.SUPABASE_ANON_KEY || '';
 
 // MAJ pricing (le plus récent) : dollars fixes (price_usd), plus de price_fcfa. First Payment
-// (ex-Discovery, 99$) + Completion (150$, prd_c0ga3snp) = 249$ = prix mensuel Starter plein tarif.
+// (ex-Discovery, 17.000 FCFA) + Completion (33.000 FCFA, prd_c0ga3snp) = 49.900 FCFA = prix mensuel Starter plein tarif.
 // ⚠️ TODO non couvert par cette passe : la règle "intelligente" sur upgrade_duration_days —
 // actuellement fixé à 21 jours dans tous les cas — devrait varier selon que le paiement de
 // Completion arrive avant ou après le 7e jour suivant l'achat de First Payment (cf. demande
@@ -603,25 +610,26 @@ const SUPABASE_ANON_KEY_INT = process.env.SUPABASE_ANON_KEY || '';
 // montant_fcfa/montant_net_fcfa en base) : ça, c'est un chantier à part, plus sensible (documents
 // comptables + schéma de données), à traiter dans une passe dédiée avant mise en prod — pas fait ici.
 const PLAN_MAP = {
-  'prd_ywk7ik14': { plan: 'discovery', cycle: 'once',    type: 'pack', total_credits: 9,  price_fcfa: 99,  prix_img: 11 },
-  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly', credits_per_week: 9,  price_fcfa: 249,  prix_img: 7 },
-  'prd_wdya3v9h': { plan: 'starter', cycle: 'quarterly', credits_per_week: 9,  price_fcfa: 200,  prix_img: 6 },
-  'prd_34w031':   { plan: 'pro',     cycle: 'monthly', credits_per_week: 18, price_fcfa: 499,  prix_img: 7 },
-  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'quarterly', credits_per_week: 18, price_fcfa: 400,  prix_img: 6 },
-  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly', credits_per_week: 36, price_fcfa: 749, prix_img: 5 },
-  'prd_dn4fb72l': { plan: 'scale',   cycle: 'quarterly', credits_per_week: 36, price_fcfa: 600, prix_img: 4 },
-  // Passerelle First Payment → Starter : paiement du solde restant (249 − 99 = 150$). Traité
-  // comme un abonnement Starter normal (isPack=false, donc pas de logique d'empilement de pack)
-  // mais avec une durée volontairement plus courte de 21 jours au lieu des 30 jours standards —
-  // la 1ère semaine a déjà été livrée sous First Payment, ce paiement ne couvre que les 3
-  // semaines restantes du mois. Voir le TODO ci-dessus pour la règle des 7 jours.
-  'prd_c0ga3snp': { plan: 'starter', cycle: 'monthly', credits_per_week: 9, price_fcfa: 150, prix_img: 6, upgrade_duration_days: 21 },
+  'prd_ywk7ik14': { plan: 'discovery', cycle: 'once',    type: 'pack', total_credits: 9,  price_fcfa: 17000,  prix_img: 1889 },
+  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly', credits_per_week: 9,  price_fcfa: 49900,  prix_img: 1386 },
+  'prd_wdya3v9h': { plan: 'starter', cycle: 'quarterly', credits_per_week: 9,  price_fcfa: 40000,  prix_img: 1111 },
+  'prd_34w031':   { plan: 'pro',     cycle: 'monthly', credits_per_week: 18, price_fcfa: 99900,  prix_img: 1388 },
+  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'quarterly', credits_per_week: 18, price_fcfa: 80000,  prix_img: 1111 },
+  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly', credits_per_week: 36, price_fcfa: 149900, prix_img: 1041 },
+  'prd_dn4fb72l': { plan: 'scale',   cycle: 'quarterly', credits_per_week: 36, price_fcfa: 120000, prix_img: 833 },
+  // Passerelle First Payment → Starter : paiement du solde restant (49.900 − 17.000 = 32.900,
+  // arrondi commercialement à 33.000). Traité comme un abonnement Starter normal (isPack=false,
+  // donc pas de logique d'empilement de pack) mais avec une durée volontairement plus courte de
+  // 21 jours au lieu des 30 jours standards — la 1ère semaine a déjà été livrée sous First
+  // Payment, ce paiement ne couvre que les 3 semaines restantes du mois. Voir le TODO ci-dessus
+  // pour la règle des 7 jours.
+  'prd_c0ga3snp': { plan: 'starter', cycle: 'monthly', credits_per_week: 9, price_fcfa: 33000, prix_img: 917, upgrade_duration_days: 21 },
 };
 
 const PLAN_LABELS = { discovery: 'First Payment', starter: 'Conversion Starter', pro: 'Conversion Pro', scale: 'Conversion Scale' };
 
 // ── Séquence email de conversion J1/J5/J12/J21 ─────────────────────────────
-const SEQUENCE_PRICES = { starter: { price: 249 } }; // Starter mensuel en $, référence pour les prix cités dans les emails
+const SEQUENCE_PRICES = { starter: { price: 49900 } }; // Starter mensuel en FCFA, référence pour les prix cités dans les emails
 
 // Convertit un prix FCFA vers la devise de la personne (détectée et mémorisée côté AdBoard).
 // Taux récupéré à chaque envoi — jamais de taux périmé, contrairement à un taux figé au moment de l'inscription.
@@ -4518,7 +4526,7 @@ if (req.method === 'POST' && req.url === '/chat') {
       if (!isConnected) {
         situationAction = "Pas encore connecté → priorité : proposer de se connecter avec Google (bouton login).";
       } else if (!hasSubscription && !everTransacted) {
-        situationAction = "Jamais transigé, aucune offre active → proposer First Payment (achat unique à vie, 99$, une première production stratégique complète — 9 images) si c'est un nouveau visiteur hésitant, sinon un plan classique adapté à son besoin, avec le bouton checkout correspondant.";
+        situationAction = "Jamais transigé, aucune offre active → proposer First Payment (achat unique à vie, 17.000 FCFA, une première production stratégique complète — 9 images) si c'est un nouveau visiteur hésitant, sinon un plan classique adapté à son besoin, avec le bouton checkout correspondant.";
       } else if (!hasSubscription && everTransacted) {
         situationAction = "Déjà transigé au moins une fois (abonnement actuel expiré/inactif) → NE JAMAIS reproposer First Payment, c'est un achat unique à vie déjà utilisé. Proposer uniquement un plan classique (Starter/Pro/Scale selon son besoin) pour reprendre, avec le bouton checkout correspondant.";
       } else if (products.length === 0) {
@@ -4526,7 +4534,7 @@ if (req.method === 'POST' && req.url === '/chat') {
       } else if ((credits.available||0) >= 9) {
         situationAction = `${isPackClient ? 'A pris First Payment' : 'Abonné actif'}, ${products.length} produit(s) créé(s), ${credits.available} images DISPONIBLES MAINTENANT → dire d'aller sur "Mes Produits" et cliquer "Demander une production" sur le produit concerné, livraison sous 48h. NE JAMAIS proposer un plan ni un renouvellement, il en a déjà des images disponibles.`;
       } else if (isPackClient) {
-        situationAction = `A pris First Payment (pack ponctuel, 9 images), mais les a toutes utilisées (0 disponible) → contrairement à un abonnement classique, ce pack n'inclut JAMAIS de nouvelles images automatiquement, et NE PEUT PAS être repris une 2e fois (achat unique à vie). Proposer de compléter avec Starter (bouton checkout-upgrade, 150$ — pas le plein tarif) pour continuer à recevoir des images chaque semaine. NE JAMAIS dire d'attendre un renouvellement automatique — ça n'existe pas pour ce pack. NE JAMAIS proposer de reprendre First Payment.`;
+        situationAction = `A pris First Payment (pack ponctuel, 9 images), mais les a toutes utilisées (0 disponible) → contrairement à un abonnement classique, ce pack n'inclut JAMAIS de nouvelles images automatiquement, et NE PEUT PAS être repris une 2e fois (achat unique à vie). Proposer de compléter avec Starter (bouton checkout-upgrade, 33.000 FCFA — pas le plein tarif) pour continuer à recevoir des images chaque semaine. NE JAMAIS dire d'attendre un renouvellement automatique — ça n'existe pas pour ce pack. NE JAMAIS proposer de reprendre First Payment.`;
       } else {
         situationAction = `Abonné actif, ${products.length} produit(s) créé(s), mais images de la semaine épuisées (0 disponible) → c'est normal et temporaire (l'abonnement lui-même reste actif, ce n'est qu'une pause hebdomadaire). Dire que les prochaines images arrivent à la prochaine livraison hebdomadaire${credits.nextCreditDate ? ' (' + new Date(credits.nextCreditDate).toLocaleDateString('fr-FR',{day:'numeric',month:'long'}) + ')' : ''}. NE JAMAIS proposer de reprendre un plan ou de "renouveler" — l'abonnement n'a pas expiré, c'est juste le cycle hebdomadaire normal.`;
       }
@@ -4640,7 +4648,7 @@ Prospect chaud → bouton checkout DIRECT au message suivant.
 [BTN:login] [BTN:openProductForm]
 [BTN:checkout:starter] [BTN:checkout:pro] [BTN:checkout:scale]
 [BTN:checkout-quarterly:starter] [BTN:checkout-quarterly:pro] [BTN:checkout-quarterly:scale]
-[BTN:checkout-upgrade] (uniquement pour un client Discovery — voir RÈGLE 7 — paiement du solde restant)
+[BTN:checkout-upgrade] (uniquement pour un client First Payment — voir RÈGLE 7 — paiement du solde restant)
 [BTN:navigate:suivi] [BTN:navigate:galerie]
 [BTN:whatsapp]
 INTERDIT ABSOLU : n'écris JAMAIS un lien markdown ([texte](url)) ni une URL brute (chariow, mychariow, ou
@@ -4671,18 +4679,18 @@ au bon moment (ex: quand elle vient de choisir une offre, ou juste avant le bout
 genre "hâte de voir tes ventes décoller" ou "on est chauds de bosser sur ton produit" — jamais forcé, jamais
 répété, jamais au prix d'avoir l'air d'un vendeur trop pressé.
 
-${isPackClient ? `RÈGLE 7 — DISCOVERY EST UNE PASSERELLE VERS STARTER, PAS UN PRODUIT À PART (s'applique à cette
-conversation précise — ce client a pris Discovery)
-Discovery n'est pas une offre isolée : c'est la première semaine de Starter, déjà livrée. Le client a payé
-12.900 FCFA sur les 34.900 FCFA du Starter mensuel — il ne lui reste que le SOLDE, 22.000 FCFA, pour
+${isPackClient ? `RÈGLE 7 — FIRST PAYMENT EST UNE PASSERELLE VERS STARTER, PAS UN PRODUIT À PART (s'applique à cette
+conversation précise — ce client a pris First Payment)
+First Payment n'est pas une offre isolée : c'est la première semaine de Starter, déjà livrée. Le client a payé
+17.000 FCFA sur les 49.900 FCFA du Starter mensuel — il ne lui reste que le SOLDE, 33.000 FCFA, pour
 continuer les 3 semaines restantes du mois, sans repayer Starter en entier. Ne dis JAMAIS "repasse à Starter à
-34.900 FCFA" ou toute formulation qui laisse croire qu'il repaie depuis zéro — c'est faux et ça casse la
+49.900 FCFA" ou toute formulation qui laisse croire qu'il repaie depuis zéro — c'est faux et ça casse la
 confiance. La formulation correcte : il complète ce qu'il a déjà commencé.
 Profite des échanges pertinents — pas seulement quand ses images sont à zéro (ça, c'est déjà géré ailleurs) —
 pour glisser ce contraste positif, appuyé sur SON contexte précis (son produit "${products[0]?.nom || 'son produit'}",
 ce qu'il a déjà reçu, où il en est) — jamais une phrase générique interchangeable avec n'importe quel client.
 Montre ce que la suite ajoute, positivement : la continuité (chaque semaine, pas une seule fois), l'amélioration
-continue au fil des livraisons suivantes — jamais une formulation qui pointe une limitation de Discovery.
+continue au fil des livraisons suivantes — jamais une formulation qui pointe une limitation de First Payment.
 Moments naturels où le glisser, sans jamais forcer si la conversation ne s'y prête pas : il parle de ses
 premiers retours/résultats → relie ça à la continuité que la suite apporterait pour CE produit précis ; il
 demande "et après ?" ou "comment ça marche la suite" → présente la suite comme déjà à moitié payée, jamais
@@ -4839,9 +4847,9 @@ ${formatOffresPourPrompt(currency, currencyRate)}
   2.000$/mois en pub, vise 15.000$/mois de revenus.
 - Scale → structure une croissance ambitieuse sur plusieurs marchés ou lancements, dépense plusieurs milliers
   de $/mois en pub, vise un palier à 6 chiffres.
-- Discovery → JAMAIS proposée en premier ni mise en avant spontanément. C'est un filet de sécurité, à sortir
+- First Payment → JAMAIS proposée en premier ni mise en avant spontanément. C'est un filet de sécurité, à sortir
   uniquement quand le prospect est visiblement hésitant, sensible au prix, ou rechigne face à un engagement
-  mensuel. Discovery lui donne une première expérience concrète — voir notre sérieux, juger la qualité du
+  mensuel. First Payment lui donne une première expérience concrète — voir notre sérieux, juger la qualité du
   travail livré, télécharger et lancer par lui-même — mais sans la partie amélioration continue semaine après
   semaine, qui n'arrive qu'avec un abonnement. Présente ça positivement (une vraie première expérience), jamais
   comme une version diminuée.
@@ -4897,14 +4905,14 @@ qui convertit, chaque semaine — c'est ça qui te fait grandir."
 RÈGLE 3 — CTA
 0 bouton avant le 3ème échange. 1 seul par message. Jamais 2 de suite.
 [BTN:offres:Voir les offres] [BTN:checkout:starter:Démarrer avec Starter →] [BTN:checkout:pro:Démarrer avec Pro →]
-[BTN:checkout:scale:Démarrer avec Scale →] [BTN:checkout:discovery:Tester avec Discovery →]
+[BTN:checkout:scale:Démarrer avec Scale →] [BTN:checkout:discovery:Tester avec First Payment →]
 INTERDIT ABSOLU : n'écris JAMAIS un lien markdown ([texte](url)) ni une URL brute (chariow, mychariow, ou
 autre) pour proposer un paiement ou une offre — même si tu la retrouves via la recherche Google ou ailleurs
 dans le contexte. Un lien direct saute le popup de paiement intégré à la page (devise, code promo, expérience
 soignée) et peut pointer vers une page obsolète. Le SEUL moyen valide de proposer une action d'achat est le
 token [BTN:...] ci-dessus — rien d'autre, jamais.
 Prospect chaud (a déjà vu une démo, pose des questions de prix/délai précises) → bouton checkout DIRECT, sur
-l'offre qui correspond à SON profil (voir OFFRES) — jamais Discovery sauf s'il est explicitement hésitant/sensible
+l'offre qui correspond à SON profil (voir OFFRES) — jamais First Payment sauf s'il est explicitement hésitant/sensible
 au prix.
 
 Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`;
