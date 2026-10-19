@@ -77,59 +77,50 @@ async function getVenteCopyLive() {
 // recopié à la main. Si les prix changent un jour dans Platform.jsx, il faut répercuter ici aussi
 // (pas encore automatisé d'un seul côté — Platform.jsx reste la source visuelle, celle-ci la
 // source texte pour les chatbots) : à garder en tête, pas de mécanisme de sync auto pour l'instant.
-// MAJ pricing (le plus récent) : tous les tarifs sont désormais en dollars fixes, sans
-// conversion de devise — Chariow affiche la devise locale uniquement au moment du checkout.
-// Discovery devient « First Payment » : passerelle vers Starter (voir PLAN_MAP prd_c0ga3snp
-// pour le paiement de complétion). Pas de priceBarre : aucune référence USD n'a été fournie.
-// MAJ pricing (le plus récent) : retour aux tarifs en FCFA fixes, avec conversion de devise
-// réactivée (currency/currencyRate à nouveau utilisés) — Chariow reste la source de vérité au
-// moment du checkout, ce formatage n'est qu'indicatif pour le prompt du modèle.
+// MAJ pricing (oct. 2026, grille 60 000 / 110 000 / 200 000 FCFA ; trimestriel 50 000 / 90 000 / 160 000 = -15 % affiché) :
+// tarifs en FCFA (prix mensuel affiché, y compris en trimestriel), volumes 24 / 48 / 96 créatives par MOIS
+// (= 6 / 12 / 24 par semaine : 1 / 2 / 4 batchs de 2 vidéos + 4 images), production en 24h max. L'ancien paiement d'essai (First Payment +
+// Completion, ex-Discovery) est retiré : plus aucune offre « pack » à l'achat. Chariow gère la
+// devise réelle au moment du checkout.
 const OFFERS = {
-  discovery: {
-    id: 'discovery', name: 'First Payment', isPack: true,
-    tagline: "Une première production stratégique complète, pour voir notre travail avant de vous engager sur le mois.",
-    imagesPerWeek: 9, produitsPerWeek: '1',
-    once: { price: 17000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ywk7ik14/checkout' },
-    completion: { price: 33000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_c0ga3snp/checkout' },
-  },
   starter: {
-    id: 'starter', name: 'Conversion Starter', isPack: false,
-    tagline: 'Pour tester ses produits sereinement et obtenir ses premières ventes rentables.',
-    imagesPerWeek: 9, produitsPerWeek: '1',
-    monthly: { price: 49900, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
-    quarterly: { price: 40000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_wdya3v9h/checkout' },
+    id: 'starter', name: 'Conversion Starter',
+    tagline: 'Automatiser la production de vos créatives, tout en améliorant vos performances publicitaires.',
+    imagesPerWeek: 6, batchesPerWeek: 1, creativesPerMonth: 24, videosPerMonth: 8, imagesPerMonth: 16, produitsPerWeek: '1',
+    promo: '',
+    // prixImg = prix moyen par créative (vidéos + images), arrondi
+    monthly: { price: 60000, prixImg: 2500, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
+    quarterly: { price: 50000, prixImg: 2083, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_wdya3v9h/checkout' },
   },
   pro: {
-    id: 'pro', name: 'Conversion Pro', isPack: false, best: true,
-    tagline: 'Pour dominer son marché et écraser ses coûts d\'acquisition.',
-    imagesPerWeek: 18, produitsPerWeek: '1 à 2',
-    monthly: { price: 99900, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
-    quarterly: { price: 80000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_lnp4ax0b/checkout' },
+    id: 'pro', name: 'Conversion Pro', best: true,
+    tagline: 'Accélérer la production et la croissance de votre marque, sans la prise de tête de gérer une équipe.',
+    imagesPerWeek: 12, batchesPerWeek: 2, creativesPerMonth: 48, videosPerMonth: 16, imagesPerMonth: 32, produitsPerWeek: '1 à 2',
+    promo: '-10% de réduction',
+    // prixImg = prix moyen par créative (vidéos + images), arrondi
+    monthly: { price: 110000, prixImg: 2292, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
+    quarterly: { price: 90000, prixImg: 1875, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_lnp4ax0b/checkout' },
   },
   scale: {
-    id: 'scale', name: 'Conversion Scale', isPack: false,
-    tagline: "L'arsenal complet pour inonder plusieurs marchés en simultané.",
-    imagesPerWeek: 36, produitsPerWeek: '1 à 4',
-    monthly: { price: 149900, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
-    quarterly: { price: 120000, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_dn4fb72l/checkout' },
+    id: 'scale', name: 'Conversion Scale',
+    tagline: 'Exploiter plusieurs marchés avec des langues et cultures différentes, sans exploser vos coûts ni augmenter la complexité.',
+    imagesPerWeek: 24, batchesPerWeek: 4, creativesPerMonth: 96, videosPerMonth: 32, imagesPerMonth: 64, produitsPerWeek: '1 à 4',
+    promo: '-20% de réduction',
+    // prixImg = prix moyen par créative (vidéos + images), arrondi
+    monthly: { price: 200000, prixImg: 2083, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
+    quarterly: { price: 160000, prixImg: 1667, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_dn4fb72l/checkout' },
   },
 };
 
 // Formatte le bloc offres pour un prompt système (utilisé par Ava ET le chatbot page de vente).
-// Conversion de devise réactivée : si `currency` !== XOF et un `currencyRate` valide est fourni,
-// les montants sont convertis (même coefficient +3.5% que le reste du site) ; sinon FCFA brut.
+// Plus de conversion de devise ici : tarifs fixes en FCFA pour tout le monde, quelle que
+// soit la localisation détectée (currency/currencyRate ne sont plus utilisés, gardés en
+// paramètres pour ne pas casser les appelants existants le temps de les nettoyer).
 function formatOffresPourPrompt(currency, currencyRate) {
-  const fmt = (fcfa) => {
-    if (!currency || currency === 'XOF' || currency === 'XAF' || !currencyRate) return fcfa.toLocaleString('fr-FR') + ' FCFA';
-    const val = Math.round(fcfa * currencyRate * 1.035);
-    try { return new Intl.NumberFormat(undefined, {style:'currency', currency, maximumFractionDigits:0}).format(val); }
-    catch(e) { return fcfa.toLocaleString('fr-FR') + ' FCFA'; }
-  };
-  const { starter, pro, scale, discovery } = OFFERS;
-  return `${discovery.name} (achat unique, passerelle vers Starter, non abonnement) : ${fmt(discovery.once.price)} pour une première production — puis ${fmt(discovery.completion.price)} pour compléter et continuer avec Starter — ${discovery.imagesPerWeek} images, livraison ${discovery.once.delivery}
-${starter.name} : ${fmt(starter.monthly.price)}/mois (mensuel) ou ${fmt(starter.quarterly.price)}/mois (engagement trimestriel, -20%) · ${starter.imagesPerWeek} images/sem · ${starter.produitsPerWeek} produit
-${pro.name} : ${fmt(pro.monthly.price)}/mois (mensuel) ou ${fmt(pro.quarterly.price)}/mois (engagement trimestriel, -20%) · ${pro.imagesPerWeek} images/sem · ${pro.produitsPerWeek} produits
-${scale.name} : ${fmt(scale.monthly.price)}/mois (mensuel) ou ${fmt(scale.quarterly.price)}/mois (engagement trimestriel, -20%) · ${scale.imagesPerWeek} images/sem · ${scale.produitsPerWeek} produits`;
+  const fmt = (fcfa) => fcfa.toLocaleString('fr-FR') + ' FCFA';
+  const { starter, pro, scale } = OFFERS;
+  const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (mensuel) ou ${fmt(o.quarterly.price)}/mois (engagement trimestriel, -15%) · ${o.creativesPerMonth} créatives/mois (${o.videosPerMonth} vidéos + ${o.imagesPerMonth} images, ${o.batchesPerWeek} batch/semaine) · ${o.produitsPerWeek} produit${o.produitsPerWeek === '1' ? '' : 's'} · production en ${o.monthly.delivery} max${o.promo ? ' · ' + o.promo : ''}`;
+  return [ligne(starter), ligne(pro), ligne(scale)].join('\n');
 }
 
 // Domaines suggérés à Gemini grounding pour la recherche ciblée (V4 — 6 sources enrichies)
@@ -594,42 +585,25 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 // finaliser un magiclink (auth/v1/verify) se font avec la clé anon, jamais la service key.
 const SUPABASE_ANON_KEY_INT = process.env.SUPABASE_ANON_KEY || '';
 
-// MAJ pricing (le plus récent) : dollars fixes (price_usd), plus de price_fcfa. First Payment
-// (ex-Discovery, 17.000 FCFA) + Completion (33.000 FCFA, prd_c0ga3snp) = 49.900 FCFA = prix mensuel Starter plein tarif.
-// ⚠️ TODO non couvert par cette passe : la règle "intelligente" sur upgrade_duration_days —
-// actuellement fixé à 21 jours dans tous les cas — devrait varier selon que le paiement de
-// Completion arrive avant ou après le 7e jour suivant l'achat de First Payment (cf. demande
-// d'Amar : si <7 jours, ne pas perdre les jours restants ; si ≥7 jours, ajouter 21 jours pleins).
-// Ce calcul dépend de started_at sur l'abonnement discovery en cours et doit être fait au moment
-// du webhook Chariow qui traite prd_c0ga3snp, pas ici dans la table statique — à implémenter
-// séparément avant mise en prod.
-// ⚠️ Les clés restent price_fcfa / prix_img (pas renommées) pour ne pas casser activateSubscription,
-// generateInvoicePDF, sendPaymentConfirmationEmail et le logging de transactions (montant_fcfa)
-// qui en dépendent tous — mais les VALEURS sont désormais en dollars. Ces fonctions affichent et
-// enregistrent encore le libellé « FCFA » (factures PDF, emails de confirmation, colonne
-// montant_fcfa/montant_net_fcfa en base) : ça, c'est un chantier à part, plus sensible (documents
-// comptables + schéma de données), à traiter dans une passe dédiée avant mise en prod — pas fait ici.
+// MAJ pricing (oct. 2026, nouvelle grille : voir OFFERS) : tarifs en FCFA (price_fcfa = prix MENSUEL du forfait, y compris pour le
+// cycle trimestriel — c'est ce que Chariow facture chaque mois de la période, comme avant), volumes
+// 6 / 12 / 24 créatives par semaine. L'ancien paiement d'essai (First Payment prd_ywk7ik14 + Completion
+// prd_c0ga3snp) est retiré : ces deux produits ne sont plus reconnus par le webhook.
+// Factures PDF / emails de confirmation / colonne montant_fcfa : les valeurs sont maintenant bien en FCFA.
 const PLAN_MAP = {
-  'prd_ywk7ik14': { plan: 'discovery', cycle: 'once',    type: 'pack', total_credits: 9,  price_fcfa: 17000,  prix_img: 1889 },
-  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly', credits_per_week: 9,  price_fcfa: 49900,  prix_img: 1386 },
-  'prd_wdya3v9h': { plan: 'starter', cycle: 'quarterly', credits_per_week: 9,  price_fcfa: 40000,  prix_img: 1111 },
-  'prd_34w031':   { plan: 'pro',     cycle: 'monthly', credits_per_week: 18, price_fcfa: 99900,  prix_img: 1388 },
-  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'quarterly', credits_per_week: 18, price_fcfa: 80000,  prix_img: 1111 },
-  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly', credits_per_week: 36, price_fcfa: 149900, prix_img: 1041 },
-  'prd_dn4fb72l': { plan: 'scale',   cycle: 'quarterly', credits_per_week: 36, price_fcfa: 120000, prix_img: 833 },
-  // Passerelle First Payment → Starter : paiement du solde restant (49.900 − 17.000 = 32.900,
-  // arrondi commercialement à 33.000). Traité comme un abonnement Starter normal (isPack=false,
-  // donc pas de logique d'empilement de pack) mais avec une durée volontairement plus courte de
-  // 21 jours au lieu des 30 jours standards — la 1ère semaine a déjà été livrée sous First
-  // Payment, ce paiement ne couvre que les 3 semaines restantes du mois. Voir le TODO ci-dessus
-  // pour la règle des 7 jours.
-  'prd_c0ga3snp': { plan: 'starter', cycle: 'monthly', credits_per_week: 9, price_fcfa: 33000, prix_img: 917, upgrade_duration_days: 21 },
+  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly',   credits_per_week: 6,  price_fcfa: 60000, prix_img: 2500 },
+  'prd_wdya3v9h': { plan: 'starter', cycle: 'quarterly', credits_per_week: 6,  price_fcfa: 50000, prix_img: 2083 },
+  'prd_34w031':   { plan: 'pro',     cycle: 'monthly',   credits_per_week: 12, price_fcfa: 110000, prix_img: 2292 },
+  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'quarterly', credits_per_week: 12, price_fcfa: 90000, prix_img: 1875 },
+  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly',   credits_per_week: 24, price_fcfa: 200000, prix_img: 2083 },
+  'prd_dn4fb72l': { plan: 'scale',   cycle: 'quarterly', credits_per_week: 24, price_fcfa: 160000, prix_img: 1667 },
 };
 
-const PLAN_LABELS = { discovery: 'First Payment', starter: 'Conversion Starter', pro: 'Conversion Pro', scale: 'Conversion Scale' };
+// 'discovery' : libellé conservé uniquement pour d'anciens comptes déjà abonnés (offre retirée de la vente).
+const PLAN_LABELS = { discovery: 'Discovery', starter: 'Conversion Starter', pro: 'Conversion Pro', scale: 'Conversion Scale' };
 
 // ── Séquence email de conversion J1/J5/J12/J21 ─────────────────────────────
-const SEQUENCE_PRICES = { starter: { price: 49900 } }; // Starter mensuel en FCFA, référence pour les prix cités dans les emails
+const SEQUENCE_PRICES = { starter: { price: OFFERS.starter.monthly.price, prixImg: OFFERS.starter.monthly.prixImg } }; // Starter mensuel en FCFA, référence pour les prix cités dans les emails
 
 // Convertit un prix FCFA vers la devise de la personne (détectée et mémorisée côté AdBoard).
 // Taux récupéré à chaque envoi — jamais de taux périmé, contrairement à un taux figé au moment de l'inscription.
@@ -664,7 +638,7 @@ async function chargerTemplate(cle) {
 
 async function renderSequenceEmail(key, { firstName='', productName='', productPays='', currency='XOF' } = {}) {
   const prixLocal = await formatPriceForCurrency(SEQUENCE_PRICES.starter.price, currency);
-  const prixParImage = await formatPriceForCurrency(Math.round(SEQUENCE_PRICES.starter.price / 36), currency);
+  const prixParImage = await formatPriceForCurrency(SEQUENCE_PRICES.starter.prixImg, currency);
   const wrap = (body) => `<div style="font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#222;font-size:15px;line-height:1.65;">${body}</div>`;
 
   const tpl = await chargerTemplate(`email_${key}`);
@@ -873,12 +847,12 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
       const detailLines = isPack ? [
         `${totalImages} images publicitaires incluses (angles et concepts variés)`,
         `Utilisables librement jusqu'à expiration, sur 1 produit`,
-        prixImg ? `Prix moyen par image : ${formatFCFA(prixImg)} FCFA` : null,
+        prixImg ? `Prix moyen par créative : ${formatFCFA(prixImg)} FCFA` : null,
         'Analyse de marché (cibles, concurrents, tendances)',
       ].filter(Boolean) : [
         `${creditsPerWeek || 0} images publicitaires livrées chaque semaine`,
         `Soit environ ${weeksInPeriod} semaine${weeksInPeriod>1?'s':''} sur cette période — ${totalImages} images au total`,
-        prixImg ? `Prix moyen par image : ${formatFCFA(prixImg)} FCFA` : null,
+        prixImg ? `Prix moyen par créative : ${formatFCFA(prixImg)} FCFA` : null,
         'Données marché hebdomadaires (cibles, concurrents, tendances)',
       ].filter(Boolean);
       doc.fontSize(9).fillColor('#444444').font('Helvetica');
@@ -1072,101 +1046,15 @@ async function sendDeliverablesReadyEmail({ email, produit }) {
 }
 
 
-// Marque définitivement un compte comme ayant déjà utilisé First Payment (achat unique à vie,
-// demande d'Amar) — stocké dans user_metadata Supabase, jamais réinitialisé, même après
-// expiration/désabonnement. Utilisé pour ne plus jamais proposer First Payment à ce compte
-// (AdBoard + éventuellement chatbot une fois identifié). Ne bloque pas un paiement déjà encaissé
-// par Chariow — sert uniquement à ne plus RE-proposer l'offre ensuite.
-async function markFirstPaymentUsed(userId) {
-  try {
-    const r = await fetch(`${SUPABASE_URL_INT}/auth/v1/admin/users/${userId}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': SUPABASE_SERVICE_KEY,
-        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-      },
-      body: JSON.stringify({ user_metadata: { has_used_discovery: true } }),
-    });
-    if (!r.ok) {
-      const errText = await r.text();
-      console.error('[Chariow] ❌ Échec marquage has_used_discovery:', r.status, errText.slice(0, 300));
-    } else {
-      console.log(`[Chariow] 🔒 has_used_discovery=true posé pour ${userId} (First Payment, achat unique à vie)`);
-    }
-  } catch(e) {
-    console.error('[Chariow] Erreur marquage has_used_discovery:', e.message);
-  }
-  // ⚠️ NOTE : PUT sur /auth/v1/admin/users/{id} avec { user_metadata } REMPLACE tout l'objet
-  // user_metadata côté GoTrue selon les versions de l'API Supabase — à vérifier en staging avant
-  // prod pour ne pas écraser full_name/currency/crm_* déjà stockés. Si c'est le cas, il faudra
-  // d'abord lire le user_metadata existant et le fusionner avant ce PUT (comme fait ailleurs
-  // dans ce fichier pour la lecture, jamais encore fait pour l'écriture de user_metadata).
-}
-
 async function activateSubscription(userId, planInfo, email, name, phone) {
   const { plan, cycle, credits_per_week: creditsPerWeek, price_fcfa: priceFcfa, prix_img: prixImg, type, total_credits: totalCreditsAchat } = planInfo;
   const isPack = type === 'pack';
   const now = new Date();
-  // Cause profonde évitée (pack traité comme abonnement) : un pack n'a pas de cycle hebdomadaire
-  // récurrent — 3 mois fixes pour Discovery, pas de logique "credits_per_week × semaines" qui
-  // continuerait à générer de nouvelles images chaque semaine indéfiniment.
-  // Cause du changement : le cycle long est passé d'annuel (365j) à trimestriel (91j), même
-  // remise (-30%), pour réduire l'engagement perçu tout en gardant l'avantage prix.
-  // upgrade_duration_days : cas spécial de la passerelle First Payment → Starter (paiement du
-  // solde restant, Completion). Règle demandée par Amar : si le solde est payé DANS les 7 jours
-  // suivant l'achat de First Payment, la 1ère semaine est déjà couverte — l'abonnement doit
-  // courir jusqu'à (date d'achat First Payment + 28 jours), ni plus ni moins, pour ne pas faire
-  // perdre ni gagner de jours au client. Si le solde est payé APRÈS le 7e jour (le client a
-  // traîné), on ne le pénalise pas pour autant : il repart sur des 21 jours pleins à partir
-  // d'aujourd'hui, plutôt que d'hériter d'une date d'expiration déjà dépassée.
-  let dureeJours = isPack ? 90 : (planInfo.upgrade_duration_days || (cycle === 'quarterly' ? 91 : 30));
-  let expiresAt = new Date(now.getTime() + dureeJours * 24 * 60 * 60 * 1000);
-  let totalCredits = totalCreditsAchat;
-
-  if (!isPack && planInfo.upgrade_duration_days) {
-    try {
-      const rDiscovery = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?user_id=eq.${userId}&select=plan,started_at,active`, {
-        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
-      });
-      const rows = await rDiscovery.json();
-      const existingDiscovery = rows[0];
-      if (existingDiscovery?.plan === 'discovery' && existingDiscovery.started_at) {
-        const ageDaysAtCompletion = (now.getTime() - new Date(existingDiscovery.started_at).getTime()) / (24 * 60 * 60 * 1000);
-        if (ageDaysAtCompletion <= 7) {
-          expiresAt = new Date(new Date(existingDiscovery.started_at).getTime() + 28 * 24 * 60 * 60 * 1000);
-          console.log(`[Chariow] 🔀 Complétion Starter dans les 7 jours (J${ageDaysAtCompletion.toFixed(1)}) — expiration alignée sur First Payment + 28j : ${expiresAt.toISOString()}`);
-        } else {
-          expiresAt = new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000);
-          console.log(`[Chariow] 🔀 Complétion Starter après 7 jours (J${ageDaysAtCompletion.toFixed(1)}) — 21 jours pleins à partir d'aujourd'hui : ${expiresAt.toISOString()}`);
-        }
-      }
-    } catch(e) {
-      console.error('[Chariow] Erreur lecture First Payment existant (règle des 7 jours ignorée, 21 jours standards appliqués) :', e.message);
-    }
-  }
-
-  // Empilement des packs Discovery : si un pack du même type est déjà actif et non expiré,
-  // on ADDITIONNE les nouvelles images plutôt que d'écraser (achat = complément, jamais une
-  // perte des images déjà payées et non utilisées), et on garde la date d'expiration la plus
-  // tardive entre l'ancienne et la nouvelle — jamais raccourcie par un nouvel achat.
-  if (isPack) {
-    try {
-      const rExisting = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?user_id=eq.${userId}&select=type,total_credits,expires_at,active`, {
-        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
-      });
-      const existingRows = await rExisting.json();
-      const existing = existingRows[0];
-      if (existing?.type === 'pack' && existing.active && existing.expires_at && new Date(existing.expires_at) > now) {
-        totalCredits = (existing.total_credits || 0) + totalCreditsAchat;
-        const existingExpiry = new Date(existing.expires_at);
-        if (existingExpiry > expiresAt) expiresAt = existingExpiry;
-        console.log(`[Chariow] 📦 Pack Discovery déjà actif — empilement : ${existing.total_credits} + ${totalCreditsAchat} = ${totalCredits} images, expire le ${expiresAt.toISOString()}`);
-      }
-    } catch(e) {
-      console.error('[Chariow] Erreur vérification pack existant (empilement ignoré, achat traité comme neuf) :', e.message);
-    }
-  }
+  // Durée : mensuel = 30 jours, trimestriel = 91 jours (le cycle long est passé d'annuel à trimestriel,
+  // même logique de remise). Plus de pack ni de passerelle First Payment → Starter.
+  const dureeJours = cycle === 'quarterly' ? 91 : 30;
+  const expiresAt = new Date(now.getTime() + dureeJours * 24 * 60 * 60 * 1000);
+  const totalCredits = totalCreditsAchat;
 
   const payload = {
     user_id: userId,
@@ -1207,13 +1095,6 @@ async function activateSubscription(userId, planInfo, email, name, phone) {
   }
   const data = await r.json();
   console.log(`[Chariow] ✅ ${isPack ? 'Pack activé' : 'Abonnement activé'}: ${userId} → ${plan} (${cycle}, expire le ${expiresAt.toISOString()})`);
-
-  // First Payment est un achat unique à vie — on marque le compte dès la 1ère activation, pour
-  // ne plus jamais le proposer à nouveau (voir markFirstPaymentUsed ci-dessus pour la limite
-  // connue : fusion de user_metadata à vérifier avant prod).
-  if (isPack && plan === 'discovery') {
-    markFirstPaymentUsed(userId).catch(() => {});
-  }
 
   // Log permanent de CE paiement précis — jamais écrasé, contrairement à "subscriptions" qui ne
   // garde que l'état courant. Nécessaire pour calculer LTV et fréquence d'achat par client.
@@ -3618,7 +3499,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
             lien_page_produit: data.product.lien_page_produit || null,
             marque: data.product.marque || null,
           },
-          quantity: data.quantity || 9,
+          quantity: data.quantity || 6,
           history: data.history || { angles_used: [], personas_used: [], batches_count: 0 },
           photo_nobg: null,
         };
@@ -3631,7 +3512,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         if (brief.client.user_id) {
           sendPushToUser(brief.client.user_id, {
             title: '📦 Demande reçue',
-            body: `Tes ${brief.quantity} visuels pour ${brief.product.nom} sont en cours — livraison sous 48h.`,
+            body: `Tes ${brief.quantity} visuels pour ${brief.product.nom} sont en cours — livraison sous 24h.`,
             url: '/adboard/tracking'
           }).catch(()=>{});
         }
@@ -3863,7 +3744,7 @@ if (req.method === 'POST' && req.url === '/create-checkout') {
       } else if (data?.data?.step === 'completed') {
         // Produit déjà acheté ou gratuit → activer directement
         if (user_id && plan) {
-          const planInfo = PLAN_MAP[product_id] || { plan, cycle: 'monthly', credits_per_week: 9, price_fcfa: 0, prix_img: 0 };
+          const planInfo = PLAN_MAP[product_id] || { plan, cycle: 'monthly', credits_per_week: ({ starter: 6, pro: 12, scale: 24 })[plan] || 6, price_fcfa: 0, prix_img: 0 };
           await activateSubscription(user_id, planInfo, email);
         }
         res.writeHead(200, {'Content-Type':'application/json'});
@@ -3976,16 +3857,16 @@ if (req.method === 'GET' && req.url.startsWith('/cron/check-pending')) {
       await saveBriefs([b]);
     }
 
-    // ── Rappel 36h — livraison prévue à 48h, marge de 12h pour ne jamais oublier d'envoyer ──
-    const seuil36h = Date.now() - 36 * 60 * 60 * 1000;
+    // ── Rappel 18h — livraison prévue à 24h, marge de 6h pour ne jamais oublier d'envoyer ──
+    const seuil18h = Date.now() - 18 * 60 * 60 * 1000;
     const aRappeler = briefs.filter(b =>
       b.status !== 'done' && b.status !== 'cancelled' && b.status !== 'probleme_agence' &&
-      !b.delivery_reminder_sent && new Date(b.created_at).getTime() <= seuil36h
+      !b.delivery_reminder_sent && new Date(b.created_at).getTime() <= seuil18h
     );
     for (const b of aRappeler) {
       await notifierAdmin(
-        `📬 36h écoulées — envoie les livrables pour ${b.product?.nom || 'produit'}`,
-        `<p><strong>${b.product?.nom || 'Produit'}</strong> — 36h se sont écoulées depuis la demande. Encore 12h avant l'échéance des 48h — envoie les livrables au client.</p>
+        `📬 18h écoulées — envoie les livrables pour ${b.product?.nom || 'produit'}`,
+        `<p><strong>${b.product?.nom || 'Produit'}</strong> — 18h se sont écoulées depuis la demande. Encore 6h avant l'échéance des 24h — envoie les livrables au client.</p>
          <p>Client : ${b.client?.email || 'email non renseigné'} — ${b.quantity} images</p>
          <p><a href="https://www.adstackofficial.com/factory.html" style="color:#5B8DEF;">Ouvrir Factory pour envoyer les livrables →</a></p>
          <p style="color:#888;font-size:12px">Reçue le ${new Date(b.created_at).toLocaleString('fr-FR')} — id ${b.id}</p>`
@@ -3993,7 +3874,7 @@ if (req.method === 'GET' && req.url.startsWith('/cron/check-pending')) {
       b.delivery_reminder_sent = true;
       await saveBriefs([b]);
     }
-    console.log(`[Pending Check] ${aRappeler.length} rappel(s) 36h envoyé(s)`);
+    console.log(`[Pending Check] ${aRappeler.length} rappel(s) 18h envoyé(s)`);
     console.log(`[Pending Check] ${aAlerter.length} demande(s) signalée(s)`);
 
     // ── Relance proactive "marquez vos Top Performer" — 7 à 10 jours après une livraison,
@@ -4397,57 +4278,6 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
           await markSequenceSent(sub.user_id, dailyKey);
           sentCount++;
         }
-
-        // ── Séquence Discovery → Starter — cible spécifiquement les comptes ayant acheté
-        // Discovery (le système principal plus haut s'arrête dès qu'un abonnement actif existe,
-        // donc ne couvre jamais ce cas). 4 emails + 3 push sur ~10 jours, ancrés sur le vrai
-        // point de bascule du pack Discovery (9 images, une seule fois, jamais renouvelé
-        // automatiquement) plutôt qu'un calendrier générique déconnecté de l'usage réel.
-        // Réutilise activeSubs déjà chargé juste au-dessus — pas de fetch redondant.
-        const discoveryUsers = activeSubs.filter(s => s.plan === 'discovery' && s.started_at);
-        const D2S_STEPS = [
-          { day: 0,  key: 'd2s_j0',              type: 'email' },
-          { day: 2,  key: 'd2s_checkin_1',       type: 'push'  },
-          { day: 4,  key: 'd2s_j4',              type: 'email' },
-          { day: 6,  key: 'd2s_fin_pack_1',      type: 'push'  },
-          { day: 7,  key: 'd2s_j7',              type: 'email' },
-          { day: 9,  key: 'd2s_dernier_rappel_1', type: 'push' },
-          { day: 10, key: 'd2s_j10',             type: 'email' },
-        ];
-        for (const sub of discoveryUsers) {
-          const ageDaysDiscovery = (Date.now() - new Date(sub.started_at).getTime()) / DAY_MS;
-          for (const step of D2S_STEPS) {
-            // Fenêtre ±0.5 jour — même tolérance que le reste de ce cron (fréquence quotidienne).
-            if (ageDaysDiscovery < step.day - 0.5 || ageDaysDiscovery >= step.day + 0.5) continue;
-            const alreadySentD2S = await wasSequenceSent(sub.user_id, step.key);
-            if (alreadySentD2S) continue;
-            if (step.type === 'email') {
-              const uRes = await fetch(`${SUPABASE_URL_INT}/auth/v1/admin/users/${sub.user_id}`, {
-                headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
-              });
-              const u = await uRes.json();
-              if (!u?.email) continue;
-              const prodRes3 = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?user_id=eq.${sub.user_id}&select=nom&limit=1`, {
-                headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
-              });
-              const prodsD = await prodRes3.json();
-              const okD2S = await sendSequenceEmail(u.email, step.key, {
-                firstName: u.user_metadata?.full_name?.split(' ')[0] || '',
-                productName: prodsD?.[0]?.nom || 'ton produit',
-                currency: u.user_metadata?.currency || 'XOF',
-              }, sub.user_id);
-              if (okD2S) { await markSequenceSent(sub.user_id, step.key); sentCount++; }
-            } else {
-              const tplPush = await chargerTemplate(`push_${step.key}`);
-              if (!tplPush) continue;
-              // Même logique d'attribution que les emails — utm_campaign porte la clé de
-              // l'étape, pour relier un clic sur cette notif à un ajout panier/achat ensuite.
-              await sendPushToUser(sub.user_id, { title: tplPush.titre, body: tplPush.contenu, url: `/adboard/offers?utm_source=push&utm_medium=push&utm_campaign=${encodeURIComponent(step.key)}` });
-              await markSequenceSent(sub.user_id, step.key);
-              sentCount++;
-            }
-          }
-        }
       }
     } catch(e) {
       console.error('[Sequence] Erreur rappel renouvellement:', e.message);
@@ -4515,7 +4345,7 @@ if (req.method === 'POST' && req.url === '/chat') {
       const isPackClient = subscription?.type === 'pack';
       // A déjà transigé au moins une fois, même si l'abonnement actuel est expiré/inactif — la
       // ligne `subscription` existe dès la 1ère activation et n'est jamais supprimée. C'est ce
-      // qui doit bloquer First Payment pour de bon (achat unique à vie), pas juste `hasSubscription`.
+      // qui distingue un ancien client d'un tout nouveau visiteur, pas juste `hasSubscription`.
       const everTransacted = !!subscription;
 
       // ── Situation calculée en code, pas laissée à l'appréciation du modèle ──
@@ -4526,15 +4356,15 @@ if (req.method === 'POST' && req.url === '/chat') {
       if (!isConnected) {
         situationAction = "Pas encore connecté → priorité : proposer de se connecter avec Google (bouton login).";
       } else if (!hasSubscription && !everTransacted) {
-        situationAction = "Jamais transigé, aucune offre active → proposer First Payment (achat unique à vie, 17.000 FCFA, une première production stratégique complète — 9 images) si c'est un nouveau visiteur hésitant, sinon un plan classique adapté à son besoin, avec le bouton checkout correspondant.";
+        situationAction = "Jamais transigé, aucune offre active → proposer le plan adapté à son besoin (Starter / Pro / Scale), avec le bouton checkout correspondant.";
       } else if (!hasSubscription && everTransacted) {
-        situationAction = "Déjà transigé au moins une fois (abonnement actuel expiré/inactif) → NE JAMAIS reproposer First Payment, c'est un achat unique à vie déjà utilisé. Proposer uniquement un plan classique (Starter/Pro/Scale selon son besoin) pour reprendre, avec le bouton checkout correspondant.";
+        situationAction = "Déjà transigé au moins une fois (abonnement actuel expiré/inactif) → proposer un plan (Starter/Pro/Scale selon son besoin) pour reprendre, avec le bouton checkout correspondant.";
       } else if (products.length === 0) {
-        situationAction = `${isPackClient ? 'A pris First Payment' : 'Abonné actif'} mais AUCUN produit créé → dire d'aller créer un produit (bouton openProductForm). C'est la seule étape qui manque avant de pouvoir demander des images. Ne JAMAIS proposer un plan, il en a déjà un actif.`;
-      } else if ((credits.available||0) >= 9) {
-        situationAction = `${isPackClient ? 'A pris First Payment' : 'Abonné actif'}, ${products.length} produit(s) créé(s), ${credits.available} images DISPONIBLES MAINTENANT → dire d'aller sur "Mes Produits" et cliquer "Demander une production" sur le produit concerné, livraison sous 48h. NE JAMAIS proposer un plan ni un renouvellement, il en a déjà des images disponibles.`;
+        situationAction = `${isPackClient ? 'Ancien pack' : 'Abonné actif'} mais AUCUN produit créé → dire d'aller créer un produit (bouton openProductForm). C'est la seule étape qui manque avant de pouvoir demander des images. Ne JAMAIS proposer un plan, il en a déjà un actif.`;
+      } else if ((credits.available||0) >= 6) {
+        situationAction = `${isPackClient ? 'Ancien pack' : 'Abonné actif'}, ${products.length} produit(s) créé(s), ${credits.available} images DISPONIBLES MAINTENANT → dire d'aller sur "Mes Produits" et cliquer "Demander une production" sur le produit concerné, livraison sous 24h. NE JAMAIS proposer un plan ni un renouvellement, il en a déjà des images disponibles.`;
       } else if (isPackClient) {
-        situationAction = `A pris First Payment (pack ponctuel, 9 images), mais les a toutes utilisées (0 disponible) → contrairement à un abonnement classique, ce pack n'inclut JAMAIS de nouvelles images automatiquement, et NE PEUT PAS être repris une 2e fois (achat unique à vie). Proposer de compléter avec Starter (bouton checkout-upgrade, 33.000 FCFA — pas le plein tarif) pour continuer à recevoir des images chaque semaine. NE JAMAIS dire d'attendre un renouvellement automatique — ça n'existe pas pour ce pack. NE JAMAIS proposer de reprendre First Payment.`;
+        situationAction = `Ancien pack ponctuel (offre retirée de la vente) dont toutes les images sont utilisées (0 disponible) → ce pack n'inclut JAMAIS de nouvelles images automatiquement. Proposer un abonnement (Starter en priorité, bouton checkout:starter) pour continuer à recevoir des images chaque semaine. NE JAMAIS dire d'attendre un renouvellement automatique — ça n'existe pas pour ce pack.`;
       } else {
         situationAction = `Abonné actif, ${products.length} produit(s) créé(s), mais images de la semaine épuisées (0 disponible) → c'est normal et temporaire (l'abonnement lui-même reste actif, ce n'est qu'une pause hebdomadaire). Dire que les prochaines images arrivent à la prochaine livraison hebdomadaire${credits.nextCreditDate ? ' (' + new Date(credits.nextCreditDate).toLocaleDateString('fr-FR',{day:'numeric',month:'long'}) + ')' : ''}. NE JAMAIS proposer de reprendre un plan ou de "renouveler" — l'abonnement n'a pas expiré, c'est juste le cycle hebdomadaire normal.`;
       }
@@ -4648,7 +4478,6 @@ Prospect chaud → bouton checkout DIRECT au message suivant.
 [BTN:login] [BTN:openProductForm]
 [BTN:checkout:starter] [BTN:checkout:pro] [BTN:checkout:scale]
 [BTN:checkout-quarterly:starter] [BTN:checkout-quarterly:pro] [BTN:checkout-quarterly:scale]
-[BTN:checkout-upgrade] (uniquement pour un client First Payment — voir RÈGLE 7 — paiement du solde restant)
 [BTN:navigate:suivi] [BTN:navigate:galerie]
 [BTN:whatsapp]
 INTERDIT ABSOLU : n'écris JAMAIS un lien markdown ([texte](url)) ni une URL brute (chariow, mychariow, ou
@@ -4673,30 +4502,11 @@ Juste avant ou juste après avoir proposé le bouton checkout à une personne ch
 courtes ce qui se passe concrètement après le paiement — ça rassure, une personne qui va payer veut savoir à
 quoi s'attendre. Exemple de ton (adapte au contexte de la conversation, ne récite jamais mot pour mot) :
 "Une fois le paiement fait, tu es redirigé directement sur la plateforme — tu te connectes, tu ajoutes ton
-produit, tu demandes tes visuels, et notre équipe te livre du contenu qui performe sous 48h max."
+produit, tu demandes tes visuels, et notre équipe te livre du contenu qui performe sous 24h max."
 Une touche d'enthousiasme sincère est bienvenue, avant ou après le paiement — pas dans chaque message, juste
 au bon moment (ex: quand elle vient de choisir une offre, ou juste avant le bouton) : une phrase courte du
 genre "hâte de voir tes ventes décoller" ou "on est chauds de bosser sur ton produit" — jamais forcé, jamais
 répété, jamais au prix d'avoir l'air d'un vendeur trop pressé.
-
-${isPackClient ? `RÈGLE 7 — FIRST PAYMENT EST UNE PASSERELLE VERS STARTER, PAS UN PRODUIT À PART (s'applique à cette
-conversation précise — ce client a pris First Payment)
-First Payment n'est pas une offre isolée : c'est la première semaine de Starter, déjà livrée. Le client a payé
-17.000 FCFA sur les 49.900 FCFA du Starter mensuel — il ne lui reste que le SOLDE, 33.000 FCFA, pour
-continuer les 3 semaines restantes du mois, sans repayer Starter en entier. Ne dis JAMAIS "repasse à Starter à
-49.900 FCFA" ou toute formulation qui laisse croire qu'il repaie depuis zéro — c'est faux et ça casse la
-confiance. La formulation correcte : il complète ce qu'il a déjà commencé.
-Profite des échanges pertinents — pas seulement quand ses images sont à zéro (ça, c'est déjà géré ailleurs) —
-pour glisser ce contraste positif, appuyé sur SON contexte précis (son produit "${products[0]?.nom || 'son produit'}",
-ce qu'il a déjà reçu, où il en est) — jamais une phrase générique interchangeable avec n'importe quel client.
-Montre ce que la suite ajoute, positivement : la continuité (chaque semaine, pas une seule fois), l'amélioration
-continue au fil des livraisons suivantes — jamais une formulation qui pointe une limitation de First Payment.
-Moments naturels où le glisser, sans jamais forcer si la conversation ne s'y prête pas : il parle de ses
-premiers retours/résultats → relie ça à la continuité que la suite apporterait pour CE produit précis ; il
-demande "et après ?" ou "comment ça marche la suite" → présente la suite comme déjà à moitié payée, jamais
-comme un correctif à un manque ; il complimente la qualité reçue → glisse que c'est ce niveau-là chaque semaine
-en continuant. Une seule mention discrète par échange maximum, jamais deux fois de suite sans réaction de sa
-part. Quand le moment est venu de proposer concrètement : [BTN:checkout-upgrade]` : ''}
 
 Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`
 
@@ -4813,7 +4623,7 @@ sortir de la saturation et grandir durablement. Concrètement, ça veut dire : s
 amélioration continue, chaque semaine, portées par une vraie équipe derrière lui.
 Ne détaille jamais ça comme une liste de features ("analyse de marché + personas + angles + créatives") — c'est
 un mécanisme qu'il découvre une fois client, pas un argument de vente. Ce qui vend, c'est le résultat : passer
-un cap, se démarquer, ne plus deviner ce qui marche. Livraison garantie 48h (24h en engagement annuel) ou
+un cap, se démarquer, ne plus deviner ce qui marche. Livraison garantie 24h ou
 remboursé.
 Reste volontairement vague sur qui on cible précisément (ne dis jamais "COD", "paiement à la livraison", ou
 "Afrique francophone" comme si c'était notre positionnement officiel) — "on aide des e-commerçants à grandir"
@@ -4847,23 +4657,17 @@ ${formatOffresPourPrompt(currency, currencyRate)}
   2.000$/mois en pub, vise 15.000$/mois de revenus.
 - Scale → structure une croissance ambitieuse sur plusieurs marchés ou lancements, dépense plusieurs milliers
   de $/mois en pub, vise un palier à 6 chiffres.
-- First Payment → JAMAIS proposée en premier ni mise en avant spontanément. C'est un filet de sécurité, à sortir
-  uniquement quand le prospect est visiblement hésitant, sensible au prix, ou rechigne face à un engagement
-  mensuel. First Payment lui donne une première expérience concrète — voir notre sérieux, juger la qualité du
-  travail livré, télécharger et lancer par lui-même — mais sans la partie amélioration continue semaine après
-  semaine, qui n'arrive qu'avec un abonnement. Présente ça positivement (une vraie première expérience), jamais
-  comme une version diminuée.
 
 PAIEMENT ET GARANTIE
 Wave, Orange Money, Moov Money, MTN MoMo, Djamo — paiement sécurisé via Chariow. Abonnement mensuel résiliable
-à tout moment (pas d'engagement, sauf le cycle annuel choisi volontairement pour le tarif réduit). Garantie :
-livraison sous 48h ou remboursé.
+à tout moment (pas d'engagement, sauf le cycle trimestriel choisi volontairement pour le tarif réduit). Garantie :
+livraison sous 24h ou remboursé.
 
 PROCESS DE LIVRAISON (à jour — ne JAMAIS mentionner WhatsApp, Google Drive, ou un "formulaire de brief" à
 remplir, ce n'est plus le fonctionnement réel)
 Abonnement en ligne → connexion Google sur AdBoard → import du produit dans le catalogue, demande d'images en
 2 clics → production → livraison directement dans AdBoard (Galerie Créatives, Ad Copies, Données Marché) sous
-48h, avec suivi de production en temps réel → cycle hebdomadaire.
+24h, avec suivi de production en temps réel → cycle hebdomadaire.
 
 DÉMO — CONTRAIREMENT À UNE ANCIENNE CONSIGNE, NE JAMAIS NIER OU ÉVITER LE SUJET
 Beaucoup de prospects arrivant sur cette page ont déjà reçu une démo personnalisée avant d'être relancés — si la
@@ -4905,15 +4709,14 @@ qui convertit, chaque semaine — c'est ça qui te fait grandir."
 RÈGLE 3 — CTA
 0 bouton avant le 3ème échange. 1 seul par message. Jamais 2 de suite.
 [BTN:offres:Voir les offres] [BTN:checkout:starter:Démarrer avec Starter →] [BTN:checkout:pro:Démarrer avec Pro →]
-[BTN:checkout:scale:Démarrer avec Scale →] [BTN:checkout:discovery:Tester avec First Payment →]
+[BTN:checkout:scale:Démarrer avec Scale →]
 INTERDIT ABSOLU : n'écris JAMAIS un lien markdown ([texte](url)) ni une URL brute (chariow, mychariow, ou
 autre) pour proposer un paiement ou une offre — même si tu la retrouves via la recherche Google ou ailleurs
 dans le contexte. Un lien direct saute le popup de paiement intégré à la page (devise, code promo, expérience
 soignée) et peut pointer vers une page obsolète. Le SEUL moyen valide de proposer une action d'achat est le
 token [BTN:...] ci-dessus — rien d'autre, jamais.
 Prospect chaud (a déjà vu une démo, pose des questions de prix/délai précises) → bouton checkout DIRECT, sur
-l'offre qui correspond à SON profil (voir OFFRES) — jamais First Payment sauf s'il est explicitement hésitant/sensible
-au prix.
+l'offre qui correspond à SON profil (voir OFFRES).
 
 Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`;
 
@@ -5578,6 +5381,11 @@ if (req.method === 'POST' && req.url === '/briefs/create') {
     try {
       const { userId, productId, quantity } = JSON.parse(body);
       if (!userId || !productId || !quantity) { res.writeHead(400); res.end(JSON.stringify({error:'userId, productId et quantity requis'})); return; }
+      // Volumes de production : 6 à 24 visuels, par multiples de 3 (3 visuels par angle, 2 à 8 angles).
+      // Les anciens clients AdBoard encore ouverts peuvent envoyer 9 ou 18 : toujours valides. Au-delà de 24 : refusé.
+      if (!Number.isInteger(quantity) || quantity < 6 || quantity > 24 || quantity % 3 !== 0) {
+        res.writeHead(400); res.end(JSON.stringify({ error: 'quantite_invalide', quantity, min: 6, max: 24, palier: 3 })); return;
+      }
 
       const [subRes, briefsRes] = await Promise.all([
         fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?user_id=eq.${userId}&select=*&order=started_at.desc&limit=1`, {
@@ -5952,7 +5760,7 @@ if (req.method === 'GET' && req.url === '/setup-templates') {
 
     { cle: 'email_j12_offer', categorie: 'email', etape_funnel: 'conversion',
       sujet: `"C'est cher" — parlons-en`,
-      contenu: `<p>Salut{{firstName}},</p><p>Tu regardes peut-être le prix de Starter ({{prixLocal}}) et tu te dis que c'est cher.</p><p>Fais le calcul : ça revient à environ {{prixParImage}} par image. Un freelance basique facture souvent 5x plus cher pour une seule image, sans données marché, sans stratégie ni amélioration continue.</p><p>Le vrai coût, c'est pas Starter. C'est chaque jour sans bon contenu publicitaire qui brûle ton budget, sans savoir comprendre pourquoi ça n'a pas marché.</p><p>La meilleure solution, elle est devant toi — pas ChatGPT que tout le monde a.</p><p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Je démarre avec Starter →</a></p><p style="margin-top:24px;">AdStack</p>` },
+      contenu: `<p>Salut{{firstName}},</p><p>Tu regardes peut-être le prix de Starter ({{prixLocal}}) et tu te dis que c'est cher.</p><p>Fais le calcul : ça revient à environ {{prixParImage}} par créative (vidéos et images comprises). Un freelance basique facture souvent 5x plus cher pour une seule image, sans données marché, sans stratégie ni amélioration continue.</p><p>Le vrai coût, c'est pas Starter. C'est chaque jour sans bon contenu publicitaire qui brûle ton budget, sans savoir comprendre pourquoi ça n'a pas marché.</p><p>La meilleure solution, elle est devant toi — pas ChatGPT que tout le monde a.</p><p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Je démarre avec Starter →</a></p><p style="margin-top:24px;">AdStack</p>` },
 
     { cle: 'email_j21_breakup', categorie: 'email', etape_funnel: 'conversion',
       sujet: `🤐 je vais arrêter de t'écrire !!!`,
