@@ -95,7 +95,7 @@ const OFFERS = {
   pro: {
     id: 'pro', name: 'Conversion Pro', best: true,
     tagline: 'Accélérer la production et la croissance de votre marque, sans la prise de tête de gérer une équipe.',
-    imagesPerWeek: 12, batchesPerWeek: 2, creativesPerMonth: 48, videosPerMonth: 16, imagesPerMonth: 32, produitsPerWeek: '1 à 2',
+    imagesPerWeek: 12, batchesPerWeek: 2, creativesPerMonth: 48, videosPerMonth: 16, imagesPerMonth: 32, produitsPerWeek: "jusqu'à 2",
     promo: '-10% de réduction',
     // prixImg = prix moyen par créative (vidéos + images), arrondi
     monthly: { price: 110000, prixImg: 2292, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
@@ -104,7 +104,7 @@ const OFFERS = {
   scale: {
     id: 'scale', name: 'Conversion Scale',
     tagline: 'Exploiter plusieurs marchés avec des langues et cultures différentes, sans exploser vos coûts ni augmenter la complexité.',
-    imagesPerWeek: 24, batchesPerWeek: 4, creativesPerMonth: 96, videosPerMonth: 32, imagesPerMonth: 64, produitsPerWeek: '1 à 4',
+    imagesPerWeek: 24, batchesPerWeek: 4, creativesPerMonth: 96, videosPerMonth: 32, imagesPerMonth: 64, produitsPerWeek: "jusqu'à 4",
     promo: '-20% de réduction',
     // prixImg = prix moyen par créative (vidéos + images), arrondi
     monthly: { price: 200000, prixImg: 2083, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
@@ -119,7 +119,7 @@ const OFFERS = {
 function formatOffresPourPrompt(currency, currencyRate) {
   const fmt = (fcfa) => fcfa.toLocaleString('fr-FR') + ' FCFA';
   const { starter, pro, scale } = OFFERS;
-  const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (mensuel) ou ${fmt(o.quarterly.price)}/mois (engagement trimestriel, -15%) · ${o.creativesPerMonth} créatives/mois (${o.videosPerMonth} vidéos + ${o.imagesPerMonth} images, ${o.batchesPerWeek} batch/semaine) · ${o.produitsPerWeek} produit${o.produitsPerWeek === '1' ? '' : 's'} · production en ${o.monthly.delivery} max${o.promo ? ' · ' + o.promo : ''}`;
+  const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (mensuel) ou ${fmt(o.quarterly.price)}/mois (engagement trimestriel, -15%) · ${o.creativesPerMonth} créatives/mois (${o.videosPerMonth} vidéos + ${o.imagesPerMonth} images, ${o.batchesPerWeek} batch/semaine) · ${o.produitsPerWeek} produit${o.produitsPerWeek === '1' ? '' : 's'}/semaine · production en ${o.monthly.delivery} max${o.promo ? ' · ' + o.promo : ''}`;
   return [ligne(starter), ligne(pro), ligne(scale)].join('\n');
 }
 
