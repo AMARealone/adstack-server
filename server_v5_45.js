@@ -77,38 +77,38 @@ async function getVenteCopyLive() {
 // recopié à la main. Si les prix changent un jour dans Platform.jsx, il faut répercuter ici aussi
 // (pas encore automatisé d'un seul côté — Platform.jsx reste la source visuelle, celle-ci la
 // source texte pour les chatbots) : à garder en tête, pas de mécanisme de sync auto pour l'instant.
-// MAJ pricing (oct. 2026, grille 60 000 / 110 000 / 200 000 FCFA ; trimestriel 50 000 / 90 000 / 160 000 = -15 % affiché) :
+// MAJ pricing (oct. 2026, grille 80 000 / 140 000 / 240 000 FCFA ; trimestriel 64 000 / 112 000 / 192 000 = -20 %) :
 // tarifs en FCFA (prix mensuel affiché, y compris en trimestriel), volumes 24 / 48 / 96 créatives par MOIS
 // (= 6 / 12 / 24 par semaine : 1 / 2 / 4 batchs de 2 vidéos + 4 images), production en 24h max. L'ancien paiement d'essai (First Payment +
 // Completion, ex-Discovery) est retiré : plus aucune offre « pack » à l'achat. Chariow gère la
 // devise réelle au moment du checkout.
 const OFFERS = {
   starter: {
-    id: 'starter', name: 'Conversion Starter',
+    id: 'starter', name: 'Starter',
     tagline: 'Automatiser la production de vos créatives, tout en améliorant vos performances publicitaires.',
     imagesPerWeek: 6, batchesPerWeek: 1, creativesPerMonth: 24, videosPerMonth: 8, imagesPerMonth: 16, produitsPerWeek: '1',
     promo: '',
     // prixImg = prix moyen par créative (vidéos + images), arrondi
-    monthly: { price: 60000, prixImg: 2500, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
-    quarterly: { price: 50000, prixImg: 2083, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_wdya3v9h/checkout' },
+    monthly: { price: 80000, prixImg: 3333, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
+    quarterly: { price: 64000, prixImg: 2667, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_wdya3v9h/checkout' },
   },
   pro: {
-    id: 'pro', name: 'Conversion Pro', best: true,
+    id: 'pro', name: 'Pro', best: true,
     tagline: 'Accélérer la production et la croissance de votre marque, sans la prise de tête de gérer une équipe.',
     imagesPerWeek: 12, batchesPerWeek: 2, creativesPerMonth: 48, videosPerMonth: 16, imagesPerMonth: 32, produitsPerWeek: "jusqu'à 2",
-    promo: '-10% de réduction',
+    promo: '-12,5% de réduction',
     // prixImg = prix moyen par créative (vidéos + images), arrondi
-    monthly: { price: 110000, prixImg: 2292, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
-    quarterly: { price: 90000, prixImg: 1875, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_lnp4ax0b/checkout' },
+    monthly: { price: 140000, prixImg: 2917, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
+    quarterly: { price: 112000, prixImg: 2333, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_lnp4ax0b/checkout' },
   },
   scale: {
-    id: 'scale', name: 'Conversion Scale',
+    id: 'scale', name: 'Scale',
     tagline: 'Exploiter plusieurs marchés avec des langues et cultures différentes, sans exploser vos coûts ni augmenter la complexité.',
     imagesPerWeek: 24, batchesPerWeek: 4, creativesPerMonth: 96, videosPerMonth: 32, imagesPerMonth: 64, produitsPerWeek: "jusqu'à 4",
-    promo: '-20% de réduction',
+    promo: '-25% de réduction',
     // prixImg = prix moyen par créative (vidéos + images), arrondi
-    monthly: { price: 200000, prixImg: 2083, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
-    quarterly: { price: 160000, prixImg: 1667, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_dn4fb72l/checkout' },
+    monthly: { price: 240000, prixImg: 2500, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
+    quarterly: { price: 192000, prixImg: 2000, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_dn4fb72l/checkout' },
   },
 };
 
@@ -119,8 +119,10 @@ const OFFERS = {
 function formatOffresPourPrompt(currency, currencyRate) {
   const fmt = (fcfa) => fcfa.toLocaleString('fr-FR') + ' FCFA';
   const { starter, pro, scale } = OFFERS;
-  const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (mensuel) ou ${fmt(o.quarterly.price)}/mois (engagement trimestriel, -15%) · ${o.creativesPerMonth} créatives/mois (${o.videosPerMonth} vidéos + ${o.imagesPerMonth} images, ${o.batchesPerWeek} batch/semaine) · ${o.produitsPerWeek} produit${o.produitsPerWeek === '1' ? '' : 's'}/semaine · production en ${o.monthly.delivery} max${o.promo ? ' · ' + o.promo : ''}`;
-  return [ligne(starter), ligne(pro), ligne(scale)].join('\n');
+  const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (mensuel) ou ${fmt(o.quarterly.price)}/mois (engagement trimestriel, -20%) · ${o.creativesPerMonth} créatives/mois (${o.videosPerMonth} vidéos + ${o.imagesPerMonth} images, ${o.batchesPerWeek} batch/semaine) · ${o.produitsPerWeek} produit${o.produitsPerWeek === '1' ? '' : 's'}/semaine · production en ${o.monthly.delivery} max${o.promo ? ' · ' + o.promo : ''}`;
+  // Offre de départ sans abonnement (affichée sous les 3 offres sur la page de vente) — ne jamais l'appeler « One Shot ».
+  const depart = `Batch de départ (pour ceux qui ne sont pas prêts pour un abonnement) : ${fmt(30000)}, une seule fois — 1 batch de 6 créatives (2 vidéos + 4 images) optimisées conversion, après une recherche marketing sur le produit, reçu dans AdBoard. Si la personne prend un abonnement dans les 30 jours, ${fmt(30000)} sont déduits de son 1er mois.`;
+  return [ligne(starter), ligne(pro), ligne(scale), depart].join('\n');
 }
 
 // Domaines suggérés à Gemini grounding pour la recherche ciblée (V4 — 6 sources enrichies)
@@ -591,16 +593,16 @@ const SUPABASE_ANON_KEY_INT = process.env.SUPABASE_ANON_KEY || '';
 // prd_c0ga3snp) est retiré : ces deux produits ne sont plus reconnus par le webhook.
 // Factures PDF / emails de confirmation / colonne montant_fcfa : les valeurs sont maintenant bien en FCFA.
 const PLAN_MAP = {
-  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly',   credits_per_week: 6,  price_fcfa: 60000, prix_img: 2500 },
-  'prd_wdya3v9h': { plan: 'starter', cycle: 'quarterly', credits_per_week: 6,  price_fcfa: 50000, prix_img: 2083 },
-  'prd_34w031':   { plan: 'pro',     cycle: 'monthly',   credits_per_week: 12, price_fcfa: 110000, prix_img: 2292 },
-  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'quarterly', credits_per_week: 12, price_fcfa: 90000, prix_img: 1875 },
-  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly',   credits_per_week: 24, price_fcfa: 200000, prix_img: 2083 },
-  'prd_dn4fb72l': { plan: 'scale',   cycle: 'quarterly', credits_per_week: 24, price_fcfa: 160000, prix_img: 1667 },
+  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly',   credits_per_week: 6,  price_fcfa: 80000, prix_img: 3333 },
+  'prd_wdya3v9h': { plan: 'starter', cycle: 'quarterly', credits_per_week: 6,  price_fcfa: 64000, prix_img: 2667 },
+  'prd_34w031':   { plan: 'pro',     cycle: 'monthly',   credits_per_week: 12, price_fcfa: 140000, prix_img: 2917 },
+  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'quarterly', credits_per_week: 12, price_fcfa: 112000, prix_img: 2333 },
+  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly',   credits_per_week: 24, price_fcfa: 240000, prix_img: 2500 },
+  'prd_dn4fb72l': { plan: 'scale',   cycle: 'quarterly', credits_per_week: 24, price_fcfa: 192000, prix_img: 2000 },
 };
 
 // 'discovery' : libellé conservé uniquement pour d'anciens comptes déjà abonnés (offre retirée de la vente).
-const PLAN_LABELS = { discovery: 'Discovery', starter: 'Conversion Starter', pro: 'Conversion Pro', scale: 'Conversion Scale' };
+const PLAN_LABELS = { discovery: 'Discovery', starter: 'Starter', pro: 'Pro', scale: 'Scale' };
 
 // ── Séquence email de conversion J1/J5/J12/J21 ─────────────────────────────
 const SEQUENCE_PRICES = { starter: { price: OFFERS.starter.monthly.price, prixImg: OFFERS.starter.monthly.prixImg } }; // Starter mensuel en FCFA, référence pour les prix cités dans les emails
