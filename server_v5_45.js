@@ -121,7 +121,7 @@ function formatOffresPourPrompt(currency, currencyRate) {
   const { starter, pro, scale } = OFFERS;
   const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (mensuel) ou ${fmt(o.quarterly.price)}/mois (engagement trimestriel, -20%) · ${o.creativesPerMonth} créatives/mois (${o.videosPerMonth} vidéos + ${o.imagesPerMonth} images, ${o.batchesPerWeek} batch/semaine) · ${o.produitsPerWeek} produit${o.produitsPerWeek === '1' ? '' : 's'}/semaine · production en ${o.monthly.delivery} max${o.promo ? ' · ' + o.promo : ''}`;
   // Offre de départ sans abonnement (affichée sous les 3 offres sur la page de vente) — ne jamais l'appeler « One Shot ».
-  const depart = `Batch de départ (pour ceux qui ne sont pas prêts pour un abonnement) : ${fmt(30000)}, une seule fois — 1 batch de 6 créatives (2 vidéos + 4 images) optimisées conversion, après une recherche marketing sur le produit, reçu dans AdBoard. Si la personne prend un abonnement dans les 30 jours, ${fmt(30000)} sont déduits de son 1er mois.`;
+  const depart = `Pack de 6 publicités (pour ceux qui ne sont pas prêts pour un abonnement) : ${fmt(30000)}, une seule fois — 2 vidéos + 4 images optimisées conversion, reçues dans AdBoard. Si la personne s'abonne dans les 30 jours, ${fmt(30000)} sont déduits de son 1er mois.`;
   return [ligne(starter), ligne(pro), ligne(scale), depart].join('\n');
 }
 
