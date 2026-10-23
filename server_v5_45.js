@@ -77,7 +77,7 @@ async function getVenteCopyLive() {
 // recopié à la main. Si les prix changent un jour dans Platform.jsx, il faut répercuter ici aussi
 // (pas encore automatisé d'un seul côté — Platform.jsx reste la source visuelle, celle-ci la
 // source texte pour les chatbots) : à garder en tête, pas de mécanisme de sync auto pour l'instant.
-// MAJ pricing (oct. 2026, grille 80 000 / 140 000 / 240 000 FCFA ; trimestriel 64 000 / 112 000 / 192 000 = -20 %) :
+// MAJ pricing (oct. 2026, grille 150 000 / 255 000 / 430 000 FCFA ; trimestriel 120 000 / 205 000 / 345 000 = -20 %) :
 // tarifs en FCFA (prix mensuel affiché, y compris en trimestriel), volumes 24 / 48 / 96 créatives par MOIS
 // (= 6 / 12 / 24 par semaine : 1 / 2 / 4 batchs de 2 vidéos + 4 images), production en 24h max. L'ancien paiement d'essai (First Payment +
 // Completion, ex-Discovery) est retiré : plus aucune offre « pack » à l'achat. Chariow gère la
@@ -89,26 +89,26 @@ const OFFERS = {
     imagesPerWeek: 6, batchesPerWeek: 1, creativesPerMonth: 24, videosPerMonth: 8, imagesPerMonth: 16, produitsPerWeek: '1',
     promo: '',
     // prixImg = prix moyen par créative (vidéos + images), arrondi
-    monthly: { price: 80000, prixImg: 3333, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
-    quarterly: { price: 64000, prixImg: 2667, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_wdya3v9h/checkout' },
+    monthly: { price: 150000, prixImg: 6250, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
+    quarterly: { price: 120000, prixImg: 5000, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_wdya3v9h/checkout' },
   },
   pro: {
     id: 'pro', name: 'Pro', best: true,
     tagline: 'Accélérer la production et la croissance de votre marque, sans la prise de tête de gérer une équipe.',
     imagesPerWeek: 12, batchesPerWeek: 2, creativesPerMonth: 48, videosPerMonth: 16, imagesPerMonth: 32, produitsPerWeek: "jusqu'à 2",
-    promo: '-12,5% de réduction',
+    promo: '-15% de réduction',
     // prixImg = prix moyen par créative (vidéos + images), arrondi
-    monthly: { price: 140000, prixImg: 2917, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
-    quarterly: { price: 112000, prixImg: 2333, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_lnp4ax0b/checkout' },
+    monthly: { price: 255000, prixImg: 5313, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
+    quarterly: { price: 205000, prixImg: 4271, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_lnp4ax0b/checkout' },
   },
   scale: {
     id: 'scale', name: 'Scale',
     tagline: 'Exploiter plusieurs marchés avec des langues et cultures différentes, sans exploser vos coûts ni augmenter la complexité.',
     imagesPerWeek: 24, batchesPerWeek: 4, creativesPerMonth: 96, videosPerMonth: 32, imagesPerMonth: 64, produitsPerWeek: "jusqu'à 4",
-    promo: '-25% de réduction',
+    promo: '-30% de réduction',
     // prixImg = prix moyen par créative (vidéos + images), arrondi
-    monthly: { price: 240000, prixImg: 2500, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
-    quarterly: { price: 192000, prixImg: 2000, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_dn4fb72l/checkout' },
+    monthly: { price: 430000, prixImg: 4479, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
+    quarterly: { price: 345000, prixImg: 3594, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_dn4fb72l/checkout' },
   },
 };
 
@@ -121,7 +121,7 @@ function formatOffresPourPrompt(currency, currencyRate) {
   const { starter, pro, scale } = OFFERS;
   const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (mensuel) ou ${fmt(o.quarterly.price)}/mois (engagement trimestriel, -20%) · ${o.creativesPerMonth} créatives/mois (${o.videosPerMonth} vidéos + ${o.imagesPerMonth} images, ${o.batchesPerWeek} batch/semaine) · ${o.produitsPerWeek} produit${o.produitsPerWeek === '1' ? '' : 's'}/semaine · production en ${o.monthly.delivery} max${o.promo ? ' · ' + o.promo : ''}`;
   // Offre de départ sans abonnement (affichée sous les 3 offres sur la page de vente) — ne jamais l'appeler « One Shot ».
-  const depart = `Pack de 6 publicités (pour ceux qui ne sont pas prêts pour un abonnement) : ${fmt(30000)}, une seule fois — 2 vidéos + 4 images optimisées conversion, reçues dans AdBoard. Si la personne s'abonne dans les 30 jours, ${fmt(30000)} sont déduits de son 1er mois.`;
+  const depart = `Pack de 6 publicités (pour ceux qui ne sont pas prêts pour un abonnement) : ${fmt(40000)}, une seule fois — 2 vidéos + 4 images optimisées conversion, reçues dans AdBoard. Si la personne s'abonne dans les 30 jours, ${fmt(40000)} sont déduits de son 1er mois.`;
   return [ligne(starter), ligne(pro), ligne(scale), depart].join('\n');
 }
 
@@ -593,12 +593,12 @@ const SUPABASE_ANON_KEY_INT = process.env.SUPABASE_ANON_KEY || '';
 // prd_c0ga3snp) est retiré : ces deux produits ne sont plus reconnus par le webhook.
 // Factures PDF / emails de confirmation / colonne montant_fcfa : les valeurs sont maintenant bien en FCFA.
 const PLAN_MAP = {
-  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly',   credits_per_week: 6,  price_fcfa: 80000, prix_img: 3333 },
-  'prd_wdya3v9h': { plan: 'starter', cycle: 'quarterly', credits_per_week: 6,  price_fcfa: 64000, prix_img: 2667 },
-  'prd_34w031':   { plan: 'pro',     cycle: 'monthly',   credits_per_week: 12, price_fcfa: 140000, prix_img: 2917 },
-  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'quarterly', credits_per_week: 12, price_fcfa: 112000, prix_img: 2333 },
-  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly',   credits_per_week: 24, price_fcfa: 240000, prix_img: 2500 },
-  'prd_dn4fb72l': { plan: 'scale',   cycle: 'quarterly', credits_per_week: 24, price_fcfa: 192000, prix_img: 2000 },
+  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly',   credits_per_week: 6,  price_fcfa: 150000, prix_img: 6250 },
+  'prd_wdya3v9h': { plan: 'starter', cycle: 'quarterly', credits_per_week: 6,  price_fcfa: 120000, prix_img: 5000 },
+  'prd_34w031':   { plan: 'pro',     cycle: 'monthly',   credits_per_week: 12, price_fcfa: 255000, prix_img: 5313 },
+  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'quarterly', credits_per_week: 12, price_fcfa: 205000, prix_img: 4271 },
+  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly',   credits_per_week: 24, price_fcfa: 430000, prix_img: 4479 },
+  'prd_dn4fb72l': { plan: 'scale',   cycle: 'quarterly', credits_per_week: 24, price_fcfa: 345000, prix_img: 3594 },
 };
 
 // 'discovery' : libellé conservé uniquement pour d'anciens comptes déjà abonnés (offre retirée de la vente).
@@ -4454,6 +4454,12 @@ recommande directement UNE offre (jamais les trois en vrac) et explique en une p
 Si elle hésite entre deux offres, tranche pour elle : « Pour ton objectif, je te conseille X. »
 (Ces critères servent uniquement si la personne n'a pas d'abonnement actif, ou veut changer de plan.)
 
+GARANTIE — « RÉSULTATS EN 30 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, ne parle plus de « livraison 24h ou remboursé »
+ni de « satisfait ou remboursé »). Fonctionnement : le client publie les créatives livrées et investit en publicité avec
+elles pendant un mois. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
+de son compte publicitaire Meta (dépenses du mois + résultats : ROAS, coût par achat…). On vérifie, puis on le rembourse
+l'intégralité de son paiement. Présente-la simplement, en 2 phrases, comme ce qui retire le risque.
+
 TU ES
 Ava. Tu parles comme une vraie personne — directe, chaleureuse. Prénom utilisé MAX 1 fois dans toute la conversation.
 
@@ -4643,8 +4649,8 @@ sortir de la saturation et grandir durablement. Concrètement, ça veut dire : s
 amélioration continue, chaque semaine, portées par une vraie équipe derrière lui.
 Ne détaille jamais ça comme une liste de features ("analyse de marché + personas + angles + créatives") — c'est
 un mécanisme qu'il découvre une fois client, pas un argument de vente. Ce qui vend, c'est le résultat : passer
-un cap, se démarquer, ne plus deviner ce qui marche. Livraison garantie 24h ou
-remboursé.
+un cap, se démarquer, ne plus deviner ce qui marche. Garantie : résultats en 30 jours
+ou remboursé.
 Reste volontairement vague sur qui on cible précisément (ne dis jamais "COD", "paiement à la livraison", ou
 "Afrique francophone" comme si c'était notre positionnement officiel) — "on aide des e-commerçants à grandir"
 suffit.
@@ -4692,7 +4698,13 @@ Si elle hésite entre deux offres, tranche pour elle : « Pour ton objectif, je 
 PAIEMENT ET GARANTIE
 Wave, Orange Money, Moov Money, MTN MoMo, Djamo — paiement sécurisé via Chariow. Abonnement mensuel résiliable
 à tout moment (pas d'engagement, sauf le cycle trimestriel choisi volontairement pour le tarif réduit). Garantie :
-livraison sous 24h ou remboursé.
+résultats en 30 jours ou remboursé.
+
+GARANTIE — « RÉSULTATS EN 30 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, ne parle plus de « livraison 24h ou remboursé »
+ni de « satisfait ou remboursé »). Fonctionnement : le client publie les créatives livrées et investit en publicité avec
+elles pendant un mois. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
+de son compte publicitaire Meta (dépenses du mois + résultats : ROAS, coût par achat…). On vérifie, puis on le rembourse
+l'intégralité de son paiement. Présente-la simplement, en 2 phrases, comme ce qui retire le risque.
 
 PROCESS DE LIVRAISON (à jour — ne JAMAIS mentionner WhatsApp, Google Drive, ou un "formulaire de brief" à
 remplir, ce n'est plus le fonctionnement réel)
