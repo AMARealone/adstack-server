@@ -7464,7 +7464,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
       // Nouveau format : chaque créative est uploadée dès sa génération (voir
       // /commandes/:id/upload-creative-now) — c.url est déjà prêt, jamais de ré-upload ici.
       // Ancien format (c.imgB64) toléré en repli, pour les commandes en cours de transition.
-      if (!c || (!c.url && !c.imgB64)) continue;
+      if (!c || (!c.url && !c.imgB64 && !c.videoUrl)) continue; // une vidéo n'a que videoUrl (+ thumbUrl = affiche)
       if (alreadyPushedIndices.has(i)) continue; // déjà confirmé livré pour CE ticket — jamais repoussé
       // Envoi ciblé (voir /commandes/:id/send-one-creative) : ignore tout ce qui n'est pas
       // l'index précis demandé, sans toucher au reste de la logique (id, angle, cible identiques
@@ -7477,7 +7477,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
         // Factory — aucun nouvel upload nécessaire. Cas de repli (ancien format, c.imgB64 encore
         // présent) : un seul upload direct ici, dont le résultat sert à la fois pour url et thumbUrl.
         let url = c.url, thumbUrl = c.thumbUrl || null;
-        if (!url) {
+        if (!url && !c.videoUrl) {
           const uploaded = await uploadCreativeImage(c.imgB64, c.mime || 'image/png', idCandidat);
           url = uploaded.imageUrl;
           thumbUrl = uploaded.thumbUrl;
@@ -7490,7 +7490,9 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
         newCreatives.push({
           id: idCandidat, productId,
           angle: angleCreative, cible: cibleCeLot,
-          week: weekLabel, imageUrl: url, thumbUrl: thumbUrl || null
+          week: weekLabel, imageUrl: url || null, thumbUrl: thumbUrl || null,
+          // Vidéo 9:16 : AdBoard l'affiche en 4:5 dans la grille (via thumbUrl = affiche) et en 9:16 à l'ouverture.
+          ...(c.videoUrl ? { type: 'video', videoUrl: c.videoUrl } : {})
         });
         newlyPushedIndices.push(i);
       } catch(eUp) { console.error('[Deliver] Upload créative échoué :', eUp.message); }
