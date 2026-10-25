@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.54-aspects-uniques (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -1742,6 +1742,11 @@ const server = http.createServer(async (req, res) => {
         ]);
         const paquet = paquetBrut || { text: '', images: [], logo: null, couleurs: [], extras: { avis: [], note: null, bandeau: '', description: '' } };
         if (!paquetBrut && !(shop && shop.produit)) throw new Error('Page illisible');
+        // v5.55 — redirection de langue / de pays : beaucoup de boutiques (Shopify Markets) renvoient vers /en-us/, /fr-fr/… d'après la
+        // localisation DU SERVEUR (Render, États-Unis), pas celle du client. On le détecte pour ne pas prendre ce marché pour le sien.
+        const locDe = (u) => { try { const m = new URL(u).pathname.match(/^\/([a-z]{2}(?:-[a-z]{2})?)(?=\/)/i); return m ? m[1].toLowerCase() : ''; } catch (e) { return ''; } };
+        const locOrigine = locDe(url), locFinale = locDe(paquet.urlFinale || url);
+        const redirectionLocale = !!(locFinale && locFinale !== locOrigine);
         const extras = paquet.extras || { avis: [], note: null, bandeau: '', description: '' };
         // v5.52 — le texte envoyé à Gemini = données officielles Shopify + bandeau + note/avis balisés + politiques + texte de la page.
         const blocs = [];
@@ -1754,6 +1759,7 @@ const server = http.createServer(async (req, res) => {
         if (extras.avis.length) blocs.push('AVIS CLIENTS BALISÉS SUR LA PAGE :\n' + extras.avis.map(a => '- ' + a).join('\n'));
         if (shop && shop.remboursement) blocs.push(`POLITIQUE DE RETOUR / REMBOURSEMENT (page officielle de la boutique) :\n${shop.remboursement}`);
         if (shop && shop.livraison) blocs.push(`POLITIQUE DE LIVRAISON (page officielle de la boutique) :\n${shop.livraison}`);
+        if (redirectionLocale) blocs.unshift(`NOTE TECHNIQUE IMPORTANTE : l'adresse collée par le client (${url}) a été redirigée automatiquement vers une version locale « /${locFinale}/ » choisie d'après la localisation du serveur d'AdStack (États-Unis), PAS d'après le client. Le marché réel du client est donc incertain : cherche ses indices dans l'adresse d'origine (langue du nom du produit et des paramètres, par exemple « Couleur=Noir&Taille=S » est du français) et dans le nom de domaine. Pour « pays » et pour la langue des champs, privilégie ces indices d'origine sur la devise et la langue de la version redirigée ; si le doute reste réel, renvoie pays à null.`);
         const pageText = (blocs.length ? blocs.join('\n\n') + '\n\nTEXTE DE LA PAGE (suite) :\n' : '') + paquet.text;
         // images : celles du fichier boutique d'abord (galerie complète), puis celles de la page, sans doublon
         const cleImg = (u) => { try { const x = new URL(u); return x.origin + x.pathname.replace(/_(\d+x\d*|\d*x\d+)(?=\.)/, ''); } catch (e) { return u; } };
@@ -1902,7 +1908,7 @@ ${pageText}`;
 
         console.log(`✓ Fiche produit extraite (confiance: ${parsed.confiance}) — champs: ${Object.keys(cleaned).join(', ') || 'aucun'} · ${images.length} image(s)${cleaned.avis ? ` · ${cleaned.avis.length} avis` : ''}${cleaned.logo ? ' · logo' : ''}${cleaned.cible ? ' · cible' : ''}${cleaned.couleurs ? ' · couleurs' : ''} · images: ${triFait ? `${imagesFinales.length} produit (triées ; aspects : ${Object.values(aspects).join('/')})` : `${imagesFinales.length} (non triées)`}${shop ? ' · shopify' : ''}`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, data: cleaned, confiance: parsed.confiance, images: imagesFinales, aspects, images_emballage: [], tri_images: triFait }));
+        res.end(JSON.stringify({ ok: true, data: cleaned, confiance: parsed.confiance, images: imagesFinales, aspects, images_emballage: [], tri_images: triFait, redirection_locale: redirectionLocale ? locFinale : null }));
       } catch(e) {
         console.error('✗ Erreur fetch-product-info:', e.message);
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -7440,7 +7446,7 @@ function fetchPageText(targetUrl, depth, avecImages) {
     const emballer = (dataBrute) => {
       const filtre = retirerWidgetsVenteCroisee(dataBrute);
       return avecImages
-        ? { text: nettoyer(filtre), images: extraireImages(filtre, targetUrl), logo: extraireLogo(dataBrute, targetUrl), couleurs: extraireCandidatsCouleurs(dataBrute), extras: extraireExtrasHtml(dataBrute, targetUrl) }
+        ? { text: nettoyer(filtre), images: extraireImages(filtre, targetUrl), logo: extraireLogo(dataBrute, targetUrl), couleurs: extraireCandidatsCouleurs(dataBrute), extras: extraireExtrasHtml(dataBrute, targetUrl), urlFinale: targetUrl }
         : nettoyer(filtre);
     };
     const finirUneFois = (fn, arg) => { if (reglee) return; reglee = true; clearTimeout(timeoutGlobal); fn(arg); };
