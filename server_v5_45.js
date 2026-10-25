@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.52-fiche-auto-v2 (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -1736,9 +1736,29 @@ const server = http.createServer(async (req, res) => {
         console.log(`→ Fetch fiche produit: ${url}`);
         // avecImages=true — récupère aussi les URLs d'images de la page (galerie/carrousel),
         // en plus du texte habituel. Voir fetchPageText pour l'extraction elle-même.
-        const paquet = await fetchPageText(url, 0, true);
-        const pageText = paquet.text;
-        const images = paquet.images || [];
+        const [paquetBrut, shop] = await Promise.all([
+          fetchPageText(url, 0, true).catch(e => { console.log(`   [fiche-auto] page non lisible : ${e.message}`); return null; }),
+          enrichirShopify(url),
+        ]);
+        const paquet = paquetBrut || { text: '', images: [], logo: null, couleurs: [], extras: { avis: [], note: null, bandeau: '', description: '' } };
+        if (!paquetBrut && !(shop && shop.produit)) throw new Error('Page illisible');
+        const extras = paquet.extras || { avis: [], note: null, bandeau: '', description: '' };
+        // v5.52 — le texte envoyé à Gemini = données officielles Shopify + bandeau + note/avis balisés + politiques + texte de la page.
+        const blocs = [];
+        if (shop && shop.produit) {
+          const p = shop.produit;
+          blocs.push(`DONNÉES OFFICIELLES DU PRODUIT (fichier de la boutique) :\nTitre : ${p.titre}\n${p.prix != null ? `Prix : ${p.prix}${p.ancien_prix && p.ancien_prix > p.prix ? ` (ancien prix ${p.ancien_prix})` : ''}\n` : ''}${p.variantes.length ? `Formules / variantes : ${p.variantes.join(' · ')}\n` : ''}Description : ${p.description}`);
+        }
+        if (extras.bandeau) blocs.push(`BANDEAU D'ANNONCE DU SITE : ${extras.bandeau}`);
+        if (extras.note) blocs.push(`NOTE MOYENNE AFFICHÉE : ${extras.note.valeur}/5${extras.note.nombre ? ` sur ${extras.note.nombre} avis` : ''}`);
+        if (extras.avis.length) blocs.push('AVIS CLIENTS BALISÉS SUR LA PAGE :\n' + extras.avis.map(a => '- ' + a).join('\n'));
+        if (shop && shop.remboursement) blocs.push(`POLITIQUE DE RETOUR / REMBOURSEMENT (page officielle de la boutique) :\n${shop.remboursement}`);
+        if (shop && shop.livraison) blocs.push(`POLITIQUE DE LIVRAISON (page officielle de la boutique) :\n${shop.livraison}`);
+        const pageText = (blocs.length ? blocs.join('\n\n') + '\n\nTEXTE DE LA PAGE (suite) :\n' : '') + paquet.text;
+        // images : celles du fichier boutique d'abord (galerie complète), puis celles de la page, sans doublon
+        const cleImg = (u) => { try { const x = new URL(u); return x.origin + x.pathname.replace(/_(\d+x\d*|\d*x\d+)(?=\.)/, ''); } catch (e) { return u; } };
+        const vuesImg = new Set();
+        const images = [...((shop && shop.produit && shop.produit.images) || []), ...(paquet.images || [])].filter(u => { const c = cleImg(u); if (vuesImg.has(c)) return false; vuesImg.add(c); return true; }).slice(0, 12);
         const logoPage = paquet.logo || null;
         const candidatsCouleurs = paquet.couleurs || [];
         if (!pageText || pageText.length < 80) {
@@ -1747,14 +1767,14 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        const extractPrompt = `Tu reçois le texte brut d'une page web (URL : ${url}) — et, quand elles ont pu être téléchargées, des images candidates numérotées de la page — et le nom de produit qu'on y cherche apparaît généralement dans le slug de cette URL. Détermine si c'est une fiche produit e-commerce, et si oui, extrais UNIQUEMENT les informations explicitement présentes — n'invente rien, ne déduis rien qui ne soit pas écrit noir sur blanc. Seuls trois champs échappent à cette règle et suivent leurs propres consignes données plus bas : « cible », « couleurs » et « images ».
+        const extractPrompt = `Tu reçois le texte brut d'une page web (URL : ${url}) — et, quand elles ont pu être téléchargées, des images candidates numérotées de la page — et le nom de produit qu'on y cherche apparaît généralement dans le slug de cette URL. Détermine si c'est une fiche produit e-commerce, et si oui, extrais UNIQUEMENT les informations explicitement présentes — n'invente rien, ne déduis rien qui ne soit pas écrit noir sur blanc. Seuls trois champs échappent à cette règle et suivent leurs propres consignes données plus bas : « cible », « couleurs » et « images ».\n\nLANGUE : la page peut être en français, en anglais ou dans une autre langue. Lis-la telle qu'elle est mais RÉPONDS toujours en français (traduction fidèle et brève ; chiffres, devises et durées inchangés), sauf « avis » qui reste mot pour mot dans la langue d'origine. Le texte peut commencer par des blocs « DONNÉES OFFICIELLES », « POLITIQUE DE RETOUR », « POLITIQUE DE LIVRAISON », « AVIS BALISÉS » : ce sont des sources fiables de CETTE page, à utiliser pour garantie, livraison et avis.
 
 ATTENTION — désambiguïsation importante : beaucoup de fiches produit affichent aussi, plus loin sur la page, un tableau comparatif ou une liste "produits similaires/vous aimerez aussi/fréquemment achetés ensemble" listant D'AUTRES produits avec leurs propres noms et prix. N'extrais JAMAIS les infos de ces autres produits. Le VRAI produit de cette page est celui qui : (1) correspond au slug de l'URL ci-dessus, (2) apparaît le premier dans le texte, généralement juste avant ou après un bouton "Ajouter au panier"/"Acheter", (3) est répété plusieurs fois dans la page (titre, description détaillée, FAQ) — pas une simple mention isolée dans une liste comparative.
 
 Réponds en JSON strict, uniquement l'objet, aucun texte autour, aucun bloc markdown :
-{"nom":"nom du produit ou null","prix":"le prix COMPLET du produit, AVEC sa devise. S'il n'y a qu'un seul prix, donne-le simplement (ex: '13 900 FCFA'). S'il y a PLUSIEURS paliers/formules (ex: 1 mois / 2 mois / 3 mois, ou 1 unité / pack de 3 / pack de 5), liste-les TOUS, séparés par ' · ', chacun avec son propre prix et sa remise si affichée (ex: '19 000 FCFA (1 mois) · 36 100 FCFA (2 mois, -5%) · 51 300 FCFA (3 mois, -10%)') — jamais un seul prix choisi arbitrairement parmi plusieurs, jamais un nombre seul sans devise, null si aucun prix identifiable","pays":"pays/marché de vente si explicitement mentionné (plusieurs possibles séparés par virgule) ou null","utilite":"à quoi sert le produit, en une phrase de deux lignes maximum, basée sur la description de la page, ou null","promo":"offre promotionnelle GÉNÉRALE, distincte des paliers de prix ci-dessus — seuil de livraison gratuite, BOGO (achetez-en X recevez-en Y), cadeau offert, code promo affiché, etc. (ex: 'Livraison gratuite dès 50 000 FCFA', '2 achetés = 1 offert') — jamais une remise déjà comptée dans un palier de prix, null si aucune","garantie":"garantie ou politique de retour / remboursement / échange EXPLICITEMENT écrite sur la page, recopiée fidèlement et brièvement (ex: 'Satisfait ou remboursé 30 jours'), null si la page n'en dit rien","livraison_paiement":"modes de paiement et conditions de livraison EXPLICITEMENT écrits sur la page (ex: 'Paiement à la livraison. Livraison en 48 h à Dakar'), recopiés fidèlement et brièvement, null si la page n'en dit rien","avis":["jusqu'à 6 avis clients ÉCRITS sur la page de CE produit, recopiés MOT POUR MOT tels qu'affichés (aucune reformulation, aucune correction, aucune invention, jamais un avis d'un autre produit), chacun suivi du prénom entre parenthèses s'il est affiché ; liste vide [] si la page ne contient aucun avis écrit"],"cible":"UNE seule phrase de 35 mots maximum décrivant à qui s'adresse ce produit, selon ces règles : (1) décris une SITUATION VÉCUE et une tension psychologique précise — un comportement observable, un réflexe ou une phrase que la personne se dit, ce contre quoi elle se bat concrètement — jamais une fiche démographique ; (2) n'indique ni métier, ni âge exact, ni tranche d'âge serrée : la démographie reste LARGE, la netteté vient du comportement et de la situation ; (3) la personne doit pouvoir s'offrir ce produit à ce prix et acheter en ligne ; (4) jamais générique : pas de « femmes actives de 30 à 45 ans stressées » — la phrase ne doit pas pouvoir être copiée telle quelle dans la publicité d'un concurrent direct ; (5) appuie-toi sur ce que la page et le marché de vente laissent réellement entendre, sans inventer de chiffre ni de fait ; (6) aucun mot technique (persona, angle, funnel, cible, awareness). null si la page ne permet pas de la déduire","couleurs":["2 ou 3 couleurs de la marque, au format #rrggbb, choisies UNIQUEMENT dans la liste de couleurs candidates fournie plus bas (copie-les exactement) ; liste vide [] si aucune liste n'est fournie ou si tu n'es pas sûr"],"images":[{"i":0,"type":"produit|emballage|autre_produit|inutile"}],"principale":0,"confiance":"haute|moyenne|basse"}
+{"nom":"nom du produit ou null","prix":"le prix COMPLET du produit, AVEC sa devise. S'il n'y a qu'un seul prix, donne-le simplement (ex: '13 900 FCFA'). S'il y a PLUSIEURS paliers/formules (ex: 1 mois / 2 mois / 3 mois, ou 1 unité / pack de 3 / pack de 5), liste-les TOUS, séparés par ' · ', chacun avec son propre prix et sa remise si affichée (ex: '19 000 FCFA (1 mois) · 36 100 FCFA (2 mois, -5%) · 51 300 FCFA (3 mois, -10%)') — jamais un seul prix choisi arbitrairement parmi plusieurs, jamais un nombre seul sans devise, null si aucun prix identifiable","pays":"pays/marché de vente : explicitement mentionné, OU clairement déductible de la devise et des zones de livraison affichées (ex : « $ » + « free US shipping » → États-Unis ; FCFA + livraison à Dakar → Sénégal) ; plusieurs possibles séparés par virgule ; null si rien ne permet de le dire","utilite":"à quoi sert le produit, en une phrase de deux lignes maximum, basée sur la description de la page, ou null","promo":"offre promotionnelle GÉNÉRALE, distincte des paliers de prix ci-dessus — seuil de livraison gratuite, BOGO (achetez-en X recevez-en Y), cadeau offert, code promo affiché, etc. (ex: 'Livraison gratuite dès 50 000 FCFA', '2 achetés = 1 offert') — jamais une remise déjà comptée dans un palier de prix, null si aucune","garantie":"garantie ou politique de retour / remboursement / échange EXPLICITEMENT écrite sur la page, recopiée fidèlement et brièvement (ex: 'Satisfait ou remboursé 30 jours'), null si la page n'en dit rien","livraison_paiement":"modes de paiement et conditions de livraison EXPLICITEMENT écrits sur la page (ex: 'Paiement à la livraison. Livraison en 48 h à Dakar'), recopiés fidèlement et brièvement, null si la page n'en dit rien","avis":["jusqu'à 6 avis clients ÉCRITS sur la page de CE produit, recopiés MOT POUR MOT tels qu'affichés (aucune reformulation, aucune correction, aucune invention, jamais un avis d'un autre produit), chacun suivi du prénom entre parenthèses s'il est affiché ; liste vide [] si la page ne contient aucun avis écrit"],"cible":"UNE seule phrase de 35 mots maximum décrivant à qui s'adresse ce produit, selon ces règles : (1) décris une SITUATION VÉCUE et une tension psychologique précise — un comportement observable, un réflexe ou une phrase que la personne se dit, ce contre quoi elle se bat concrètement — jamais une fiche démographique ; (2) n'indique ni métier, ni âge exact, ni tranche d'âge serrée : la démographie reste LARGE, la netteté vient du comportement et de la situation ; (3) la personne doit pouvoir s'offrir ce produit à ce prix et acheter en ligne ; (4) jamais générique : pas de « femmes actives de 30 à 45 ans stressées » — la phrase ne doit pas pouvoir être copiée telle quelle dans la publicité d'un concurrent direct ; (5) appuie-toi sur ce que la page et le marché de vente laissent réellement entendre, sans inventer de chiffre ni de fait ; (6) aucun mot technique (persona, angle, funnel, cible, awareness). null si la page ne permet pas de la déduire","couleurs":["2 ou 3 couleurs de la marque, au format #rrggbb, choisies UNIQUEMENT dans la liste de couleurs candidates fournie plus bas (copie-les exactement) ; liste vide [] si aucune liste n'est fournie ou si tu n'es pas sûr"],"images":[{"i":0,"type":"produit|autre_produit|inutile","aspect":"face|cote|dos|forme|prepare|en_main|detail|autre"}],"principale":0,"confiance":"haute|moyenne|basse"}
 
-RÈGLES « images » (seulement si des images numérotées te sont fournies, sinon renvoie "images":[] et "principale":null) : pour CHAQUE image fournie, indique son numéro « i » et son « type » : « produit » = le produit de CETTE page lui-même (seul, en main, en situation d'usage, plusieurs angles) ; « emballage » = la boîte, le sachet, l'étiquette ou le packaging de CE produit ; « autre_produit » = un produit DIFFÉRENT (vente croisée, collection, comparatif, produit annexe) ; « inutile » = bannière, icône, logo, moyen de paiement, tableau de tailles, capture de texte, photo sans le produit, visuel de réassurance. Au moindre doute entre « produit » et « autre_produit », choisis « autre_produit ». « principale » = le numéro de la meilleure image pour représenter le produit (nette, bien cadrée, produit bien visible, idéalement sur fond simple), ou null.
+RÈGLES « images » (seulement si des images numérotées te sont fournies, sinon renvoie "images":[] et "principale":null) : pour CHAQUE image fournie, indique son numéro « i », son « type » et son « aspect ». « type » : « produit » = le produit de CETTE page lui-même — son pot, sachet, flacon, boîte ou tube COMPTE comme le produit (il n'y a plus de catégorie emballage) ; seul, en main, en situation d'usage, sous plusieurs angles ; « autre_produit » = un produit DIFFÉRENT (vente croisée, collection, comparatif) ; « inutile » = bannière, icône, logo, moyen de paiement, tableau, capture de texte, infographie de textes, photo sans le produit, visuel de réassurance. Au moindre doute entre « produit » et « autre_produit », choisis « autre_produit ». « aspect » (uniquement pour type « produit ») : « face » = le produit vu de face, étiquette principale visible ; « cote » = de côté ou en trois-quarts ; « dos » = l'arrière (étiquette arrière, composition, valeurs nutritionnelles) ; « forme » = le produit lui-même sorti de son contenant (poudre, gélule, capsule, comprimé, crème, texture, aliment) ; « prepare » = le produit préparé, servi ou en cours d'usage (tasse prête à boire, shaker, plat) ; « en_main » = tenu ou porté par une personne ; « detail » = gros plan sur un détail (matière, bouchon, ingrédient) ; « autre » sinon. « principale » = le numéro de la meilleure image pour représenter le produit (nette, bien cadrée, produit bien visible, idéalement de face sur fond simple), ou null.
 
 Si la page n'est pas une fiche produit exploitable (site général, accueil, blog, catégorie...), tous les champs à null et confiance:"basse".
 
@@ -1763,7 +1783,7 @@ ${pageText}`;
 
         // v5.49 — images candidates téléchargées en parallèle (7 s max chacune, 1,5 Mo max) pour que Gemini les REGARDE
         // dans le même appel que le texte. Échec de téléchargement = image simplement non jugée, jamais bloquant.
-        const candidatsImages = images.slice(0, 10);
+        const candidatsImages = images.slice(0, 12);
         const telechargees = await Promise.all(candidatsImages.map(u => telechargerImagePourTri(u)));
         const envoyees = [];
         let totalOctets = 0;
@@ -1816,9 +1836,9 @@ ${pageText}`;
         const texteNorm = norm(pageText);
         const brut = (v) => (v && String(v).toLowerCase() !== 'null') ? String(v).trim() : '';
         const g = brut(parsed.garantie);
-        if (g && /rembours|garanti|retour|echange|satisfait/i.test(pageText.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) cleaned.garantie = g.slice(0, 240);
+        if (g && /rembours|garanti|retour|echange|satisfait|refund|guarant|warrant|return|exchange|money.?back|satisf|risk.?free/i.test(pageText.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) cleaned.garantie = g.slice(0, 240);
         const lp = brut(parsed.livraison_paiement);
-        if (lp && /livraison|livr[ée]|paiement|payer|cash|expedi|exp[ée]di/i.test(pageText.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) cleaned.livraison_paiement = lp.slice(0, 300);
+        if (lp && /livraison|livr[ée]|paiement|payer|cash|expedi|exp[ée]di|shipping|delivery|deliver|ship\b|ships\b|payment|checkout|\bcod\b/i.test(pageText.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) cleaned.livraison_paiement = lp.slice(0, 300);
         if (Array.isArray(parsed.avis)) {
           const vus = new Set();
           const avisOk = [];
@@ -1834,6 +1854,8 @@ ${pageText}`;
           }
           if (avisOk.length) cleaned.avis = avisOk;
         }
+        // v5.52 — avis de secours : si Gemini n'en a gardé aucun, on reprend ceux balisés dans la page (vrais, non reformulés).
+        if (!cleaned.avis && extras.avis.length) cleaned.avis = extras.avis.slice(0, 4);
         if (logoPage) cleaned.logo = logoPage;
         // Cible : une phrase, jamais un pavé ; un mot-clé technique = écartée.
         const ci = brut(parsed.cible).replace(/\s+/g, ' ');
@@ -1847,26 +1869,26 @@ ${pageText}`;
           }
           if (ok.length >= 2) cleaned.couleurs = ok.slice(0, 3);
         }
-        // Tri des images : « produit » (principale en tête) et « emballage » ; tout le reste est écarté.
-        let imagesFinales = images, imagesEmballage = [], triFait = false;
+        // Tri des images : « produit » (principale en tête), avec l'aspect de chacune (face, côté, dos, forme, préparé…). Le reste est écarté.
+        let imagesFinales = images, aspects = {}, triFait = false;
+        const ASPECTS_OK = ['face','cote','dos','forme','prepare','en_main','detail','autre'];
         if (envoyees.length && Array.isArray(parsed.images) && parsed.images.length) {
-          const verdict = {};
-          parsed.images.forEach(e => { if (e && Number.isInteger(e.i) && e.i >= 0 && e.i < envoyees.length && typeof e.type === 'string') verdict[e.i] = e.type.toLowerCase(); });
+          const verdict = {}, asp = {};
+          parsed.images.forEach(e => { if (e && Number.isInteger(e.i) && e.i >= 0 && e.i < envoyees.length && typeof e.type === 'string') { verdict[e.i] = e.type.toLowerCase(); asp[e.i] = ASPECTS_OK.includes(String(e.aspect || '').toLowerCase()) ? String(e.aspect).toLowerCase() : 'autre'; } });
           if (Object.keys(verdict).length) {
-            let produits = envoyees.map((im, k) => k).filter(k => verdict[k] === 'produit');
-            const emb = envoyees.map((im, k) => k).filter(k => verdict[k] === 'emballage');
+            let produits = envoyees.map((im, k) => k).filter(k => verdict[k] === 'produit' || verdict[k] === 'emballage');
             if (Number.isInteger(parsed.principale) && produits.includes(parsed.principale)) produits = [parsed.principale, ...produits.filter(k => k !== parsed.principale)];
             if (produits.length) {
               imagesFinales = produits.map(k => envoyees[k].url);
-              imagesEmballage = emb.map(k => envoyees[k].url);
+              produits.forEach(k => { aspects[envoyees[k].url] = asp[k] || 'autre'; });
               triFait = true;
             }
           }
         }
 
-        console.log(`✓ Fiche produit extraite (confiance: ${parsed.confiance}) — champs: ${Object.keys(cleaned).join(', ') || 'aucun'} · ${images.length} image(s)${cleaned.avis ? ` · ${cleaned.avis.length} avis` : ''}${cleaned.logo ? ' · logo' : ''}${cleaned.cible ? ' · cible' : ''}${cleaned.couleurs ? ' · couleurs' : ''} · images: ${triFait ? `${imagesFinales.length} produit / ${imagesEmballage.length} emballage (triées)` : `${imagesFinales.length} (non triées)`}`);
+        console.log(`✓ Fiche produit extraite (confiance: ${parsed.confiance}) — champs: ${Object.keys(cleaned).join(', ') || 'aucun'} · ${images.length} image(s)${cleaned.avis ? ` · ${cleaned.avis.length} avis` : ''}${cleaned.logo ? ' · logo' : ''}${cleaned.cible ? ' · cible' : ''}${cleaned.couleurs ? ' · couleurs' : ''} · images: ${triFait ? `${imagesFinales.length} produit (triées ; aspects : ${Object.values(aspects).join('/')})` : `${imagesFinales.length} (non triées)`}${shop ? ' · shopify' : ''}`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, data: cleaned, confiance: parsed.confiance, images: imagesFinales, images_emballage: imagesEmballage, tri_images: triFait }));
+        res.end(JSON.stringify({ ok: true, data: cleaned, confiance: parsed.confiance, images: imagesFinales, aspects, images_emballage: [], tri_images: triFait }));
       } catch(e) {
         console.error('✗ Erreur fetch-product-info:', e.message);
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -3599,7 +3621,8 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
             // personnalisation de la fiche produit AdBoard v7.0. Toutes facultatives : absentes = jamais inventées.
             galerie_images: Array.isArray(data.product.galerie_images) ? data.product.galerie_images : [],
             logo_url: data.product.logo_url || null,
-            packaging_images: Array.isArray(data.product.packaging_images) ? data.product.packaging_images : [],
+            galerie_aspects: (data.product.galerie_aspects && typeof data.product.galerie_aspects === 'object') ? data.product.galerie_aspects : {},
+            packaging_images: Array.isArray(data.product.packaging_images) ? data.product.packaging_images : [], // anciens briefs seulement
             avis_captures: Array.isArray(data.product.avis_captures) ? data.product.avis_captures : [],
             avis_textes: Array.isArray(data.product.avis_textes) ? data.product.avis_textes : [],
             garantie: data.product.garantie || '',
@@ -7143,6 +7166,88 @@ async function blocDocumentsClient(docs) {
   return '\n\n=== DOCUMENTS FOURNIS PAR LE CLIENT (source fiable : ce que le client dit de son propre produit) ===\n' + parts.join('\n\n');
 }
 
+
+// ───────── v5.52 — ENRICHISSEMENT DE LA FICHE AUTOMATIQUE ─────────
+// Données lisibles dans le HTML brut mais perdues par le nettoyage texte : bandeau d'annonce (« Livraison gratuite dès… »),
+// note moyenne et avis balisés (JSON-LD), description méta.
+function extraireExtrasHtml(html, baseUrl) {
+  const out = { avis: [], note: null, bandeau: '', description: '' };
+  try {
+    const dec = (t) => String(t || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
+    const reScripts = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+    let m;
+    while ((m = reScripts.exec(html))) {
+      try {
+        const bloc = JSON.parse(m[1].trim());
+        const items = [];
+        const pousser = (x) => { if (!x) return; if (Array.isArray(x)) return x.forEach(pousser); if (typeof x === 'object') { items.push(x); if (x['@graph']) pousser(x['@graph']); } };
+        pousser(bloc);
+        for (const it of items) {
+          if (it.aggregateRating && !out.note) {
+            const v = it.aggregateRating.ratingValue, n = it.aggregateRating.reviewCount || it.aggregateRating.ratingCount;
+            if (v) out.note = { valeur: String(v), nombre: n ? String(n) : '' };
+          }
+          if (it.review) {
+            for (const r of [].concat(it.review)) {
+              const t = dec(r && (r.reviewBody || r.description));
+              if (t.length >= 15 && t.length <= 500) {
+                const a = r.author && (typeof r.author === 'string' ? r.author : r.author.name);
+                out.avis.push(a ? `${t} (${String(a).split(' ')[0]})` : t);
+              }
+            }
+          }
+        }
+      } catch (e) {}
+    }
+    const d = (html.match(/<meta[^>]+(?:name|property)=["'](?:description|og:description)["'][^>]+content=["']([^"']{20,500})["']/i) || [])[1];
+    if (d) out.description = dec(d);
+    const re = /<(?:div|section|p|span|aside)\b[^>]*class=["'][^"']*(?:announcement|promo-bar|top-bar|topbar|free-shipping|shipping-bar)[^"']*["'][^>]*>([\s\S]{0,1200}?)<\/(?:div|section|p|span|aside)>/gi;
+    const blocs = [];
+    while ((m = re.exec(html)) && blocs.length < 4) { const t = dec(m[1]); if (t.length >= 8 && t.length <= 300 && !blocs.includes(t)) blocs.push(t); }
+    out.bandeau = blocs.join(' | ').slice(0, 500);
+  } catch (e) {}
+  out.avis = [...new Set(out.avis)].slice(0, 8);
+  return out;
+}
+
+// Shopify : /products/<handle>.js donne titre, prix, ancien prix, TOUTES les images, variantes ; les pages de politique
+// donnent retour / remboursement / livraison. Jamais bloquant : renvoie null au moindre souci.
+function avecDelai(promesse, ms) { return Promise.race([promesse, new Promise(r => setTimeout(() => r(null), ms))]).catch(() => null); }
+async function enrichirShopify(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    const mm = u.pathname.match(/^(?:\/[a-z]{2}(?:-[a-z]{2})?)?\/products\/([^\/?#]+)/i);
+    if (!mm) return null;
+    const racine = `${u.protocol}//${u.host}`;
+    const prefixe = u.pathname.slice(0, u.pathname.indexOf('/products/'));
+    const texteHtml = (h) => String(h || '').replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<(nav|header|footer)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
+    let [js, refund, shipping] = await Promise.all([
+      avecDelai(fetchRawHtml(`${racine}${prefixe}/products/${mm[1]}.js`), 9000),
+      avecDelai(fetchRawHtml(`${racine}${prefixe}/policies/refund-policy`), 9000),
+      avecDelai(fetchRawHtml(`${racine}${prefixe}/policies/shipping-policy`), 9000),
+    ]);
+    const politiqueOk = (h) => { const t = texteHtml(h); return t.length >= 60 && !/\b404\b|not found|introuvable/i.test(t.slice(0, 250)) ? t : ''; };
+    refund = politiqueOk(refund); shipping = politiqueOk(shipping);
+    let produit = null;
+    try { produit = js ? JSON.parse(js) : null; } catch (e) { produit = null; }
+    if (!produit || !produit.title) return refund || shipping ? { produit: null, remboursement: refund.slice(0, 2500), livraison: shipping.slice(0, 2500) } : null;
+    const abs = (x) => { try { return new URL(String(x).startsWith('//') ? 'https:' + x : x, racine).href; } catch (e) { return null; } };
+    const argent = (c) => (typeof c === 'number' ? c : parseInt(c, 10)) / 100;
+    return {
+      produit: {
+        titre: produit.title,
+        prix: produit.price != null ? argent(produit.price) : null,
+        ancien_prix: produit.compare_at_price ? argent(produit.compare_at_price) : null,
+        description: texteHtml(produit.description).slice(0, 3500),
+        images: (produit.images || []).map(abs).filter(Boolean),
+        variantes: (produit.variants || []).slice(0, 12).map(v => `${v.title || v.name}${v.price != null ? ' — ' + argent(v.price) : ''}${v.compare_at_price ? ' (avant ' + argent(v.compare_at_price) + ')' : ''}`),
+      },
+      remboursement: refund.slice(0, 2500),
+      livraison: shipping.slice(0, 2500),
+    };
+  } catch (e) { return null; }
+}
+
 function fetchPageText(targetUrl, depth, avecImages) {
   depth = depth || 0;
   return new Promise((resolve, reject) => {
@@ -7214,31 +7319,37 @@ function fetchPageText(targetUrl, depth, avecImages) {
       return resultat;
     };
     const extraireImages = (html, baseUrl) => {
+      // v5.52 — fusion des sources (avant : JSON-LD seul s'il existait → 1 seule image sur beaucoup de pages) :
+      // JSON-LD Product, puis og:image, puis balayage des <img> (src, data-src, srcset → la plus grande). Dédoublonné.
+      const brutes = [];
       const viaJsonLd = extraireImagesJsonLd(html, baseUrl);
-      let brutes;
-      if (viaJsonLd.length) {
-        console.log(`   [fetchPageText] Images via JSON-LD (Product) : ${viaJsonLd.length} trouvée(s)`);
-        brutes = viaJsonLd;
-      } else {
-        // Repli — aucun JSON-LD Product exploitable, balayage brut de la page comme avant.
-        // html est déjà passé au filtre anti-vente-croisée par emballer() en amont — pas de
-        // second passage nécessaire ici.
-        console.log('   [fetchPageText] Pas de JSON-LD Product exploitable, repli sur balayage brut');
-        const urls = new Set();
-        const reSrc = /<img[^>]+(?:data-src|src)=["']([^"']+)["']/gi;
-        const reOg = /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/gi;
-        let m;
-        while ((m = reOg.exec(html))) urls.add(m[1]);
-        while ((m = reSrc.exec(html))) urls.add(m[1]);
-        brutes = [...urls].map(u => { try { return new URL(u, baseUrl).href; } catch(e) { return null; } }).filter(Boolean);
+      console.log(`   [fetchPageText] Images : JSON-LD ${viaJsonLd.length}`);
+      brutes.push(...viaJsonLd);
+      const abs = (u) => { try { return new URL(String(u).replace(/&amp;/g, '&'), baseUrl).href; } catch(e) { return null; } };
+      let m;
+      const reOg = /<meta[^>]+(?:property|name)=["'](?:og:image(?::secure_url)?|twitter:image)["'][^>]+content=["']([^"']+)["']/gi;
+      while ((m = reOg.exec(html))) brutes.push(abs(m[1]));
+      const reImg = /<img\b[^>]*>/gi;
+      while ((m = reImg.exec(html))) {
+        const tag = m[0];
+        const srcset = (tag.match(/(?:data-srcset|srcset)=["']([^"']+)["']/i) || [])[1];
+        let meilleure = null;
+        if (srcset) {
+          let w = -1;
+          srcset.split(',').forEach(part => { const [u, d] = part.trim().split(/\s+/); const n = parseInt(d, 10) || 0; if (u && n >= w) { w = n; meilleure = u; } });
+        }
+        const s = (tag.match(/(?:data-src|data-original|src)=["']([^"']+)["']/i) || [])[1];
+        const choix = meilleure || s;
+        if (choix && !/^data:/i.test(choix)) brutes.push(abs(choix));
       }
       const vues = new Set();
-      return brutes
-        .filter(u => !/logo|icon|favicon|sprite|placeholder|avatar|\.svg(\?|$)/i.test(u))
+      return brutes.filter(Boolean)
+        .filter(u => /^https?:/i.test(u))
+        .filter(u => !/logo|icon|favicon|sprite|placeholder|avatar|payment|badge|\.svg(\?|$)|\.gif(\?|$)/i.test(u))
         .filter(u => { const cle = cleUniqueImage(u); if (vues.has(cle)) return false; vues.add(cle); return true; })
-        .slice(0, 10);
+        .slice(0, 14);
     };
-    const nettoyer = (dataBrute) => dataBrute
+    const nettoyerBrut = (dataBrute) => dataBrute
       .replace(/<script[\s\S]*?<\/script>/gi, ' ')
       .replace(/<style[\s\S]*?<\/style>/gi, ' ')
       .replace(/<nav[\s\S]*?<\/nav>/gi, ' ')
@@ -7248,8 +7359,23 @@ function fetchPageText(targetUrl, depth, avecImages) {
       .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-      .replace(/\s{2,}/g, ' ').trim()
-      .slice(0, 12000);
+      .replace(/\s{2,}/g, ' ').trim();
+    // v5.52 — budget de texte : 12 000 premiers caractères tels quels + extraits du reste autour des mots-clés utiles
+    // (garantie, retour, livraison, avis, offres), pour ne plus perdre le bas de page.
+    const budgeter = (t) => {
+      if (t.length <= 16000) return t;
+      const tete = t.slice(0, 12000), reste = t.slice(12000);
+      const re = /(guarant|garanti|money.?back|refund|rembours|return|retour|exchange|[ée]change|shipping|delivery|livraison|expedi|free\s|gratuit|satisf|review|avis|testimon|t[ée]moign|\bsave\b|\bbundle\b|offre|promo)/gi;
+      const fenetres = [];
+      let m, fin = -1;
+      while ((m = re.exec(reste)) && fenetres.join(' ').length < 4000) {
+        if (m.index < fin) continue;
+        const d = Math.max(0, m.index - 150), f = Math.min(reste.length, m.index + 350);
+        fenetres.push(reste.slice(d, f)); fin = f;
+      }
+      return tete + ' … ' + fenetres.join(' … ');
+    };
+    const nettoyer = (dataBrute) => budgeter(nettoyerBrut(dataBrute));
     // Filtre de widgets de vente croisée appliqué UNE FOIS ici, en amont — partagé par le texte
     // (nettoyer) ET les images (extraireImages) ci-dessous. Avant ce correctif, seul le chemin
     // image en bénéficiait ; le texte envoyé à Gemini restait pollué par le widget comparateur
@@ -7300,7 +7426,7 @@ function fetchPageText(targetUrl, depth, avecImages) {
     const emballer = (dataBrute) => {
       const filtre = retirerWidgetsVenteCroisee(dataBrute);
       return avecImages
-        ? { text: nettoyer(filtre), images: extraireImages(filtre, targetUrl), logo: extraireLogo(dataBrute, targetUrl), couleurs: extraireCandidatsCouleurs(dataBrute) }
+        ? { text: nettoyer(filtre), images: extraireImages(filtre, targetUrl), logo: extraireLogo(dataBrute, targetUrl), couleurs: extraireCandidatsCouleurs(dataBrute), extras: extraireExtrasHtml(dataBrute, targetUrl) }
         : nettoyer(filtre);
     };
     const finirUneFois = (fn, arg) => { if (reglee) return; reglee = true; clearTimeout(timeoutGlobal); fn(arg); };
@@ -7354,7 +7480,16 @@ function fetchPageText(targetUrl, depth, avecImages) {
           else if (encoding === 'deflate') stream = res.pipe(zlib.createInflate());
           else if (encoding === 'br') stream = res.pipe(zlib.createBrotliDecompress());
         } catch(eDecomp) { stream = res; } // repli sur le flux brut si la décompression elle-même échoue à démarrer
-        stream.on('data', c => { data += c; if (data.length > 200000) res.destroy(); });
+        stream.on('data', c => {
+          data += c;
+          if (data.length > 1200000 && !reglee) {
+            // v5.52 — avant : coupure à 200 000 caractères (le bas de page — avis, FAQ, garanties — était perdu) puis attente
+            // de 25 s car un flux détruit n'envoie jamais « end ». Maintenant : plafond 1,2 M et réponse immédiate.
+            const p = emballer(data);
+            finirUneFois(resolve, p);
+            try { res.destroy(); } catch (e) {}
+          }
+        });
         stream.on('end', () => {
           console.log(`   [fetchPageText] Flux terminé — ${data.length} chars bruts reçus`);
           const paquet = emballer(data);
