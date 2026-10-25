@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -2478,8 +2478,10 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
 
         // ── Injection de DONNÉES BRUTES dans le bloc texte ──
         const finalDonnees = donneesBrutes || '[Aucune donnée trouvée par les sources externes pour ce produit/marché]';
-        const updatedParts = (parts || []).map(p => {
+        let _marqueurTrouve = false;
+        let updatedParts = (parts || []).map(p => {
           if (typeof p.text === 'string' && p.text.includes('DONNÉES BRUTES :')) {
+            _marqueurTrouve = true;
             const marker = 'DONNÉES BRUTES :';
             const idx = p.text.indexOf(marker);
             const before = p.text.slice(0, idx + marker.length);
@@ -2487,6 +2489,21 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
           }
           return p;
         });
+        // v5.50 : le texte envoye par la Factory en production ne contenait pas le repere ci-dessus, donc les
+        // recherches externes n'etaient jamais transmises a l'analyste. Si le repere manque, on ajoute le bloc.
+        if (!_marqueurTrouve) {
+          console.log('   → repère DONNÉES BRUTES absent des parts : bloc ajouté en fin de texte');
+          const iT = updatedParts.map(p => typeof p.text === 'string').lastIndexOf(true);
+          const blocD = '\n\nDONNÉES BRUTES :\n' + finalDonnees;
+          if (iT >= 0) updatedParts[iT] = { ...updatedParts[iT], text: updatedParts[iT].text + blocD };
+          else updatedParts.push({ text: blocD.trim() });
+        }
+
+        // v5.50 : documents du client, lus en entier
+        try {
+          const _docsTxt = await blocDocumentsClient(brief && brief.documents);
+          if (_docsTxt) updatedParts.push({ text: _docsTxt });
+        } catch (e) { console.log('   ⚠ documents client ignorés : ' + e.message); }
 
         // ── Conversion format Gemini (inline_data/text) → format Claude (image/text blocks) ──
         const claudeContent = updatedParts.map(p => {
@@ -2679,9 +2696,10 @@ HARD LOCKS :
           nomMarque ? `- Marque : ${nomMarque}` : null,
           `- Produit : ${nomProduit}`,
           `- Pays : ${brief.pays || 'n/a'}`,
-          brief.couleurs_marque ? `- Couleurs marque : ${brief.couleurs_marque.join(', ')}` : null,
+          (brief.couleurs_marque || brief.couleurs) && (brief.couleurs_marque || brief.couleurs).length ? `- Couleurs marque : ${(brief.couleurs_marque || brief.couleurs).join(', ')}` : null,
           brief.pricing ? `- Pricing : ${brief.pricing}` : null,
-          brief.offre_promo ? `- Offre promo : ${brief.offre_promo}` : null
+          (brief.offre_promo || brief.promo) ? `- Offre promo : ${brief.offre_promo || brief.promo}` : null,
+          brief.garantie ? `- Garantie (vérité client, ne jamais la contredire) : ${brief.garantie}` : null
         ].filter(Boolean).join('\n');
 
         // Rôles d'images : 2 images uniquement, rôle clair et non ambigu
@@ -3587,6 +3605,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
             livraison_paiement: data.product.livraison_paiement || '',
             notes: data.product.notes || '',
             cible_auto: !!data.product.cible_auto,
+            documents: Array.isArray(data.product.documents) ? data.product.documents.filter(d => d && d.url).slice(0, 5).map(d => ({ name: String(d.name || 'document'), url: d.url })) : [],
           },
           quantity: data.quantity || 6,
           history: data.history || { angles_used: [], personas_used: [], batches_count: 0 },
@@ -6990,6 +7009,137 @@ function telechargerImagePourTri(urlStr, profondeur) {
       req.on('timeout', () => { try { req.destroy(); } catch (e) {} fin(null); });
     } catch (e) { fin(null); }
   });
+}
+
+
+// ───────── v5.50 — DOCUMENTS DU CLIENT, LUS EN ENTIER ─────────
+// Le client peut joindre un document écrit (PDF, Word, Markdown, texte, tableur, présentation). On le lit TEL QUEL,
+// sans le résumer ni le raccourcir. Seuls les fichiers hébergés sur le stockage du projet sont acceptés.
+function telechargerBuffer(urlStr, maxOctets, profondeur) {
+  profondeur = profondeur || 0;
+  return new Promise((resolve) => {
+    let fini = false, req = null, tm = null;
+    const fin = (v) => { if (fini) return; fini = true; if (tm) clearTimeout(tm); resolve(v); };
+    tm = setTimeout(() => { try { if (req) req.destroy(); } catch (e) {} fin(null); }, 25000);
+    try {
+      const u = new URL(urlStr);
+      const hoteOk = (() => { try { return u.hostname === new URL(SUPABASE_URL_INT).hostname; } catch (e) { return false; } })();
+      if (u.protocol !== 'https:' || !hoteOk) return fin(null);
+      req = https.get({ hostname: u.hostname, path: u.pathname + u.search, headers: { 'User-Agent': 'AdStack/1.0' }, timeout: 20000 }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && profondeur < 2) {
+          res.resume(); telechargerBuffer(new URL(res.headers.location, u).href, maxOctets, profondeur + 1).then(fin); return;
+        }
+        if (res.statusCode !== 200) { res.resume(); return fin(null); }
+        const chunks = []; let taille = 0;
+        res.on('data', (c) => { taille += c.length; if (taille > maxOctets) { res.destroy(); return fin(null); } chunks.push(c); });
+        res.on('end', () => fin(Buffer.concat(chunks)));
+        res.on('error', () => fin(null));
+      });
+      req.on('error', () => fin(null));
+      req.on('timeout', () => { try { req.destroy(); } catch (e) {} fin(null); });
+    } catch (e) { fin(null); }
+  });
+}
+
+// Lecture minimale d'une archive ZIP (docx, pptx, xlsx) : renvoie { 'chemin/dans/zip': Buffer } pour les fichiers voulus.
+function lireZip(buf, veutFichier) {
+  const sortie = {};
+  let fin = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 70000); i--) { if (buf.readUInt32LE(i) === 0x06054b50) { fin = i; break; } }
+  if (fin < 0) return sortie;
+  const n = buf.readUInt16LE(fin + 10);
+  let pos = buf.readUInt32LE(fin + 16);
+  for (let k = 0; k < n; k++) {
+    if (pos + 46 > buf.length || buf.readUInt32LE(pos) !== 0x02014b50) break;
+    const methode = buf.readUInt16LE(pos + 10), tailleComp = buf.readUInt32LE(pos + 20);
+    const lNom = buf.readUInt16LE(pos + 28), lExtra = buf.readUInt16LE(pos + 30), lCom = buf.readUInt16LE(pos + 32);
+    const posLocal = buf.readUInt32LE(pos + 42);
+    const nom = buf.slice(pos + 46, pos + 46 + lNom).toString('utf8');
+    pos += 46 + lNom + lExtra + lCom;
+    if (!veutFichier(nom)) continue;
+    if (posLocal + 30 > buf.length) continue;
+    const debut = posLocal + 30 + buf.readUInt16LE(posLocal + 26) + buf.readUInt16LE(posLocal + 28);
+    const brut = buf.slice(debut, debut + tailleComp);
+    try { sortie[nom] = methode === 0 ? brut : zlib.inflateRawSync(brut); } catch (e) {}
+  }
+  return sortie;
+}
+function xmlVersTexte(xml) {
+  return String(xml)
+    .replace(/<\/(w:p|a:p|row|si)>/g, '\n').replace(/<\/(w:tc|c)>/g, ' \t')
+    .replace(/<w:br[^>]*\/>|<w:tab[^>]*\/>/g, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&#x([0-9a-fA-F]+);/g, (m, h) => String.fromCodePoint(parseInt(h, 16))).replace(/&#(\d+);/g, (m, d) => String.fromCodePoint(parseInt(d, 10)))
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&')
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// Renvoie { name, texte, statut } : statut = 'ok' | 'illisible'. Ne lève jamais d'erreur.
+async function lireDocumentClient(doc) {
+  const name = String((doc && doc.name) || 'document');
+  const MAX_TEXTE = 200000;
+  try {
+    const ext = (name.match(/\.([a-z0-9]+)$/i) || [])[1] || '';
+    const e = ext.toLowerCase();
+    const buf = await telechargerBuffer(doc.url, 12 * 1024 * 1024);
+    if (!buf || !buf.length) return { name, texte: '', statut: 'illisible', raison: 'téléchargement impossible' };
+    let texte = '';
+    if (['md', 'txt', 'csv'].includes(e)) {
+      texte = buf.toString('utf8');
+    } else if (e === 'docx') {
+      const f = lireZip(buf, n => n === 'word/document.xml');
+      texte = f['word/document.xml'] ? xmlVersTexte(f['word/document.xml']) : '';
+    } else if (e === 'pptx') {
+      const f = lireZip(buf, n => /^ppt\/slides\/slide\d+\.xml$/.test(n));
+      texte = Object.keys(f).sort((a, b) => parseInt(a.match(/(\d+)\.xml/)[1]) - parseInt(b.match(/(\d+)\.xml/)[1]))
+        .map((n, i) => 'Diapositive ' + (i + 1) + ' :\n' + xmlVersTexte(f[n])).join('\n\n');
+    } else if (e === 'xlsx') {
+      const f = lireZip(buf, n => n === 'xl/sharedStrings.xml' || /^xl\/worksheets\/sheet\d+\.xml$/.test(n));
+      const chaines = f['xl/sharedStrings.xml'] ? String(f['xl/sharedStrings.xml']).split(/<\/si>/).map(x => xmlVersTexte(x + '</si>').replace(/\n/g, ' ').trim()) : [];
+      const feuilles = Object.keys(f).filter(n => n.startsWith('xl/worksheets/')).sort();
+      texte = feuilles.map((n, i) => {
+        const lignes = String(f[n]).split(/<\/row>/).map(r => {
+          const cel = []; const re = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g; let m;
+          while ((m = re.exec(r))) {
+            const t = (m[1].match(/\bt="(\w+)"/) || [])[1]; const inner = m[2] || '';
+            if (t === 'inlineStr') { cel.push(xmlVersTexte(inner).replace(/\n/g, ' ')); continue; }
+            const v = (inner.match(/<v>([^<]*)<\/v>/) || [])[1];
+            if (v === undefined) continue;
+            cel.push(t === 's' ? (chaines[parseInt(v)] || '') : v);
+          }
+          return cel.join(' | ');
+        }).filter(Boolean);
+        return 'Feuille ' + (i + 1) + ' :\n' + lignes.join('\n');
+      }).join('\n\n');
+    } else if (e === 'pdf') {
+      const token = await getToken();
+      const body = {
+        system_instruction: { parts: [{ text: 'Tu es un outil de transcription. Tu recopies le texte du document fourni, INTÉGRALEMENT et FIDÈLEMENT, dans l\'ordre de lecture. Tu ne résumes rien, ne raccourcis rien, ne commentes rien, n\'ajoutes rien. Les tableaux sont recopiés ligne par ligne. Si une image contient du texte lisible (étiquette, schéma légendé), recopie ce texte précédé de [image]. Réponds uniquement par la transcription.' }] },
+        contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'application/pdf', data: buf.toString('base64') } }, { text: 'Transcris ce document en entier.' }] }],
+        generationConfig: { temperature: 0, maxOutputTokens: 60000, thinkingConfig: { thinkingBudget: 0 } }
+      };
+      const data = await vertexRequestAvecReessai(token, 'gemini-2.5-flash', body, 150000, 'lecture_document_client');
+      if (data.error) throw new Error(data.error.message || 'erreur Gemini');
+      texte = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).filter(Boolean).join('');
+    } else {
+      return { name, texte: '', statut: 'illisible', raison: 'format ' + (e || 'inconnu') + ' non pris en charge' };
+    }
+    texte = String(texte || '').replace(/\u0000/g, '').trim();
+    if (texte.length < 20) return { name, texte: '', statut: 'illisible', raison: 'aucun texte trouvé' };
+    return { name, texte: texte.slice(0, MAX_TEXTE), statut: 'ok', tronque: texte.length > MAX_TEXTE };
+  } catch (err) {
+    return { name, texte: '', statut: 'illisible', raison: String(err && err.message || err).slice(0, 120) };
+  }
+}
+async function blocDocumentsClient(docs) {
+  const liste = (Array.isArray(docs) ? docs : []).filter(d => d && d.url).slice(0, 5);
+  if (!liste.length) return '';
+  const lus = await Promise.all(liste.map(lireDocumentClient));
+  const parts = lus.map(d => d.statut === 'ok'
+    ? '--- DOCUMENT « ' + d.name + ' » (texte intégral' + (d.tronque ? ', tronqué à 200 000 caractères' : '') + ') ---\n' + d.texte
+    : '--- DOCUMENT « ' + d.name + ' » : NON LU (' + d.raison + ') — n\'en déduis rien ---');
+  console.log('   → documents client : ' + lus.map(d => d.name + ' ' + d.statut).join(', '));
+  return '\n\n=== DOCUMENTS FOURNIS PAR LE CLIENT (source fiable : ce que le client dit de son propre produit) ===\n' + parts.join('\n\n');
 }
 
 function fetchPageText(targetUrl, depth, avecImages) {
