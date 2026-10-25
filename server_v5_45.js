@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -78,38 +78,35 @@ async function getVenteCopyLive() {
 // recopié à la main. Si les prix changent un jour dans Platform.jsx, il faut répercuter ici aussi
 // (pas encore automatisé d'un seul côté — Platform.jsx reste la source visuelle, celle-ci la
 // source texte pour les chatbots) : à garder en tête, pas de mécanisme de sync auto pour l'instant.
-// MAJ pricing (oct. 2026, grille 150 000 / 255 000 / 430 000 FCFA ; trimestriel 120 000 / 205 000 / 345 000 = -20 %) :
-// tarifs en FCFA (prix mensuel affiché, y compris en trimestriel), volumes 24 / 48 / 96 créatives par MOIS
-// (= 6 / 12 / 24 par semaine : 1 / 2 / 4 batchs de 2 vidéos + 4 images), production en 24h max. L'ancien paiement d'essai (First Payment +
-// Completion, ex-Discovery) est retiré : plus aucune offre « pack » à l'achat. Chariow gère la
-// devise réelle au moment du checkout.
+// MAJ pricing (oct. 2026, grille 180 000 / 330 000 / 600 000 FCFA par mois, abonnement MENSUEL uniquement, garantie 45 jours) :
+// tarifs en FCFA, volumes 24 / 48 / 96 créatives par MOIS (= 6 / 12 / 24 par semaine : 1 / 2 / 4 lots de 2 vidéos + 4 images),
+// production en 24h max. Les identifiants internes (starter / pro / scale) restent ceux de la base et des webhooks ; seuls les noms
+// affichés changent (PERF+ / GROWTH / SCALE). L'offre trimestrielle n'est plus vendue (ses produits restent reconnus dans PLAN_MAP pour
+// les abonnés existants). Pack de 6 publicités à 50 000 FCFA pour ceux qui ne sont pas prêts pour un abonnement.
+// Chariow gère la devise réelle au moment du checkout.
+const PACK_PRIX_FCFA = 50000;
 const OFFERS = {
   starter: {
-    id: 'starter', name: 'Starter',
+    id: 'starter', name: 'PERF+',
     tagline: 'Automatiser la production de vos créatives, tout en améliorant vos performances publicitaires.',
     imagesPerWeek: 6, batchesPerWeek: 1, creativesPerMonth: 24, videosPerMonth: 8, imagesPerMonth: 16, produitsPerWeek: '1',
-    promo: '',
+    garantie: 'Performance en 45 jours',
     // prixImg = prix moyen par créative (vidéos + images), arrondi
-    monthly: { price: 150000, prixImg: 6250, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
-    quarterly: { price: 120000, prixImg: 5000, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_wdya3v9h/checkout' },
+    monthly: { price: 180000, prixImg: 7500, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
   },
   pro: {
-    id: 'pro', name: 'Pro', best: true,
+    id: 'pro', name: 'GROWTH', best: true,
     tagline: 'Accélérer la production et la croissance de votre marque, sans la prise de tête de gérer une équipe.',
     imagesPerWeek: 12, batchesPerWeek: 2, creativesPerMonth: 48, videosPerMonth: 16, imagesPerMonth: 32, produitsPerWeek: "jusqu'à 2",
-    promo: '-15% de réduction',
-    // prixImg = prix moyen par créative (vidéos + images), arrondi
-    monthly: { price: 255000, prixImg: 5313, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
-    quarterly: { price: 205000, prixImg: 4271, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_lnp4ax0b/checkout' },
+    garantie: 'Croissance en 45 jours',
+    monthly: { price: 330000, prixImg: 6875, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
   },
   scale: {
-    id: 'scale', name: 'Scale',
+    id: 'scale', name: 'SCALE',
     tagline: 'Exploiter plusieurs marchés avec des langues et cultures différentes, sans exploser vos coûts ni augmenter la complexité.',
     imagesPerWeek: 24, batchesPerWeek: 4, creativesPerMonth: 96, videosPerMonth: 32, imagesPerMonth: 64, produitsPerWeek: "jusqu'à 4",
-    promo: '-30% de réduction',
-    // prixImg = prix moyen par créative (vidéos + images), arrondi
-    monthly: { price: 430000, prixImg: 4479, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
-    quarterly: { price: 345000, prixImg: 3594, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_dn4fb72l/checkout' },
+    garantie: 'Scaling en 45 jours',
+    monthly: { price: 600000, prixImg: 6250, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
   },
 };
 
@@ -120,9 +117,9 @@ const OFFERS = {
 function formatOffresPourPrompt(currency, currencyRate) {
   const fmt = (fcfa) => fcfa.toLocaleString('fr-FR') + ' FCFA';
   const { starter, pro, scale } = OFFERS;
-  const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (mensuel) ou ${fmt(o.quarterly.price)}/mois (engagement trimestriel, -20%) · ${o.creativesPerMonth} créatives/mois (${o.videosPerMonth} vidéos + ${o.imagesPerMonth} images, ${o.batchesPerWeek} batch/semaine) · ${o.produitsPerWeek} produit${o.produitsPerWeek === '1' ? '' : 's'}/semaine · production en ${o.monthly.delivery} max${o.promo ? ' · ' + o.promo : ''}`;
+  const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (abonnement mensuel, résiliable à tout moment) · ${o.creativesPerMonth} créatives/mois (${o.videosPerMonth} vidéos + ${o.imagesPerMonth} images, ${o.batchesPerWeek} ${o.batchesPerWeek > 1 ? 'lots' : 'lot'}/semaine) · ${o.produitsPerWeek} produit${o.produitsPerWeek === '1' ? '' : 's'} couvert${o.produitsPerWeek === '1' ? '' : 's'}/semaine · stratégie marketing (recherche marché, concurrents, cible), ad copies, apprentissage continu et accès à AdBoard inclus · production en ${o.monthly.delivery} max après demande · garantie ${o.garantie}`;
   // Offre de départ sans abonnement (affichée sous les 3 offres sur la page de vente) — ne jamais l'appeler « One Shot ».
-  const depart = `Pack de 6 publicités (pour ceux qui ne sont pas prêts pour un abonnement) : ${fmt(40000)}, une seule fois — 2 vidéos + 4 images optimisées conversion, reçues dans AdBoard. Si la personne s'abonne dans les 30 jours, ${fmt(40000)} sont déduits de son 1er mois.`;
+  const depart = `Pack de 6 publicités (pour ceux qui ne sont pas prêts pour un abonnement) : ${fmt(PACK_PRIX_FCFA)}, une seule fois — 2 vidéos + 4 images optimisées conversion, reçues dans AdBoard. Si la personne s'abonne dans les 30 jours, ${fmt(PACK_PRIX_FCFA)} sont déduits de son 1er mois.`;
   return [ligne(starter), ligne(pro), ligne(scale), depart].join('\n');
 }
 
@@ -594,19 +591,19 @@ const SUPABASE_ANON_KEY_INT = process.env.SUPABASE_ANON_KEY || '';
 // prd_c0ga3snp) est retiré : ces deux produits ne sont plus reconnus par le webhook.
 // Factures PDF / emails de confirmation / colonne montant_fcfa : les valeurs sont maintenant bien en FCFA.
 const PLAN_MAP = {
-  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly',   credits_per_week: 6,  price_fcfa: 150000, prix_img: 6250 },
+  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly',   credits_per_week: 6,  price_fcfa: 180000, prix_img: 7500 },
   'prd_wdya3v9h': { plan: 'starter', cycle: 'quarterly', credits_per_week: 6,  price_fcfa: 120000, prix_img: 5000 },
-  'prd_34w031':   { plan: 'pro',     cycle: 'monthly',   credits_per_week: 12, price_fcfa: 255000, prix_img: 5313 },
+  'prd_34w031':   { plan: 'pro',     cycle: 'monthly',   credits_per_week: 12, price_fcfa: 330000, prix_img: 6875 },
   'prd_lnp4ax0b': { plan: 'pro',     cycle: 'quarterly', credits_per_week: 12, price_fcfa: 205000, prix_img: 4271 },
-  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly',   credits_per_week: 24, price_fcfa: 430000, prix_img: 4479 },
+  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly',   credits_per_week: 24, price_fcfa: 600000, prix_img: 6250 },
   'prd_dn4fb72l': { plan: 'scale',   cycle: 'quarterly', credits_per_week: 24, price_fcfa: 345000, prix_img: 3594 },
 };
 
 // 'discovery' : libellé conservé uniquement pour d'anciens comptes déjà abonnés (offre retirée de la vente).
-const PLAN_LABELS = { discovery: 'Discovery', starter: 'Starter', pro: 'Pro', scale: 'Scale' };
+const PLAN_LABELS = { discovery: 'Discovery', starter: 'PERF+', pro: 'GROWTH', scale: 'SCALE' };
 
 // ── Séquence email de conversion J1/J5/J12/J21 ─────────────────────────────
-const SEQUENCE_PRICES = { starter: { price: OFFERS.starter.monthly.price, prixImg: OFFERS.starter.monthly.prixImg } }; // Starter mensuel en FCFA, référence pour les prix cités dans les emails
+const SEQUENCE_PRICES = { starter: { price: OFFERS.starter.monthly.price, prixImg: OFFERS.starter.monthly.prixImg } }; // PERF+ (id interne starter) mensuel en FCFA, référence pour les prix cités dans les emails
 
 // Convertit un prix FCFA vers la devise de la personne (détectée et mémorisée côté AdBoard).
 // Taux récupéré à chaque envoi — jamais de taux périmé, contrairement à un taux figé au moment de l'inscription.
@@ -616,7 +613,11 @@ async function formatPriceForCurrency(fcfa, currency) {
     const rates = await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/xof.json').then(r => r.json());
     const rate = rates.xof?.[currency.toLowerCase()];
     if (!rate) return fcfa.toLocaleString('fr-FR') + ' FCFA';
-    const val = Math.round(fcfa * rate * 1.035);
+    // Arrondi commercial à la hausse (même règle que la page de vente et AdBoard) : le chiffre le plus rond, 3 % de hausse maximum.
+    const brut = fcfa * rate * 1.035;
+    const base = Math.pow(10, Math.floor(Math.log10(brut)));
+    let val = Math.round(brut);
+    for (const pas of [1, 0.5, 0.25, 0.1, 0.05, 0.025, 0.01]) { const st = base * pas; const c = Math.ceil(brut / st - 1e-9) * st; if (c / brut - 1 <= 0.03 || pas === 0.01) { val = Math.round(c); break; } }
     return new Intl.NumberFormat(undefined, { style:'currency', currency, maximumFractionDigits:0 }).format(val);
   } catch(e) {
     return fcfa.toLocaleString('fr-FR') + ' FCFA';
@@ -4331,7 +4332,7 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
             if (hoursSinceView >= 20) {
               await sendPushToUser(user.id, {
                 title: '💬 Des questions sur nos offres ?',
-                body: 'Ava peut y répondre directement sur AdBoard, ou lance-toi avec Starter.',
+                body: 'Ava peut y répondre directement sur AdBoard, ou lance-toi avec PERF+.',
                 url: '/adboard/offers'
               });
               await markSequenceSent(user.id, 'push_saw_pricing');
@@ -4464,9 +4465,9 @@ if (req.method === 'POST' && req.url === '/chat') {
       if (!isConnected) {
         situationAction = "Pas encore connecté → priorité : proposer de se connecter avec Google (bouton login).";
       } else if (!hasSubscription && !everTransacted) {
-        situationAction = "Jamais transigé, aucune offre active → proposer le plan adapté à son besoin (Starter / Pro / Scale), avec le bouton checkout correspondant.";
+        situationAction = "Jamais transigé, aucune offre active → proposer le plan adapté à son besoin (PERF+ / GROWTH / SCALE), avec le bouton checkout correspondant.";
       } else if (!hasSubscription && everTransacted) {
-        situationAction = "Déjà transigé au moins une fois (abonnement actuel expiré/inactif) → proposer un plan (Starter/Pro/Scale selon son besoin) pour reprendre, avec le bouton checkout correspondant.";
+        situationAction = "Déjà transigé au moins une fois (abonnement actuel expiré/inactif) → proposer un plan (PERF+/GROWTH/SCALE selon son besoin) pour reprendre, avec le bouton checkout correspondant.";
       } else if (products.length === 0) {
         situationAction = `${isPackClient ? 'Ancien pack' : 'Abonné actif'} mais AUCUN produit créé → dire d'aller créer un produit (bouton openProductForm). C'est la seule étape qui manque avant de pouvoir demander des créatives. Ne JAMAIS proposer un plan, il en a déjà un actif.`;
       } else if ((credits.available||0) >= 6) {
@@ -4541,28 +4542,29 @@ OFFRES (source unique OFFERS, toujours dans la devise de l'utilisateur)
 ${formatOffresPourPrompt(currency, currencyRate)}
 Plan actif : ${hasSubscription ? planActive.toUpperCase() + ' — NE JAMAIS le reproposer' : 'AUCUN'}
 
-FORMATS : on produit des VIDÉOS et des IMAGES (pas seulement des images). Chaque batch hebdomadaire = 2 vidéos + 4 images
+FORMATS : on produit des VIDÉOS et des IMAGES (pas seulement des images). Chaque lot hebdomadaire = 2 vidéos + 4 images
 (6 créatives), livré en 24h max. Quand on parle de ce qu'on livre, dis « créatives » (vidéos et images), jamais
 « visuels » ni « images » tout court. Une vidéo ou une image, les deux sont pensées pour vendre sur Meta Ads.
 
 CHOISIR L'OFFRE : UN SEUL CRITÈRE = L'OBJECTIF DE LA PERSONNE (performance, croissance ou expansion)
 Ne demande PLUS le chiffre d'affaires visé ni le budget pub — ces critères n'existent plus.
 Pose UNE seule question : « Ton objectif, c'est plutôt performer, grandir ou t'étendre ? » (reformule simplement).
-- PERFORMANCE → Starter. Elle veut un compte pub qui performe et de meilleurs résultats. Starter lui donne tout
+- PERFORMANCE → PERF+. Elle veut un compte pub qui performe et de meilleurs résultats. PERF+ lui donne tout
   ce qu'il faut : 24 créatives/mois (vidéos + images), 1 produit par semaine, un lot qui s'améliore chaque semaine
-  grâce à ce qui a marché.
-- CROISSANCE → Pro. Elle veut aller plus vite, tester plus, trouver ses gagnants, sans gérer une équipe.
-  Pro = 48 créatives/mois, jusqu'à 2 produits par semaine.
-- EXPANSION → Scale. Elle est déjà sur un gros marché, OU elle veut attaquer plusieurs marchés en même temps
-  (langues, cultures différentes) sans exploser ses coûts. Scale = 96 créatives/mois, jusqu'à 4 produits par semaine.
+  grâce à ce qui a marché. Garantie Performance en 45 jours.
+- CROISSANCE → GROWTH. Elle veut aller plus vite, tester plus, trouver ses gagnants, sans gérer une équipe.
+  GROWTH = 48 créatives/mois, jusqu'à 2 produits par semaine. Garantie Croissance en 45 jours.
+- EXPANSION → SCALE. Elle est déjà sur un gros marché, OU elle veut attaquer plusieurs marchés en même temps
+  (langues, cultures différentes) sans exploser ses coûts. SCALE = 96 créatives/mois, jusqu'à 4 produits par semaine.
+  Garantie Scaling en 45 jours.
 Si l'objectif n'est pas clair, pose la question de l'objectif avant de recommander. Si la personne le dit déjà,
 recommande directement UNE offre (jamais les trois en vrac) et explique en une phrase pourquoi elle lui correspond.
 Si elle hésite entre deux offres, tranche pour elle : « Pour ton objectif, je te conseille X. »
 (Ces critères servent uniquement si la personne n'a pas d'abonnement actif, ou veut changer de plan.)
 
-GARANTIE — « RÉSULTATS EN 30 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, ne parle plus de « livraison 24h ou remboursé »
+GARANTIE — « RÉSULTATS EN 45 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, elle porte un nom selon l'offre : Performance pour PERF+, Croissance pour GROWTH, Scaling pour SCALE, ne parle plus de « livraison 24h ou remboursé »
 ni de « satisfait ou remboursé »). Fonctionnement : le client publie les créatives livrées et investit en publicité avec
-elles pendant un mois. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
+elles pendant 45 jours. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
 de son compte publicitaire Meta (dépenses du mois + résultats : ROAS, coût par achat…). On vérifie, puis on le rembourse
 l'intégralité de son paiement. Présente-la simplement, en 2 phrases, comme ce qui retire le risque.
 
@@ -4609,15 +4611,13 @@ demande explicitement. En dehors de ce cas : 1 seul bouton par message, jamais 2
 Prospect chaud → bouton checkout DIRECT au message suivant.
 [BTN:login] [BTN:openProductForm]
 [BTN:checkout:starter] [BTN:checkout:pro] [BTN:checkout:scale]
-[BTN:checkout-quarterly:starter] [BTN:checkout-quarterly:pro] [BTN:checkout-quarterly:scale]
 [BTN:navigate:suivi] [BTN:navigate:galerie]
 [BTN:whatsapp]
 INTERDIT ABSOLU : n'écris JAMAIS un lien markdown ([texte](url)) ni une URL brute (chariow, mychariow, ou
 autre) pour proposer un paiement — même trouvée via la recherche Google ou ailleurs dans le contexte. Un lien
 direct saute le popup de paiement intégré (devise, code promo) et peut pointer vers une page obsolète. Le SEUL
 moyen valide de proposer une action est le token [BTN:...] ci-dessus.
-Utilise checkout-quarterly quand la personne parle d'économiser, ou demande explicitement
-l'annuel. Sinon, checkout (mensuel) reste le choix par défaut.
+L'abonnement est mensuel uniquement (plus d'offre trimestrielle ni annuelle) : utilise toujours checkout.
 Utilise [BTN:whatsapp] UNIQUEMENT dans ces cas précis : (1) la personne a payé mais n'arrive pas à se connecter
 avec le bon compte (probable mauvais email utilisé au paiement — dis-lui d'abord d'essayer de se connecter avec
 l'email utilisé pour payer, propose WhatsApp seulement si ça ne résout rien), (2) la personne exprime clairement
@@ -4755,12 +4755,12 @@ sortir de la saturation et grandir durablement. Concrètement, ça veut dire : s
 amélioration continue, chaque semaine, portées par une vraie équipe derrière lui.
 Ne détaille jamais ça comme une liste de features ("analyse de marché + personas + angles + créatives") — c'est
 un mécanisme qu'il découvre une fois client, pas un argument de vente. Ce qui vend, c'est le résultat : passer
-un cap, se démarquer, ne plus deviner ce qui marche. Garantie : résultats en 30 jours
+un cap, se démarquer, ne plus deviner ce qui marche. Garantie : résultats en 45 jours
 ou remboursé.
 Reste volontairement vague sur qui on cible précisément (ne dis jamais "COD", "paiement à la livraison", ou
 "Afrique francophone" comme si c'était notre positionnement officiel) — "on aide des e-commerçants à grandir"
 suffit.
-FORMATS : on produit des VIDÉOS et des IMAGES (pas seulement des images). Chaque batch hebdomadaire = 2 vidéos + 4 images
+FORMATS : on produit des VIDÉOS et des IMAGES (pas seulement des images). Chaque lot hebdomadaire = 2 vidéos + 4 images
 (6 créatives), livré en 24h max. Quand on parle de ce qu'on livre, dis « créatives » (vidéos et images), jamais
 « visuels » ni « images » tout court. Une vidéo ou une image, les deux sont pensées pour vendre sur Meta Ads.
 
@@ -4790,25 +4790,26 @@ ${formatOffresPourPrompt(currency, currencyRate)}
 CHOISIR L'OFFRE : UN SEUL CRITÈRE = L'OBJECTIF DE LA PERSONNE (performance, croissance ou expansion)
 Ne demande PLUS le chiffre d'affaires visé ni le budget pub — ces critères n'existent plus.
 Pose UNE seule question : « Ton objectif, c'est plutôt performer, grandir ou t'étendre ? » (reformule simplement).
-- PERFORMANCE → Starter. Elle veut un compte pub qui performe et de meilleurs résultats. Starter lui donne tout
+- PERFORMANCE → PERF+. Elle veut un compte pub qui performe et de meilleurs résultats. PERF+ lui donne tout
   ce qu'il faut : 24 créatives/mois (vidéos + images), 1 produit par semaine, un lot qui s'améliore chaque semaine
-  grâce à ce qui a marché.
-- CROISSANCE → Pro. Elle veut aller plus vite, tester plus, trouver ses gagnants, sans gérer une équipe.
-  Pro = 48 créatives/mois, jusqu'à 2 produits par semaine.
-- EXPANSION → Scale. Elle est déjà sur un gros marché, OU elle veut attaquer plusieurs marchés en même temps
-  (langues, cultures différentes) sans exploser ses coûts. Scale = 96 créatives/mois, jusqu'à 4 produits par semaine.
+  grâce à ce qui a marché. Garantie Performance en 45 jours.
+- CROISSANCE → GROWTH. Elle veut aller plus vite, tester plus, trouver ses gagnants, sans gérer une équipe.
+  GROWTH = 48 créatives/mois, jusqu'à 2 produits par semaine. Garantie Croissance en 45 jours.
+- EXPANSION → SCALE. Elle est déjà sur un gros marché, OU elle veut attaquer plusieurs marchés en même temps
+  (langues, cultures différentes) sans exploser ses coûts. SCALE = 96 créatives/mois, jusqu'à 4 produits par semaine.
+  Garantie Scaling en 45 jours.
 Si l'objectif n'est pas clair, pose la question de l'objectif avant de recommander. Si la personne le dit déjà,
 recommande directement UNE offre (jamais les trois en vrac) et explique en une phrase pourquoi elle lui correspond.
 Si elle hésite entre deux offres, tranche pour elle : « Pour ton objectif, je te conseille X. »
 
 PAIEMENT ET GARANTIE
 Wave, Orange Money, Moov Money, MTN MoMo, Djamo — paiement sécurisé via Chariow. Abonnement mensuel résiliable
-à tout moment (pas d'engagement, sauf le cycle trimestriel choisi volontairement pour le tarif réduit). Garantie :
-résultats en 30 jours ou remboursé.
+à tout moment (pas d'engagement, abonnement mensuel uniquement). Garantie :
+résultats en 45 jours ou remboursé.
 
-GARANTIE — « RÉSULTATS EN 30 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, ne parle plus de « livraison 24h ou remboursé »
+GARANTIE — « RÉSULTATS EN 45 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, elle porte un nom selon l'offre : Performance pour PERF+, Croissance pour GROWTH, Scaling pour SCALE, ne parle plus de « livraison 24h ou remboursé »
 ni de « satisfait ou remboursé »). Fonctionnement : le client publie les créatives livrées et investit en publicité avec
-elles pendant un mois. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
+elles pendant 45 jours. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
 de son compte publicitaire Meta (dépenses du mois + résultats : ROAS, coût par achat…). On vérifie, puis on le rembourse
 l'intégralité de son paiement. Présente-la simplement, en 2 phrases, comme ce qui retire le risque.
 
@@ -4857,8 +4858,8 @@ testées, et on garde ce qui convertit. Ton compte pub performe mieux."
 
 RÈGLE 3 — CTA
 0 bouton avant le 3ème échange, SAUF si la personne demande clairement comment commander. 1 seul par message. Jamais 2 de suite.
-[BTN:offres:Voir les offres] [BTN:checkout:starter:Démarrer avec Starter →] [BTN:checkout:pro:Démarrer avec Pro →]
-[BTN:checkout:scale:Démarrer avec Scale →]
+[BTN:offres:Voir les offres] [BTN:checkout:starter:Démarrer avec PERF+ →] [BTN:checkout:pro:Démarrer avec GROWTH →]
+[BTN:checkout:scale:Démarrer avec SCALE →]
 INTERDIT ABSOLU : n'écris JAMAIS un lien markdown ([texte](url)) ni une URL brute (chariow, mychariow, ou
 autre) pour proposer un paiement ou une offre — même si tu la retrouves via la recherche Google ou ailleurs
 dans le contexte. Un lien direct saute le popup de paiement intégré à la page (devise, code promo, expérience
@@ -5909,7 +5910,7 @@ if (req.method === 'GET' && req.url === '/setup-templates') {
 
     { cle: 'email_j12_offer', categorie: 'email', etape_funnel: 'conversion',
       sujet: `"C'est cher" — parlons-en`,
-      contenu: `<p>Salut{{firstName}},</p><p>Tu regardes peut-être le prix de Starter ({{prixLocal}}) et tu te dis que c'est cher.</p><p>Fais le calcul : ça revient à environ {{prixParImage}} par créative (vidéos et images comprises). Un freelance basique facture souvent 5x plus cher pour une seule image, sans données marché, sans stratégie ni amélioration continue.</p><p>Le vrai coût, c'est pas Starter. C'est chaque jour sans bon contenu publicitaire qui brûle ton budget, sans savoir comprendre pourquoi ça n'a pas marché.</p><p>La meilleure solution, elle est devant toi — pas ChatGPT que tout le monde a.</p><p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Je démarre avec Starter →</a></p><p style="margin-top:24px;">AdStack</p>` },
+      contenu: `<p>Salut{{firstName}},</p><p>Tu regardes peut-être le prix de PERF+ ({{prixLocal}}) et tu te dis que c'est cher.</p><p>Fais le calcul : ça revient à environ {{prixParImage}} par créative (vidéos et images comprises). Un freelance basique facture souvent 5x plus cher pour une seule image, sans données marché, sans stratégie ni amélioration continue.</p><p>Le vrai coût, c'est pas Starter. C'est chaque jour sans bon contenu publicitaire qui brûle ton budget, sans savoir comprendre pourquoi ça n'a pas marché.</p><p>La meilleure solution, elle est devant toi — pas ChatGPT que tout le monde a.</p><p><a href="https://adstackofficial.com/adboard/offers" style="color:#2D7FF9;">Je démarre avec Starter →</a></p><p style="margin-top:24px;">AdStack</p>` },
 
     { cle: 'email_j21_breakup', categorie: 'email', etape_funnel: 'conversion',
       sujet: `🤐 je vais arrêter de t'écrire !!!`,
