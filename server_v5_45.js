@@ -1,4 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
+// SERVER_VERSION v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -1737,23 +1738,44 @@ const server = http.createServer(async (req, res) => {
         const paquet = await fetchPageText(url, 0, true);
         const pageText = paquet.text;
         const images = paquet.images || [];
+        const logoPage = paquet.logo || null;
+        const candidatsCouleurs = paquet.couleurs || [];
         if (!pageText || pageText.length < 80) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: true, data: null, reason: 'page_vide' }));
           return;
         }
 
-        const extractPrompt = `Tu reçois le texte brut d'une page web (URL : ${url}), et le nom de produit qu'on y cherche apparaît généralement dans le slug de cette URL. Détermine si c'est une fiche produit e-commerce, et si oui, extrais UNIQUEMENT les informations explicitement présentes — n'invente rien, ne déduis rien qui ne soit pas écrit noir sur blanc.
+        const extractPrompt = `Tu reçois le texte brut d'une page web (URL : ${url}) — et, quand elles ont pu être téléchargées, des images candidates numérotées de la page — et le nom de produit qu'on y cherche apparaît généralement dans le slug de cette URL. Détermine si c'est une fiche produit e-commerce, et si oui, extrais UNIQUEMENT les informations explicitement présentes — n'invente rien, ne déduis rien qui ne soit pas écrit noir sur blanc. Seuls trois champs échappent à cette règle et suivent leurs propres consignes données plus bas : « cible », « couleurs » et « images ».
 
 ATTENTION — désambiguïsation importante : beaucoup de fiches produit affichent aussi, plus loin sur la page, un tableau comparatif ou une liste "produits similaires/vous aimerez aussi/fréquemment achetés ensemble" listant D'AUTRES produits avec leurs propres noms et prix. N'extrais JAMAIS les infos de ces autres produits. Le VRAI produit de cette page est celui qui : (1) correspond au slug de l'URL ci-dessus, (2) apparaît le premier dans le texte, généralement juste avant ou après un bouton "Ajouter au panier"/"Acheter", (3) est répété plusieurs fois dans la page (titre, description détaillée, FAQ) — pas une simple mention isolée dans une liste comparative.
 
 Réponds en JSON strict, uniquement l'objet, aucun texte autour, aucun bloc markdown :
-{"nom":"nom du produit ou null","prix":"le prix COMPLET du produit, AVEC sa devise. S'il n'y a qu'un seul prix, donne-le simplement (ex: '13 900 FCFA'). S'il y a PLUSIEURS paliers/formules (ex: 1 mois / 2 mois / 3 mois, ou 1 unité / pack de 3 / pack de 5), liste-les TOUS, séparés par ' · ', chacun avec son propre prix et sa remise si affichée (ex: '19 000 FCFA (1 mois) · 36 100 FCFA (2 mois, -5%) · 51 300 FCFA (3 mois, -10%)') — jamais un seul prix choisi arbitrairement parmi plusieurs, jamais un nombre seul sans devise, null si aucun prix identifiable","pays":"pays/marché de vente si explicitement mentionné (plusieurs possibles séparés par virgule) ou null","utilite":"à quoi sert le produit, en une phrase de deux lignes maximum, basée sur la description de la page, ou null","promo":"offre promotionnelle GÉNÉRALE, distincte des paliers de prix ci-dessus — seuil de livraison gratuite, BOGO (achetez-en X recevez-en Y), cadeau offert, code promo affiché, etc. (ex: 'Livraison gratuite dès 50 000 FCFA', '2 achetés = 1 offert') — jamais une remise déjà comptée dans un palier de prix, null si aucune","confiance":"haute|moyenne|basse"}
+{"nom":"nom du produit ou null","prix":"le prix COMPLET du produit, AVEC sa devise. S'il n'y a qu'un seul prix, donne-le simplement (ex: '13 900 FCFA'). S'il y a PLUSIEURS paliers/formules (ex: 1 mois / 2 mois / 3 mois, ou 1 unité / pack de 3 / pack de 5), liste-les TOUS, séparés par ' · ', chacun avec son propre prix et sa remise si affichée (ex: '19 000 FCFA (1 mois) · 36 100 FCFA (2 mois, -5%) · 51 300 FCFA (3 mois, -10%)') — jamais un seul prix choisi arbitrairement parmi plusieurs, jamais un nombre seul sans devise, null si aucun prix identifiable","pays":"pays/marché de vente si explicitement mentionné (plusieurs possibles séparés par virgule) ou null","utilite":"à quoi sert le produit, en une phrase de deux lignes maximum, basée sur la description de la page, ou null","promo":"offre promotionnelle GÉNÉRALE, distincte des paliers de prix ci-dessus — seuil de livraison gratuite, BOGO (achetez-en X recevez-en Y), cadeau offert, code promo affiché, etc. (ex: 'Livraison gratuite dès 50 000 FCFA', '2 achetés = 1 offert') — jamais une remise déjà comptée dans un palier de prix, null si aucune","garantie":"garantie ou politique de retour / remboursement / échange EXPLICITEMENT écrite sur la page, recopiée fidèlement et brièvement (ex: 'Satisfait ou remboursé 30 jours'), null si la page n'en dit rien","livraison_paiement":"modes de paiement et conditions de livraison EXPLICITEMENT écrits sur la page (ex: 'Paiement à la livraison. Livraison en 48 h à Dakar'), recopiés fidèlement et brièvement, null si la page n'en dit rien","avis":["jusqu'à 6 avis clients ÉCRITS sur la page de CE produit, recopiés MOT POUR MOT tels qu'affichés (aucune reformulation, aucune correction, aucune invention, jamais un avis d'un autre produit), chacun suivi du prénom entre parenthèses s'il est affiché ; liste vide [] si la page ne contient aucun avis écrit"],"cible":"UNE seule phrase de 35 mots maximum décrivant à qui s'adresse ce produit, selon ces règles : (1) décris une SITUATION VÉCUE et une tension psychologique précise — un comportement observable, un réflexe ou une phrase que la personne se dit, ce contre quoi elle se bat concrètement — jamais une fiche démographique ; (2) n'indique ni métier, ni âge exact, ni tranche d'âge serrée : la démographie reste LARGE, la netteté vient du comportement et de la situation ; (3) la personne doit pouvoir s'offrir ce produit à ce prix et acheter en ligne ; (4) jamais générique : pas de « femmes actives de 30 à 45 ans stressées » — la phrase ne doit pas pouvoir être copiée telle quelle dans la publicité d'un concurrent direct ; (5) appuie-toi sur ce que la page et le marché de vente laissent réellement entendre, sans inventer de chiffre ni de fait ; (6) aucun mot technique (persona, angle, funnel, cible, awareness). null si la page ne permet pas de la déduire","couleurs":["2 ou 3 couleurs de la marque, au format #rrggbb, choisies UNIQUEMENT dans la liste de couleurs candidates fournie plus bas (copie-les exactement) ; liste vide [] si aucune liste n'est fournie ou si tu n'es pas sûr"],"images":[{"i":0,"type":"produit|emballage|autre_produit|inutile"}],"principale":0,"confiance":"haute|moyenne|basse"}
+
+RÈGLES « images » (seulement si des images numérotées te sont fournies, sinon renvoie "images":[] et "principale":null) : pour CHAQUE image fournie, indique son numéro « i » et son « type » : « produit » = le produit de CETTE page lui-même (seul, en main, en situation d'usage, plusieurs angles) ; « emballage » = la boîte, le sachet, l'étiquette ou le packaging de CE produit ; « autre_produit » = un produit DIFFÉRENT (vente croisée, collection, comparatif, produit annexe) ; « inutile » = bannière, icône, logo, moyen de paiement, tableau de tailles, capture de texte, photo sans le produit, visuel de réassurance. Au moindre doute entre « produit » et « autre_produit », choisis « autre_produit ». « principale » = le numéro de la meilleure image pour représenter le produit (nette, bien cadrée, produit bien visible, idéalement sur fond simple), ou null.
 
 Si la page n'est pas une fiche produit exploitable (site général, accueil, blog, catégorie...), tous les champs à null et confiance:"basse".
 
-TEXTE DE LA PAGE :
+${candidatsCouleurs.length ? `COULEURS CANDIDATES (pour le champ « couleurs », choisis uniquement parmi elles) : ${candidatsCouleurs.join(', ')}\n\n` : ''}TEXTE DE LA PAGE :
 ${pageText}`;
+
+        // v5.49 — images candidates téléchargées en parallèle (7 s max chacune, 1,5 Mo max) pour que Gemini les REGARDE
+        // dans le même appel que le texte. Échec de téléchargement = image simplement non jugée, jamais bloquant.
+        const candidatsImages = images.slice(0, 10);
+        const telechargees = await Promise.all(candidatsImages.map(u => telechargerImagePourTri(u)));
+        const envoyees = [];
+        let totalOctets = 0;
+        telechargees.forEach((d, idx) => {
+          if (!d) return;
+          const taille = d.data.length * 0.75;
+          if (totalOctets + taille > 9000000) return;
+          totalOctets += taille;
+          envoyees.push({ url: candidatsImages[idx], mimeType: d.mimeType, data: d.data });
+        });
+        const partsRequete = [{ text: extractPrompt }];
+        envoyees.forEach((im, k) => { partsRequete.push({ text: `IMAGE ${k} :` }); partsRequete.push({ inlineData: { mimeType: im.mimeType, data: im.data } }); });
+        console.log(`   [fiche-auto] ${envoyees.length}/${candidatsImages.length} image(s) transmises à Gemini · ${candidatsCouleurs.length} couleur(s) candidate(s)`);
 
         const token = await getToken();
         // Même trou que select-cts/name-ct (voir ailleurs dans ce fichier) : aucun thinkingConfig
@@ -1761,8 +1783,8 @@ ${pageText}`;
         // Tâche d'extraction pure, aucun bénéfice à réfléchir dessus.
         const vertexBody = {
           system_instruction: { parts: [{ text: 'Tu extrais des données structurées depuis du texte web brut. Tu ne réponds qu\'en JSON strict, jamais de texte autour.' }] },
-          contents: [{ role: 'user', parts: [{ text: extractPrompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 700, thinkingConfig: { thinkingBudget: 0 } }
+          contents: [{ role: 'user', parts: partsRequete }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 3000, thinkingConfig: { thinkingBudget: 0 } }
         };
         // Corrigé pour utiliser le retry existant (vertexRequestAvecReessai) — cet appel pouvait
         // échouer sec sur une simple limite de débit transitoire, comme observé en pratique.
@@ -1786,10 +1808,64 @@ ${pageText}`;
         ['nom','prix','pays','utilite','promo'].forEach(k => {
           if (parsed[k] && String(parsed[k]).toLowerCase() !== 'null') cleaned[k] = String(parsed[k]).trim();
         });
+        // v5.48 — garanties / livraison / avis / logo. Garde-fous anti-invention : un champ n'est renvoyé que si la
+        // page contient réellement le vocabulaire correspondant ; un avis n'est gardé que s'il apparaît mot pour mot
+        // dans le texte de la page (comparaison insensible à la casse, aux espaces et à la ponctuation).
+        const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
+        const texteNorm = norm(pageText);
+        const brut = (v) => (v && String(v).toLowerCase() !== 'null') ? String(v).trim() : '';
+        const g = brut(parsed.garantie);
+        if (g && /rembours|garanti|retour|echange|satisfait/i.test(pageText.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) cleaned.garantie = g.slice(0, 240);
+        const lp = brut(parsed.livraison_paiement);
+        if (lp && /livraison|livr[ée]|paiement|payer|cash|expedi|exp[ée]di/i.test(pageText.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) cleaned.livraison_paiement = lp.slice(0, 300);
+        if (Array.isArray(parsed.avis)) {
+          const vus = new Set();
+          const avisOk = [];
+          for (const a of parsed.avis) {
+            const t = brut(a);
+            if (t.length < 15 || t.length > 500) continue;
+            // retire un éventuel « (Prénom) » final avant de chercher le texte dans la page
+            const sansAuteur = t.replace(/\s*\([^)]{1,40}\)\s*$/, '');
+            const n = norm(sansAuteur);
+            if (n.length < 12 || !texteNorm.includes(n) || vus.has(n)) continue;
+            vus.add(n); avisOk.push(t);
+            if (avisOk.length >= 6) break;
+          }
+          if (avisOk.length) cleaned.avis = avisOk;
+        }
+        if (logoPage) cleaned.logo = logoPage;
+        // Cible : une phrase, jamais un pavé ; un mot-clé technique = écartée.
+        const ci = brut(parsed.cible).replace(/\s+/g, ' ');
+        if (ci && ci.length >= 20 && !/\b(persona|funnel|awareness|angle marketing)\b/i.test(ci)) cleaned.cible = ci.slice(0, 300);
+        // Couleurs : uniquement des candidates réellement présentes sur la page ; 2 ou 3, jamais une seule (le formulaire exige 2 ou 3).
+        if (Array.isArray(parsed.couleurs) && candidatsCouleurs.length) {
+          const ok = [];
+          for (const c of parsed.couleurs) {
+            const h = String(c || '').trim().toLowerCase();
+            if (candidatsCouleurs.includes(h) && !ok.includes(h)) ok.push(h);
+          }
+          if (ok.length >= 2) cleaned.couleurs = ok.slice(0, 3);
+        }
+        // Tri des images : « produit » (principale en tête) et « emballage » ; tout le reste est écarté.
+        let imagesFinales = images, imagesEmballage = [], triFait = false;
+        if (envoyees.length && Array.isArray(parsed.images) && parsed.images.length) {
+          const verdict = {};
+          parsed.images.forEach(e => { if (e && Number.isInteger(e.i) && e.i >= 0 && e.i < envoyees.length && typeof e.type === 'string') verdict[e.i] = e.type.toLowerCase(); });
+          if (Object.keys(verdict).length) {
+            let produits = envoyees.map((im, k) => k).filter(k => verdict[k] === 'produit');
+            const emb = envoyees.map((im, k) => k).filter(k => verdict[k] === 'emballage');
+            if (Number.isInteger(parsed.principale) && produits.includes(parsed.principale)) produits = [parsed.principale, ...produits.filter(k => k !== parsed.principale)];
+            if (produits.length) {
+              imagesFinales = produits.map(k => envoyees[k].url);
+              imagesEmballage = emb.map(k => envoyees[k].url);
+              triFait = true;
+            }
+          }
+        }
 
-        console.log(`✓ Fiche produit extraite (confiance: ${parsed.confiance}) — champs: ${Object.keys(cleaned).join(', ') || 'aucun'} · ${images.length} image(s)`);
+        console.log(`✓ Fiche produit extraite (confiance: ${parsed.confiance}) — champs: ${Object.keys(cleaned).join(', ') || 'aucun'} · ${images.length} image(s)${cleaned.avis ? ` · ${cleaned.avis.length} avis` : ''}${cleaned.logo ? ' · logo' : ''}${cleaned.cible ? ' · cible' : ''}${cleaned.couleurs ? ' · couleurs' : ''} · images: ${triFait ? `${imagesFinales.length} produit / ${imagesEmballage.length} emballage (triées)` : `${imagesFinales.length} (non triées)`}`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, data: cleaned, confiance: parsed.confiance, images }));
+        res.end(JSON.stringify({ ok: true, data: cleaned, confiance: parsed.confiance, images: imagesFinales, images_emballage: imagesEmballage, tri_images: triFait }));
       } catch(e) {
         console.error('✗ Erreur fetch-product-info:', e.message);
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -3500,6 +3576,17 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
             photo_base64: data.product.photo_base64 || null,
             lien_page_produit: data.product.lien_page_produit || null,
             marque: data.product.marque || null,
+            // v5.48 — carrousel complet (lu plus bas par Factory mais jamais conservé jusqu'ici) et infos de
+            // personnalisation de la fiche produit AdBoard v7.0. Toutes facultatives : absentes = jamais inventées.
+            galerie_images: Array.isArray(data.product.galerie_images) ? data.product.galerie_images : [],
+            logo_url: data.product.logo_url || null,
+            packaging_images: Array.isArray(data.product.packaging_images) ? data.product.packaging_images : [],
+            avis_captures: Array.isArray(data.product.avis_captures) ? data.product.avis_captures : [],
+            avis_textes: Array.isArray(data.product.avis_textes) ? data.product.avis_textes : [],
+            garantie: data.product.garantie || '',
+            livraison_paiement: data.product.livraison_paiement || '',
+            notes: data.product.notes || '',
+            cible_auto: !!data.product.cible_auto,
           },
           quantity: data.quantity || 6,
           history: data.history || { angles_used: [], personas_used: [], batches_count: 0 },
@@ -6843,6 +6930,68 @@ function buildTeaserSvg({ marque, score }) {
 }
 
 // ── URL Page Fetcher ────────────────────────────
+// ── v5.49 — Aides pour le remplissage automatique de la fiche produit ─────────────────────────────
+// Couleurs candidates de la marque, lues dans le HTML brut : meta theme-color, variables CSS « primaire / accent /
+// bouton », puis couleurs les plus fréquentes — en écartant blancs, noirs et gris. Gemini choisit ENSUITE parmi cette
+// liste seulement (jamais de couleur inventée).
+function extraireCandidatsCouleurs(html) {
+  try {
+    const norm = (h) => { h = String(h || '').replace('#', '').trim().toLowerCase(); if (h.length === 3) h = h.split('').map(c => c + c).join(''); return /^[0-9a-f]{6}$/.test(h) ? '#' + h : null; };
+    const neutre = (hex) => { const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16); const lum = 0.299 * r + 0.587 * g + 0.114 * b; return (Math.max(r, g, b) - Math.min(r, g, b)) < 22 || lum > 242 || lum < 14; };
+    const prio = [];
+    [/<meta[^>]+name=["']theme-color["'][^>]+content=["']([^"']+)["']/i, /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']theme-color["']/i, /<meta[^>]+name=["']msapplication-TileColor["'][^>]+content=["']([^"']+)["']/i]
+      .forEach(re => { const m = html.match(re); if (m) { const h = norm(m[1]); if (h && !neutre(h)) prio.push(h); } });
+    const css = (html.match(/<style[\s\S]*?<\/style>/gi) || []).join(' ') + ' ' + (html.match(/style=["'][^"']*["']/gi) || []).join(' ');
+    let m;
+    const reVar = /--[\w-]*(?:primary|accent|brand|button|btn|main)[\w-]*\s*:\s*(#[0-9a-fA-F]{3,6})\b/gi;
+    while ((m = reVar.exec(css))) { const h = norm(m[1]); if (h && !neutre(h)) prio.push(h); }
+    const compte = {};
+    const reHex = /#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g;
+    while ((m = reHex.exec(css))) { const h = norm(m[1]); if (h && !neutre(h)) compte[h] = (compte[h] || 0) + 1; }
+    const freq = Object.entries(compte).sort((a, b) => b[1] - a[1]).slice(0, 8).map(x => x[0]);
+    return [...new Set([...prio, ...freq])].slice(0, 10);
+  } catch (e) { return []; }
+}
+
+// Télécharge une image candidate pour que Gemini la REGARDE (tri : produit / emballage / autre produit / inutile).
+// Jamais bloquant : renvoie null au moindre souci (délai, taille > 1,5 Mo, format non pris en charge, adresse locale).
+function telechargerImagePourTri(urlStr, profondeur) {
+  profondeur = profondeur || 0;
+  return new Promise((resolve) => {
+    let fini = false, req = null, tm = null;
+    const fin = (v) => { if (fini) return; fini = true; if (tm) clearTimeout(tm); resolve(v); };
+    tm = setTimeout(() => { try { if (req) req.destroy(); } catch (e) {} fin(null); }, 7000);
+    try {
+      const u = new URL(urlStr);
+      if (!/^https?:$/.test(u.protocol) || /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.)/i.test(u.hostname)) return fin(null);
+      if (/cdn\.shopify\.com|\/cdn\/shop\//i.test(u.href) && !u.searchParams.get('width')) u.searchParams.set('width', '640');
+      const lib = u.protocol === 'https:' ? https : http;
+      req = lib.get({
+        hostname: u.hostname, port: u.port || (u.protocol === 'https:' ? 443 : 80), path: u.pathname + u.search,
+        headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1', 'Accept': 'image/jpeg,image/png,image/webp,*/*;q=0.5' },
+        timeout: 6000
+      }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && profondeur < 2) {
+          res.resume();
+          telechargerImagePourTri(new URL(res.headers.location, u).href, profondeur + 1).then(fin);
+          return;
+        }
+        if (res.statusCode !== 200) { res.resume(); return fin(null); }
+        let ct = String(res.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+        if (ct === 'application/octet-stream' || !ct) { const ext = (u.pathname.match(/\.(jpe?g|png|webp)$/i) || [])[1]; ct = ext ? 'image/' + ext.toLowerCase().replace('jpg', 'jpeg') : ''; }
+        if (ct === 'image/jpg') ct = 'image/jpeg';
+        if (!/^image\/(jpeg|png|webp)$/.test(ct)) { res.resume(); return fin(null); }
+        const chunks = []; let taille = 0;
+        res.on('data', (c) => { taille += c.length; if (taille > 1500000) { res.destroy(); return fin(null); } chunks.push(c); });
+        res.on('end', () => fin({ mimeType: ct, data: Buffer.concat(chunks).toString('base64') }));
+        res.on('error', () => fin(null));
+      });
+      req.on('error', () => fin(null));
+      req.on('timeout', () => { try { req.destroy(); } catch (e) {} fin(null); });
+    } catch (e) { fin(null); }
+  });
+}
+
 function fetchPageText(targetUrl, depth, avecImages) {
   depth = depth || 0;
   return new Promise((resolve, reject) => {
@@ -6956,10 +7105,51 @@ function fetchPageText(targetUrl, depth, avecImages) {
     // ("Quel produit choisir", listant plusieurs produits avec leur propre prix côte à côte),
     // brouillant "de quel produit parle vraiment cette page" — cause du "confiance basse"
     // persistant sur des pages pourtant parfaitement exploitables.
+    // v5.48 — Logo de la marque, repéré dans le HTML BRUT (le nettoyage texte supprime <header>, et le filtre
+    // d'images écarte volontairement tout ce qui s'appelle « logo »). Ordre : 1) JSON-LD Organization/WebSite
+    // (champ logo), 2) <img> dont la classe / l'id / l'alt / le nom de fichier contient « logo », dans le haut de
+    // la page. Préfère un fichier raster (png/jpg/webp) à un SVG. Renvoie null si rien de sûr : jamais d'invention.
+    const extraireLogo = (html, baseUrl) => {
+      const abs = (u) => { try { return new URL(u, baseUrl).href; } catch(e) { return null; } };
+      const candidats = [];
+      try {
+        const reScripts = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+        let m;
+        while ((m = reScripts.exec(html))) {
+          try {
+            const bloc = JSON.parse(m[1].trim());
+            const items = Array.isArray(bloc) ? bloc : (bloc['@graph'] || [bloc]);
+            for (const it of items) {
+              const t = it && it['@type'];
+              const estOrg = [].concat(t || []).some(x => /Organization|WebSite|Store|Brand/i.test(String(x)));
+              if (!estOrg || !it.logo) continue;
+              const l = typeof it.logo === 'string' ? it.logo : (it.logo.url || it.logo.contentUrl || (Array.isArray(it.logo) ? it.logo[0] : null));
+              if (typeof l === 'string') candidats.push(l);
+            }
+          } catch(e) {}
+        }
+      } catch(e) {}
+      try {
+        const haut = html.slice(0, 60000);
+        const reImg = /<img\b[^>]*>/gi;
+        let m;
+        while ((m = reImg.exec(haut))) {
+          const tag = m[0];
+          if (!/logo/i.test(tag)) continue;
+          if (/payment|paiement|visa|mastercard|paypal|badge|trust|secure|certif|footer-|review|avis/i.test(tag)) continue;
+          const src = (tag.match(/(?:data-src|src)=["']([^"']+)["']/i) || [])[1];
+          if (src && !/^data:/i.test(src)) candidats.push(src);
+          if (candidats.length > 12) break;
+        }
+      } catch(e) {}
+      const urls = candidats.map(abs).filter(u => u && /^https?:/i.test(u));
+      const raster = urls.find(u => /\.(png|jpe?g|webp)(\?|$)/i.test(u));
+      return raster || urls[0] || null;
+    };
     const emballer = (dataBrute) => {
       const filtre = retirerWidgetsVenteCroisee(dataBrute);
       return avecImages
-        ? { text: nettoyer(filtre), images: extraireImages(filtre, targetUrl) }
+        ? { text: nettoyer(filtre), images: extraireImages(filtre, targetUrl), logo: extraireLogo(dataBrute, targetUrl), couleurs: extraireCandidatsCouleurs(dataBrute) }
         : nettoyer(filtre);
     };
     const finirUneFois = (fn, arg) => { if (reglee) return; reglee = true; clearTimeout(timeoutGlobal); fn(arg); };
