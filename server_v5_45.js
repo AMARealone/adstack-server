@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -1736,11 +1736,26 @@ const server = http.createServer(async (req, res) => {
         console.log(`→ Fetch fiche produit: ${url}`);
         // avecImages=true — récupère aussi les URLs d'images de la page (galerie/carrousel),
         // en plus du texte habituel. Voir fetchPageText pour l'extraction elle-même.
-        const [paquetBrut, shop] = await Promise.all([
+        const [paquetBrut, shop, rendu] = await Promise.all([
           fetchPageText(url, 0, true).catch(e => { console.log(`   [fiche-auto] page non lisible : ${e.message}`); return null; }),
           enrichirShopify(url),
+          fetchPageRendue(url, { tempsMax: 30000 }).catch(() => null),
         ]);
-        const paquet = paquetBrut || { text: '', images: [], logo: null, couleurs: [], extras: { avis: [], note: null, bandeau: '', description: '' } };
+        // v5.56 — version affichée par un vrai navigateur : texte complet (avis, FAQ…) + images/logo/couleurs du DOM final.
+        let paquetRendu = null;
+        if (rendu && rendu.html) { try { paquetRendu = await fetchPageText(rendu.urlFinale || url, 0, true, rendu.html); } catch (e) { paquetRendu = null; } }
+        const brutLong = paquetBrut ? paquetBrut.text.length : 0;
+        const choisi = (paquetRendu && paquetRendu.text.length >= Math.max(200, brutLong * 0.6)) ? paquetRendu : paquetBrut;
+        const autre = choisi === paquetRendu ? paquetBrut : paquetRendu;
+        const fusion = choisi ? {
+          ...choisi,
+          images: [...(choisi.images || []), ...((autre && autre.images) || [])],
+          logo: choisi.logo || (autre && autre.logo) || null,
+          couleurs: (choisi.couleurs && choisi.couleurs.length) ? choisi.couleurs : ((autre && autre.couleurs) || []),
+          extras: { ...(choisi.extras || {}), avis: [...new Set([...((choisi.extras && choisi.extras.avis) || []), ...((autre && autre.extras && autre.extras.avis) || [])])].slice(0, 8), note: (choisi.extras && choisi.extras.note) || (autre && autre.extras && autre.extras.note) || null, bandeau: (choisi.extras && choisi.extras.bandeau) || (autre && autre.extras && autre.extras.bandeau) || '' },
+          urlFinale: (paquetBrut && paquetBrut.urlFinale) || (rendu && rendu.urlFinale) || url,
+        } : null;
+        const paquet = fusion || { text: '', images: [], logo: null, couleurs: [], extras: { avis: [], note: null, bandeau: '', description: '' } };
         if (!paquetBrut && !(shop && shop.produit)) throw new Error('Page illisible');
         // v5.55 — redirection de langue / de pays : beaucoup de boutiques (Shopify Markets) renvoient vers /en-us/, /fr-fr/… d'après la
         // localisation DU SERVEUR (Render, États-Unis), pas celle du client. On le détecte pour ne pas prendre ce marché pour le sien.
@@ -1753,6 +1768,11 @@ const server = http.createServer(async (req, res) => {
         if (shop && shop.produit) {
           const p = shop.produit;
           blocs.push(`DONNÉES OFFICIELLES DU PRODUIT (fichier de la boutique) :\nTitre : ${p.titre}\n${p.prix != null ? `Prix : ${p.prix}${p.ancien_prix && p.ancien_prix > p.prix ? ` (ancien prix ${p.ancien_prix})` : ''}\n` : ''}${p.variantes.length ? `Formules / variantes : ${p.variantes.join(' · ')}\n` : ''}Description : ${p.description}`);
+        }
+        if (rendu && rendu.avis && rendu.avis.length) {
+          let tot = 0; const cartes = [];
+          for (const a of rendu.avis) { if (tot + a.length > 12000) break; cartes.push(a); tot += a.length; }
+          blocs.push('AVIS CLIENTS AFFICHÉS DANS LE NAVIGATEUR (chargés par JavaScript ; chaque bloc = une carte d\'avis exacte : nom, note, date, titre, texte) :\n' + cartes.map(a => '---\n' + a).join('\n'));
         }
         if (extras.bandeau) blocs.push(`BANDEAU D'ANNONCE DU SITE : ${extras.bandeau}`);
         if (extras.note) blocs.push(`NOTE MOYENNE AFFICHÉE : ${extras.note.valeur}/5${extras.note.nombre ? ` sur ${extras.note.nombre} avis` : ''}`);
@@ -1773,7 +1793,7 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        const extractPrompt = `Tu reçois le texte brut d'une page web (URL : ${url}) — et, quand elles ont pu être téléchargées, des images candidates numérotées de la page — et le nom de produit qu'on y cherche apparaît généralement dans le slug de cette URL. Détermine si c'est une fiche produit e-commerce, et si oui, extrais UNIQUEMENT les informations explicitement présentes — n'invente rien, ne déduis rien qui ne soit pas écrit noir sur blanc. Seuls trois champs échappent à cette règle et suivent leurs propres consignes données plus bas : « cible », « couleurs » et « images ».\n\nLANGUE : les systèmes AdStack servent n'importe quel marché du monde (États-Unis, Inde, Japon, Brésil, Afrique…). Détermine la langue du MARCHÉ à partir de la page (langue du texte de vente, devise, pays de livraison) et remplis TOUS les champs textuels (nom, prix, pays, utilité, promo, garantie, livraison_paiement, cible) dans cette langue de marché, jamais en français par défaut : une page américaine donne des champs en anglais, une page japonaise en japonais. Chiffres, devises et durées inchangés. « avis » reste mot pour mot, dans la langue d'origine. Seule une page en français donne des champs en français. Le texte peut commencer par des blocs « DONNÉES OFFICIELLES », « POLITIQUE DE RETOUR », « POLITIQUE DE LIVRAISON », « AVIS BALISÉS » : ce sont des sources fiables de CETTE page, à utiliser pour garantie, livraison et avis.
+        const extractPrompt = `Tu reçois le texte brut d'une page web (URL : ${url}) — et, quand elles ont pu être téléchargées, des images candidates numérotées de la page — et le nom de produit qu'on y cherche apparaît généralement dans le slug de cette URL. Détermine si c'est une fiche produit e-commerce, et si oui, extrais UNIQUEMENT les informations explicitement présentes — n'invente rien, ne déduis rien qui ne soit pas écrit noir sur blanc. Seuls trois champs échappent à cette règle et suivent leurs propres consignes données plus bas : « cible », « couleurs » et « images ».\n\nLANGUE : les systèmes AdStack servent n'importe quel marché du monde (États-Unis, Inde, Japon, Brésil, Afrique…). Détermine la langue du MARCHÉ à partir de la page (langue du texte de vente, devise, pays de livraison) et remplis TOUS les champs textuels (nom, prix, pays, utilité, promo, garantie, livraison_paiement, cible) dans cette langue de marché, jamais en français par défaut : une page américaine donne des champs en anglais, une page japonaise en japonais. Chiffres, devises et durées inchangés. « avis » reste mot pour mot, dans la langue d'origine. Seule une page en français donne des champs en français. Le texte peut commencer par des blocs « DONNÉES OFFICIELLES », « POLITIQUE DE RETOUR », « POLITIQUE DE LIVRAISON », « AVIS BALISÉS », « AVIS CLIENTS AFFICHÉS DANS LE NAVIGATEUR » (pour les avis, recopie uniquement le TEXTE de l'avis, titre compris s'il y en a un, sans nom, date ni mentions « Verified Buyer » ; ajoute le prénom entre parenthèses) : ce sont des sources fiables de CETTE page, à utiliser pour garantie, livraison et avis.
 
 ATTENTION — désambiguïsation importante : beaucoup de fiches produit affichent aussi, plus loin sur la page, un tableau comparatif ou une liste "produits similaires/vous aimerez aussi/fréquemment achetés ensemble" listant D'AUTRES produits avec leurs propres noms et prix. N'extrais JAMAIS les infos de ces autres produits. Le VRAI produit de cette page est celui qui : (1) correspond au slug de l'URL ci-dessus, (2) apparaît le premier dans le texte, généralement juste avant ou après un bouton "Ajouter au panier"/"Acheter", (3) est répété plusieurs fois dans la page (titre, description détaillée, FAQ) — pas une simple mention isolée dans une liste comparative.
 
@@ -1906,7 +1926,7 @@ ${pageText}`;
           }
         }
 
-        console.log(`✓ Fiche produit extraite (confiance: ${parsed.confiance}) — champs: ${Object.keys(cleaned).join(', ') || 'aucun'} · ${images.length} image(s)${cleaned.avis ? ` · ${cleaned.avis.length} avis` : ''}${cleaned.logo ? ' · logo' : ''}${cleaned.cible ? ' · cible' : ''}${cleaned.couleurs ? ' · couleurs' : ''} · images: ${triFait ? `${imagesFinales.length} produit (triées ; aspects : ${Object.values(aspects).join('/')})` : `${imagesFinales.length} (non triées)`}${shop ? ' · shopify' : ''}`);
+        console.log(`✓ Fiche produit extraite (confiance: ${parsed.confiance}) — champs: ${Object.keys(cleaned).join(', ') || 'aucun'} · ${images.length} image(s)${cleaned.avis ? ` · ${cleaned.avis.length} avis` : ''}${cleaned.logo ? ' · logo' : ''}${cleaned.cible ? ' · cible' : ''}${cleaned.couleurs ? ' · couleurs' : ''} · images: ${triFait ? `${imagesFinales.length} produit (triées ; aspects : ${Object.values(aspects).join('/')})` : `${imagesFinales.length} (non triées)`}${shop ? ' · shopify' : ''}${rendu ? ' · navigateur' : ''}`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true, data: cleaned, confiance: parsed.confiance, images: imagesFinales, aspects, images_emballage: [], tri_images: triFait, redirection_locale: redirectionLocale ? locFinale : null }));
       } catch(e) {
@@ -2510,6 +2530,20 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
             } else {
               console.log('   ✗ contenu insuffisant (page vide ou protection anti-bot)');
             }
+            // v5.56 — même page vue par un vrai navigateur : avis, FAQ, onglets et sections chargés après coup (JavaScript).
+            try {
+              const renduA = await fetchPageRendue(lien_page_produit, { tempsMax: 30000 });
+              if (renduA && (renduA.avis.length || renduA.text.length > 300)) {
+                donneesBrutes += `### SOURCE — PAGE PRODUIT CLIENT, VERSION AFFICHÉE DANS UN NAVIGATEUR (JavaScript exécuté : avis clients, FAQ, onglets, sections chargées après coup)\n`;
+                if (renduA.avis.length) {
+                  let tot = 0; const cartes = [];
+                  for (const a of renduA.avis) { if (tot + a.length > 14000) break; cartes.push(a); tot += a.length; }
+                  donneesBrutes += `Avis clients affichés (${cartes.length} carte(s), texte exact) :\n` + cartes.map(a => '- ' + a).join('\n') + '\n';
+                }
+                donneesBrutes += `Texte complet affiché :\n${budgeterTexte(renduA.text, 12000, 20000)}\n\n`;
+                console.log(`   ✓ rendu navigateur ajouté aux données brutes (${renduA.avis.length} avis, ${renduA.text.length} car.)`);
+              }
+            } catch (eR) { console.log('   ✗ rendu navigateur ignoré :', eR.message); }
           } catch(e) {
             console.log('   ✗ erreur fetch page produit :', e.message);
             donneesBrutes += `### SOURCE — PAGE PRODUIT CLIENT (URL présente, non accessible)\nURL : ${lien_page_produit}\nNote : contenu non chargeable (anti-bot ou timeout). L'URL EST bien fournie dans le brief.\n\n`;
@@ -7187,6 +7221,120 @@ async function blocDocumentsClient(docs) {
 }
 
 
+// ───────── v5.56 — NAVIGATEUR CÔTÉ SERVEUR (pages dont le contenu se charge en JavaScript) ─────────
+// Beaucoup de pages (avis Okendo/Yotpo/Judge.me, FAQ, onglets, carrousels) n'existent pas dans le HTML brut : elles se construisent
+// dans le navigateur. Ici un vrai Chromium charge la page, fait défiler, clique « voir plus », puis on lit ce qui est AFFICHÉ.
+// Garde-fous : jamais bloquant (null au moindre souci), un seul navigateur à la fois, refusé si la mémoire libre est faible,
+// images/vidéos/polices non téléchargées, fermeture forcée au bout du délai. Désactivable avec RENDU_NAVIGATEUR=off.
+// Nécessite : npm install puppeteer-core@24.15.0 @sparticuz/chromium@138.0.2 (sans eux, la fonction est simplement ignorée).
+const _rendu = { occupe: false };
+function memoireLibreMo() {
+  try {
+    const fs = require('fs');
+    let max, cur;
+    try { max = fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim(); cur = fs.readFileSync('/sys/fs/cgroup/memory.current', 'utf8').trim(); }
+    catch (e) { max = fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8').trim(); cur = fs.readFileSync('/sys/fs/cgroup/memory/memory.usage_in_bytes', 'utf8').trim(); }
+    if (max === 'max') return Infinity;
+    const m = Number(max);
+    if (!m || m > 1e13) return Infinity;
+    return (m - Number(cur)) / 1048576;
+  } catch (e) { return Infinity; }
+}
+async function fetchPageRendue(urlStr, opts) {
+  opts = opts || {};
+  const tempsMax = opts.tempsMax || 30000;
+  if (process.env.RENDU_NAVIGATEUR === 'off') return null;
+  let puppeteer = null, chromium = null;
+  try { puppeteer = require('puppeteer-core'); } catch (e) { console.log('   [rendu] puppeteer-core non installé — navigateur ignoré'); return null; }
+  try { chromium = require('@sparticuz/chromium'); } catch (e) { chromium = null; }
+  if (_rendu.occupe) { console.log('   [rendu] un navigateur tourne déjà — ignoré pour cette page'); return null; }
+  const libre = memoireLibreMo();
+  if (libre < (opts.memoireMinMo || 400)) { console.log(`   [rendu] mémoire libre trop faible (${Math.round(libre)} Mo) — navigateur ignoré`); return null; }
+  _rendu.occupe = true;
+  let browser = null;
+  const debut = Date.now();
+  const tuer = async () => { try { if (browser) await browser.close(); } catch (e) { try { browser.process() && browser.process().kill('SIGKILL'); } catch (e2) {} } };
+  const garde = setTimeout(tuer, tempsMax + 6000);
+  const pause = (ms) => new Promise(r => setTimeout(r, ms));
+  try {
+    const u = new URL(urlStr);
+    if (!/^https?:$/.test(u.protocol) || /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.)/i.test(u.hostname) && !process.env.RENDU_AUTORISER_LOCAL) return null;
+    const exe = process.env.CHROMIUM_EXECUTABLE || (chromium ? await chromium.executablePath() : null);
+    if (!exe) return null;
+    browser = await puppeteer.launch({
+      args: chromium ? chromium.args : ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
+      executablePath: exe, headless: chromium && !process.env.CHROMIUM_EXECUTABLE ? 'shell' : true,
+      defaultViewport: { width: 1280, height: 900 },
+    });
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36');
+    await page.setRequestInterception(true);
+    page.on('request', (r) => { const t = r.resourceType(); if (t === 'image' || t === 'media' || t === 'font') r.abort().catch(() => {}); else r.continue().catch(() => {}); });
+    await page.goto(urlStr, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await pause(2500);
+    // défilement progressif : déclenche les blocs chargés au scroll (avis, FAQ, carrousels)
+    await page.evaluate(() => new Promise((res) => {
+      let y = 0;
+      const t = setInterval(() => { window.scrollBy(0, 700); y += 700; if (y >= document.body.scrollHeight || y > 25000) { clearInterval(t); res(); } }, 250);
+      setTimeout(() => { clearInterval(t); res(); }, 9000);
+    })).catch(() => {});
+    await pause(1500);
+    // jusqu'à 3 clics sur « voir plus » (boutons seulement, jamais de lien qui quitterait la page)
+    for (let i = 0; i < 3 && Date.now() - debut < tempsMax - 6000; i++) {
+      const clique = await page.evaluate(() => {
+        const re = /^(load more|show more|see more|view more|more reviews|read more reviews|voir plus|afficher plus|charger plus|plus d'avis)/i;
+        const b = Array.from(document.querySelectorAll('button,[role="button"]')).find(x => re.test((x.innerText || '').trim()) && x.offsetParent);
+        if (b) { b.click(); return true; }
+        return false;
+      }).catch(() => false);
+      if (!clique) break;
+      await pause(1500);
+    }
+    const rendu = await page.evaluate(() => {
+      const net = (t) => (t || '').replace(/\s+/g, ' ').trim();
+      const sel = '[class*="review" i],[id*="review" i],[class*="testimonial" i],[itemprop="review"],[data-review-id],[class*="avis" i]';
+      const ok = (e) => { const n = net(e.innerText).length; return n >= 60 && n <= 1800; };
+      const dansUnPlusGrand = (e) => { let p = e.parentElement; while (p) { if (p.matches(sel) && ok(p)) return true; p = p.parentElement; } return false; };
+      // un conteneur qui regroupe plusieurs cartes identiques (même classe) est éclaté en cartes séparées
+      const eclater = (e) => {
+        const groupes = {};
+        Array.from(e.querySelectorAll(sel)).filter(ok).forEach((x) => { const c = String(x.className || ''); if (c) (groupes[c] = groupes[c] || []).push(x); });
+        const multiples = Object.values(groupes).filter(g => g.length >= 2).sort((a, b) => b.length - a.length)[0];
+        return multiples || [e];
+      };
+      const vus = new Set(), avis = [];
+      Array.from(document.querySelectorAll(sel)).forEach((e) => {
+        if (!ok(e) || dansUnPlusGrand(e)) return;
+        eclater(e).forEach((c) => { const t = net(c.innerText); if (!vus.has(t)) { vus.add(t); avis.push(t); } });
+      });
+      return { texte: (document.body.innerText || '').slice(0, 80000), avis: avis.slice(0, 40), html: document.documentElement.outerHTML.slice(0, 1500000), url: location.href };
+    });
+    console.log(`   [rendu] ✓ ${Math.round((Date.now() - debut) / 100) / 10} s · ${rendu.texte.length} car. affichés · ${rendu.avis.length} bloc(s) d'avis · ${Math.round(libre)} Mo libres au départ`);
+    return { text: rendu.texte, avis: rendu.avis, html: rendu.html, urlFinale: rendu.url };
+  } catch (e) {
+    console.log(`   [rendu] ✗ ${e.message} — retour au HTML brut`);
+    return null;
+  } finally {
+    clearTimeout(garde);
+    await tuer();
+    _rendu.occupe = false;
+  }
+}
+// Budget de texte : tête + extraits autour des mots-clés utiles (garantie, livraison, avis, offres).
+function budgeterTexte(t, tete, total) {
+  t = String(t || '').replace(/\s{2,}/g, ' ').trim();
+  if (t.length <= total) return t;
+  const debut = t.slice(0, tete), reste = t.slice(tete);
+  const re = /(guarant|garanti|money.?back|refund|rembours|return|retour|exchange|[ée]change|shipping|delivery|livraison|expedi|free\s|gratuit|satisf|review|avis|testimon|ingredient|ingr[ée]dient|faq|\bsave\b|bundle|offre|promo)/gi;
+  const fen = []; let m, fin = -1, taille = 0;
+  while ((m = re.exec(reste)) && taille < total - tete) {
+    if (m.index < fin) continue;
+    const d = Math.max(0, m.index - 150), f = Math.min(reste.length, m.index + 450);
+    fen.push(reste.slice(d, f)); fin = f; taille += f - d;
+  }
+  return debut + ' … ' + fen.join(' … ');
+}
+
 // ───────── v5.52 — ENRICHISSEMENT DE LA FICHE AUTOMATIQUE ─────────
 // Données lisibles dans le HTML brut mais perdues par le nettoyage texte : bandeau d'annonce (« Livraison gratuite dès… »),
 // note moyenne et avis balisés (JSON-LD), description méta.
@@ -7268,7 +7416,7 @@ async function enrichirShopify(urlStr) {
   } catch (e) { return null; }
 }
 
-function fetchPageText(targetUrl, depth, avecImages) {
+function fetchPageText(targetUrl, depth, avecImages, htmlPrefourni) {
   depth = depth || 0;
   return new Promise((resolve, reject) => {
     // Cause confirmée par les logs : connexion réussie, en-têtes reçus (HTTP 200, gzip), mais le
@@ -7449,6 +7597,7 @@ function fetchPageText(targetUrl, depth, avecImages) {
         ? { text: nettoyer(filtre), images: extraireImages(filtre, targetUrl), logo: extraireLogo(dataBrute, targetUrl), couleurs: extraireCandidatsCouleurs(dataBrute), extras: extraireExtrasHtml(dataBrute, targetUrl), urlFinale: targetUrl }
         : nettoyer(filtre);
     };
+    if (htmlPrefourni) { resolve(emballer(htmlPrefourni)); return; } // v5.56 : HTML déjà obtenu par le navigateur
     const finirUneFois = (fn, arg) => { if (reglee) return; reglee = true; clearTimeout(timeoutGlobal); fn(arg); };
     const timeoutGlobal = setTimeout(() => {
       if (req) req.destroy();
