@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -1739,7 +1739,7 @@ const server = http.createServer(async (req, res) => {
         const [paquetBrut, shop, rendu] = await Promise.all([
           fetchPageText(url, 0, true).catch(e => { console.log(`   [fiche-auto] page non lisible : ${e.message}`); return null; }),
           enrichirShopify(url),
-          fetchPageRendue(url, { tempsMax: 30000 }).catch(() => null),
+          fetchPageRendue(url, { tempsMax: 40000, clics: 5, maxAvis: 30 }).catch(() => null),
         ]);
         // v5.56 — version affichée par un vrai navigateur : texte complet (avis, FAQ…) + images/logo/couleurs du DOM final.
         let paquetRendu = null;
@@ -1752,7 +1752,7 @@ const server = http.createServer(async (req, res) => {
           images: [...(choisi.images || []), ...((autre && autre.images) || [])],
           logo: choisi.logo || (autre && autre.logo) || null,
           couleurs: (choisi.couleurs && choisi.couleurs.length) ? choisi.couleurs : ((autre && autre.couleurs) || []),
-          extras: { ...(choisi.extras || {}), avis: [...new Set([...((choisi.extras && choisi.extras.avis) || []), ...((autre && autre.extras && autre.extras.avis) || [])])].slice(0, 8), note: (choisi.extras && choisi.extras.note) || (autre && autre.extras && autre.extras.note) || null, bandeau: (choisi.extras && choisi.extras.bandeau) || (autre && autre.extras && autre.extras.bandeau) || '' },
+          extras: { ...(choisi.extras || {}), avis: [...new Set([...((choisi.extras && choisi.extras.avis) || []), ...((autre && autre.extras && autre.extras.avis) || [])])].slice(0, 15), note: (choisi.extras && choisi.extras.note) || (autre && autre.extras && autre.extras.note) || null, bandeau: (choisi.extras && choisi.extras.bandeau) || (autre && autre.extras && autre.extras.bandeau) || '' },
           urlFinale: (paquetBrut && paquetBrut.urlFinale) || (rendu && rendu.urlFinale) || url,
         } : null;
         const paquet = fusion || { text: '', images: [], logo: null, couleurs: [], extras: { avis: [], note: null, bandeau: '', description: '' } };
@@ -1771,7 +1771,7 @@ const server = http.createServer(async (req, res) => {
         }
         if (rendu && rendu.avis && rendu.avis.length) {
           let tot = 0; const cartes = [];
-          for (const a of rendu.avis) { if (tot + a.length > 12000) break; cartes.push(a); tot += a.length; }
+          for (const a of rendu.avis) { if (tot + a.length > 30000) break; cartes.push(a); tot += a.length; }
           blocs.push('AVIS CLIENTS AFFICHÉS DANS LE NAVIGATEUR (chargés par JavaScript ; chaque bloc = une carte d\'avis exacte : nom, note, date, titre, texte) :\n' + cartes.map(a => '---\n' + a).join('\n'));
         }
         if (extras.bandeau) blocs.push(`BANDEAU D'ANNONCE DU SITE : ${extras.bandeau}`);
@@ -1798,7 +1798,7 @@ const server = http.createServer(async (req, res) => {
 ATTENTION — désambiguïsation importante : beaucoup de fiches produit affichent aussi, plus loin sur la page, un tableau comparatif ou une liste "produits similaires/vous aimerez aussi/fréquemment achetés ensemble" listant D'AUTRES produits avec leurs propres noms et prix. N'extrais JAMAIS les infos de ces autres produits. Le VRAI produit de cette page est celui qui : (1) correspond au slug de l'URL ci-dessus, (2) apparaît le premier dans le texte, généralement juste avant ou après un bouton "Ajouter au panier"/"Acheter", (3) est répété plusieurs fois dans la page (titre, description détaillée, FAQ) — pas une simple mention isolée dans une liste comparative.
 
 Réponds en JSON strict, uniquement l'objet, aucun texte autour, aucun bloc markdown :
-{"nom":"nom du produit ou null","prix":"le prix COMPLET du produit, AVEC sa devise. S'il n'y a qu'un seul prix, donne-le simplement (ex: '13 900 FCFA'). S'il y a PLUSIEURS paliers/formules (ex: 1 mois / 2 mois / 3 mois, ou 1 unité / pack de 3 / pack de 5), liste-les TOUS, séparés par ' · ', chacun avec son propre prix et sa remise si affichée (ex: '19 000 FCFA (1 mois) · 36 100 FCFA (2 mois, -5%) · 51 300 FCFA (3 mois, -10%)') — jamais un seul prix choisi arbitrairement parmi plusieurs, jamais un nombre seul sans devise, null si aucun prix identifiable","pays":"pays/marché de vente : explicitement mentionné, OU clairement déductible de la devise et des zones de livraison affichées (ex : « $ » + « free US shipping » → United States ; FCFA + livraison à Dakar → Sénégal), écrit dans la langue du marché ; plusieurs possibles séparés par virgule ; null si rien ne permet de le dire","utilite":"à quoi sert le produit, en une phrase de deux lignes maximum, basée sur la description de la page, ou null","promo":"offre promotionnelle GÉNÉRALE, distincte des paliers de prix ci-dessus — seuil de livraison gratuite, BOGO (achetez-en X recevez-en Y), cadeau offert, code promo affiché, etc. (ex: 'Livraison gratuite dès 50 000 FCFA', '2 achetés = 1 offert') — jamais une remise déjà comptée dans un palier de prix, null si aucune","garantie":"garantie ou politique de retour / remboursement / échange EXPLICITEMENT écrite sur la page, recopiée fidèlement et brièvement (ex: 'Satisfait ou remboursé 30 jours'), null si la page n'en dit rien","livraison_paiement":"modes de paiement et conditions de livraison EXPLICITEMENT écrits sur la page (ex: 'Paiement à la livraison. Livraison en 48 h à Dakar'), recopiés fidèlement et brièvement, null si la page n'en dit rien","avis":["jusqu'à 6 avis clients ÉCRITS sur la page de CE produit, recopiés MOT POUR MOT tels qu'affichés (aucune reformulation, aucune correction, aucune invention, jamais un avis d'un autre produit), chacun suivi du prénom entre parenthèses s'il est affiché ; liste vide [] si la page ne contient aucun avis écrit"],"cible":"UNE seule phrase de 35 mots maximum décrivant à qui s'adresse ce produit, selon ces règles : (1) décris une SITUATION VÉCUE et une tension psychologique précise — un comportement observable, un réflexe ou une phrase que la personne se dit, ce contre quoi elle se bat concrètement — jamais une fiche démographique ; (2) n'indique ni métier, ni âge exact, ni tranche d'âge serrée : la démographie reste LARGE, la netteté vient du comportement et de la situation ; (3) la personne doit pouvoir s'offrir ce produit à ce prix et acheter en ligne ; (4) jamais générique : pas de « femmes actives de 30 à 45 ans stressées » — la phrase ne doit pas pouvoir être copiée telle quelle dans la publicité d'un concurrent direct ; (5) appuie-toi sur ce que la page et le marché de vente laissent réellement entendre, sans inventer de chiffre ni de fait ; (6) aucun mot technique (persona, angle, funnel, cible, awareness). null si la page ne permet pas de la déduire","couleurs":["2 ou 3 couleurs de la marque, au format #rrggbb, choisies UNIQUEMENT dans la liste de couleurs candidates fournie plus bas (copie-les exactement) ; liste vide [] si aucune liste n'est fournie ou si tu n'es pas sûr"],"images":[{"i":0,"type":"produit|autre_produit|inutile","aspect":"face|cote|dos|forme|prepare|en_main|detail|autre","q":1}],"principale":0,"confiance":"haute|moyenne|basse"}
+{"nom":"nom du produit ou null","prix":"le prix COMPLET du produit, AVEC sa devise. S'il n'y a qu'un seul prix, donne-le simplement (ex: '13 900 FCFA'). S'il y a PLUSIEURS paliers/formules (ex: 1 mois / 2 mois / 3 mois, ou 1 unité / pack de 3 / pack de 5), liste-les TOUS, séparés par ' · ', chacun avec son propre prix et sa remise si affichée (ex: '19 000 FCFA (1 mois) · 36 100 FCFA (2 mois, -5%) · 51 300 FCFA (3 mois, -10%)') — jamais un seul prix choisi arbitrairement parmi plusieurs, jamais un nombre seul sans devise, null si aucun prix identifiable","pays":"pays/marché de vente : explicitement mentionné, OU clairement déductible de la devise et des zones de livraison affichées (ex : « $ » + « free US shipping » → United States ; FCFA + livraison à Dakar → Sénégal), écrit dans la langue du marché ; plusieurs possibles séparés par virgule ; null si rien ne permet de le dire","utilite":"à quoi sert le produit, en une phrase de deux lignes maximum, basée sur la description de la page, ou null","promo":"offre promotionnelle GÉNÉRALE, distincte des paliers de prix ci-dessus — seuil de livraison gratuite, BOGO (achetez-en X recevez-en Y), cadeau offert, code promo affiché, etc. (ex: 'Livraison gratuite dès 50 000 FCFA', '2 achetés = 1 offert') — jamais une remise déjà comptée dans un palier de prix, null si aucune","garantie":"garantie ou politique de retour / remboursement / échange EXPLICITEMENT écrite sur la page, recopiée fidèlement et brièvement (ex: 'Satisfait ou remboursé 30 jours'), null si la page n'en dit rien","livraison_paiement":"modes de paiement et conditions de livraison EXPLICITEMENT écrits sur la page (ex: 'Paiement à la livraison. Livraison en 48 h à Dakar'), recopiés fidèlement et brièvement, null si la page n'en dit rien","avis":["jusqu'à 15 avis clients ÉCRITS sur la page de CE produit, recopiés MOT POUR MOT tels qu'affichés (aucune reformulation, aucune correction, aucune invention, jamais un avis d'un autre produit), chacun suivi du prénom entre parenthèses s'il est affiché ; liste vide [] si la page ne contient aucun avis écrit"],"cible":"UNE seule phrase de 35 mots maximum décrivant à qui s'adresse ce produit, selon ces règles : (1) décris une SITUATION VÉCUE et une tension psychologique précise — un comportement observable, un réflexe ou une phrase que la personne se dit, ce contre quoi elle se bat concrètement — jamais une fiche démographique ; (2) n'indique ni métier, ni âge exact, ni tranche d'âge serrée : la démographie reste LARGE, la netteté vient du comportement et de la situation ; (3) la personne doit pouvoir s'offrir ce produit à ce prix et acheter en ligne ; (4) jamais générique : pas de « femmes actives de 30 à 45 ans stressées » — la phrase ne doit pas pouvoir être copiée telle quelle dans la publicité d'un concurrent direct ; (5) appuie-toi sur ce que la page et le marché de vente laissent réellement entendre, sans inventer de chiffre ni de fait ; (6) aucun mot technique (persona, angle, funnel, cible, awareness). null si la page ne permet pas de la déduire","couleurs":["2 ou 3 couleurs de la marque, au format #rrggbb, choisies UNIQUEMENT dans la liste de couleurs candidates fournie plus bas (copie-les exactement) ; liste vide [] si aucune liste n'est fournie ou si tu n'es pas sûr"],"images":[{"i":0,"type":"produit|autre_produit|inutile","aspect":"face|cote|dos|forme|prepare|en_main|detail|autre","q":1}],"principale":0,"confiance":"haute|moyenne|basse"}
 
 RÈGLES « images » (seulement si des images numérotées te sont fournies, sinon renvoie "images":[] et "principale":null) : pour CHAQUE image fournie, indique son numéro « i », son « type » et son « aspect ». « type » : « produit » = le produit de CETTE page lui-même — son pot, sachet, flacon, boîte ou tube COMPTE comme le produit (il n'y a plus de catégorie emballage) ; seul, en main, en situation d'usage, sous plusieurs angles ; « autre_produit » = un produit DIFFÉRENT (vente croisée, collection, comparatif) ; « inutile » = bannière, icône, logo, moyen de paiement, tableau, capture de texte, infographie de textes, photo sans le produit, visuel de réassurance. Au moindre doute entre « produit » et « autre_produit », choisis « autre_produit ». « aspect » (uniquement pour type « produit ») : « face » = le produit vu de face, étiquette principale visible ; « cote » = de côté ou en trois-quarts ; « dos » = l'arrière (étiquette arrière, composition, valeurs nutritionnelles) ; « forme » = le produit lui-même sorti de son contenant (poudre, gélule, capsule, comprimé, crème, texture, aliment) ; « prepare » = le produit préparé, servi ou en cours d'usage (tasse prête à boire, shaker, plat) ; « en_main » = tenu ou porté par une personne ; « detail » = gros plan sur un détail (matière, bouchon, ingrédient) ; « autre » sinon. « q » = note de 1 à 5 de la qualité de la photo (nette, bien cadrée, produit bien visible, sans texte superposé) ; UN SEUL EXEMPLAIRE PAR ASPECT sera gardé (la meilleure note), donc note honnêtement. Une image qui est une infographie ou une bannière pleine de texte (étapes de préparation, arguments, avis, comparatif) est « inutile », sauf une vraie étiquette arrière photographiée (dos). « principale » = le numéro de la meilleure image pour représenter le produit (nette, bien cadrée, produit bien visible, idéalement de face sur fond simple), ou null.
 
@@ -1831,7 +1831,7 @@ ${pageText}`;
         const vertexBody = {
           system_instruction: { parts: [{ text: 'Tu extrais des données structurées depuis du texte web brut. Tu ne réponds qu\'en JSON strict, jamais de texte autour.' }] },
           contents: [{ role: 'user', parts: partsRequete }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 3000, thinkingConfig: { thinkingBudget: 0 } }
+          generationConfig: { temperature: 0.1, maxOutputTokens: 8000, thinkingConfig: { thinkingBudget: 0 } }
         };
         // Corrigé pour utiliser le retry existant (vertexRequestAvecReessai) — cet appel pouvait
         // échouer sec sur une simple limite de débit transitoire, comme observé en pratique.
@@ -1881,12 +1881,12 @@ ${pageText}`;
             const n = norm(sansAuteur);
             if (n.length < 12 || !texteNorm.includes(n) || vus.has(n)) continue;
             vus.add(n); avisOk.push(t);
-            if (avisOk.length >= 6) break;
+            if (avisOk.length >= 15) break;
           }
           if (avisOk.length) cleaned.avis = avisOk;
         }
         // v5.52 — avis de secours : si Gemini n'en a gardé aucun, on reprend ceux balisés dans la page (vrais, non reformulés).
-        if (!cleaned.avis && extras.avis.length) cleaned.avis = extras.avis.slice(0, 4);
+        if (!cleaned.avis && extras.avis.length) cleaned.avis = extras.avis.slice(0, 15);
         if (logoPage) cleaned.logo = logoPage;
         // Cible : une phrase, jamais un pavé ; un mot-clé technique = écartée.
         const ci = brut(parsed.cible).replace(/\s+/g, ' ');
@@ -2532,12 +2532,12 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
             }
             // v5.56 — même page vue par un vrai navigateur : avis, FAQ, onglets et sections chargés après coup (JavaScript).
             try {
-              const renduA = await fetchPageRendue(lien_page_produit, { tempsMax: 30000 });
+              const renduA = await fetchPageRendue(lien_page_produit, { tempsMax: 50000, clics: 10, maxAvis: 100 });
               if (renduA && (renduA.avis.length || renduA.text.length > 300)) {
                 donneesBrutes += `### SOURCE — PAGE PRODUIT CLIENT, VERSION AFFICHÉE DANS UN NAVIGATEUR (JavaScript exécuté : avis clients, FAQ, onglets, sections chargées après coup)\n`;
                 if (renduA.avis.length) {
                   let tot = 0; const cartes = [];
-                  for (const a of renduA.avis) { if (tot + a.length > 14000) break; cartes.push(a); tot += a.length; }
+                  for (const a of renduA.avis) { if (tot + a.length > 60000) break; cartes.push(a); tot += a.length; }
                   donneesBrutes += `Avis clients affichés (${cartes.length} carte(s), texte exact) :\n` + cartes.map(a => '- ' + a).join('\n') + '\n';
                 }
                 donneesBrutes += `Texte complet affiché :\n${budgeterTexte(renduA.text, 12000, 20000)}\n\n`;
@@ -7280,7 +7280,8 @@ async function fetchPageRendue(urlStr, opts) {
     })).catch(() => {});
     await pause(1500);
     // jusqu'à 3 clics sur « voir plus » (boutons seulement, jamais de lien qui quitterait la page)
-    for (let i = 0; i < 3 && Date.now() - debut < tempsMax - 6000; i++) {
+    const clicsMax = opts.clics || 3;
+    for (let i = 0; i < clicsMax && Date.now() - debut < tempsMax - 6000; i++) {
       const clique = await page.evaluate(() => {
         const re = /^(load more|show more|see more|view more|more reviews|read more reviews|voir plus|afficher plus|charger plus|plus d'avis)/i;
         const b = Array.from(document.querySelectorAll('button,[role="button"]')).find(x => re.test((x.innerText || '').trim()) && x.offsetParent);
@@ -7290,7 +7291,8 @@ async function fetchPageRendue(urlStr, opts) {
       if (!clique) break;
       await pause(1500);
     }
-    const rendu = await page.evaluate(() => {
+    const maxAvis = opts.maxAvis || 40;
+    const rendu = await page.evaluate((maxAvis) => {
       const net = (t) => (t || '').replace(/\s+/g, ' ').trim();
       const sel = '[class*="review" i],[id*="review" i],[class*="testimonial" i],[itemprop="review"],[data-review-id],[class*="avis" i]';
       const ok = (e) => { const n = net(e.innerText).length; return n >= 60 && n <= 1800; };
@@ -7307,8 +7309,8 @@ async function fetchPageRendue(urlStr, opts) {
         if (!ok(e) || dansUnPlusGrand(e)) return;
         eclater(e).forEach((c) => { const t = net(c.innerText); if (!vus.has(t)) { vus.add(t); avis.push(t); } });
       });
-      return { texte: (document.body.innerText || '').slice(0, 80000), avis: avis.slice(0, 40), html: document.documentElement.outerHTML.slice(0, 1500000), url: location.href };
-    });
+      return { texte: (document.body.innerText || '').slice(0, 80000), avis: avis.slice(0, maxAvis), html: document.documentElement.outerHTML.slice(0, 1500000), url: location.href };
+    }, maxAvis);
     console.log(`   [rendu] ✓ ${Math.round((Date.now() - debut) / 100) / 10} s · ${rendu.texte.length} car. affichés · ${rendu.avis.length} bloc(s) d'avis · ${Math.round(libre)} Mo libres au départ`);
     return { text: rendu.texte, avis: rendu.avis, html: rendu.html, urlFinale: rendu.url };
   } catch (e) {
@@ -7374,7 +7376,7 @@ function extraireExtrasHtml(html, baseUrl) {
     while ((m = re.exec(html)) && blocs.length < 4) { const t = dec(m[1]); if (t.length >= 8 && t.length <= 300 && !blocs.includes(t)) blocs.push(t); }
     out.bandeau = blocs.join(' | ').slice(0, 500);
   } catch (e) {}
-  out.avis = [...new Set(out.avis)].slice(0, 8);
+  out.avis = [...new Set(out.avis)].slice(0, 15);
   return out;
 }
 
