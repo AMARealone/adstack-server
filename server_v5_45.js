@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -24,7 +24,38 @@ try {
 const PORT = 3001;
 const PROJECT_ID = 'adstack-ecosystem-api';
 const LOCATION = 'us-central1';
-const MODEL = 'gemini-3-pro-image';
+// ── MODÈLES GEMINI PAR TÂCHE ──────────────────────────────────────────────
+// Chaque tâche a son modèle, réglable par variable d'environnement Render SANS
+// redéploiement : il suffit d'ajouter la variable et de redémarrer le service.
+// Raison d'être : les modèles Gemini sont retirés régulièrement (gemini-2.5-pro
+// et gemini-2.5-flash ont une date de retrait annoncée). Garder les noms en dur
+// dans le code obligeait à un redéploiement à chaque changement.
+const MODELES = {
+  analyste:     process.env.MODELE_ANALYSTE     || 'gemini-3.1-pro',     // hypothèse de marché (rédaction)
+  creative:     process.env.MODELE_CREATIVE     || 'gemini-2.5-pro',     // prompt de créative image
+  copywriter:   process.env.MODELE_COPYWRITER   || 'gemini-2.5-pro',     // ad copies
+  raisonnement: process.env.MODELE_RAISONNEMENT || 'gemini-2.5-pro',     // défaut des tâches de raisonnement
+  scraping:     process.env.MODELE_SCRAPING     || 'gemini-3.1-pro',     // recherche Google Search de l'analyste (données brutes)
+  tendances:    process.env.MODELE_TENDANCES    || 'gemini-3-flash',     // analyste : classement de la catégorie pour Google Trends
+  documents:    process.env.MODELE_DOCUMENTS    || 'gemini-3-flash',     // analyste : lecture des documents fournis par le client
+  fiche:        process.env.MODELE_FICHE        || 'gemini-2.5-flash',   // remplisseur de fiche produit
+  utilitaire:   process.env.MODELE_UTILITAIRE   || 'gemini-2.5-flash',   // petites tâches courtes
+  demo:         process.env.MODELE_DEMO         || 'gemini-2.5-flash',   // stratège de démo
+  chat:         process.env.MODELE_CHAT         || 'gemini-2.5-flash',   // Ava
+  image:        process.env.MODELE_IMAGE        || 'gemini-3-pro-image'  // génération d'images
+};
+
+// Réglage de réflexion. On construit toujours le format historique (thinkingBudget) ;
+// c'est le routeur de modèles (plus bas) qui l'adapte au modèle réellement appelé :
+// il retire un budget 0 sur un modèle Pro (qui ne sait pas désactiver sa réflexion)
+// et, si un modèle refuse le réglage, il refait l'appel sans réglage.
+function reflexion(modele, budget) {
+  if (budget === null || budget === undefined) return {};
+  return { thinkingConfig: { thinkingBudget: budget } };
+}
+
+const MODEL = MODELES.image;
+console.log('[modeles] ' + Object.entries(MODELES).map(([k, v]) => k + '=' + v).join(' | '));
 
 // ── Clés Sources Analyste de Marché ──
 const YOUTUBE_API_KEY = 'AIzaSyAhujEfLY6V4-IJkuy0BoHlldwEV0zyXFg';
@@ -231,11 +262,11 @@ Rien n'est ajouté. Rien n'est modifié. Ce que tu vois = ce que tu génères.
     generationConfig: {
       temperature: 0.4,
       maxOutputTokens: 10000,
-      thinkingConfig: { thinkingBudget: 24576 }
+      ...reflexion(MODELES.raisonnement, 24576)
     }
   };
 
-  const data = await vertexRequest(token, 'gemini-2.5-pro', vertexBody);
+  const data = await vertexRequest(token, MODELES.raisonnement, vertexBody);
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
   const cand = data.candidates?.[0];
@@ -443,7 +474,7 @@ function logCoutApi(source, typeAppel, usage) {
   } catch(e) {}
 }
 
-function vertexRequest(token, model, body, timeoutMs = 90000, typeAppel = 'texte_gemini') {
+function vertexRequestRegional(token, model, body, timeoutMs = 90000, typeAppel = 'texte_gemini') {
   return new Promise((resolve, reject) => {
     const bodyStr = JSON.stringify(body);
     const path = `/v1/projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${model}:generateContent`;
@@ -484,6 +515,97 @@ function vertexRequest(token, model, body, timeoutMs = 90000, typeAppel = 'texte
   });
 }
 
+
+// ── ROUTEUR DE MODÈLES TEXTE ───────────────────────────────────────────────
+// Même principe que le labo vidéo : on appelle le meilleur modèle de la tâche, et s'il
+// n'existe pas sur le projet ou refuse la requête, on passe automatiquement au suivant.
+// Une tâche ne s'arrête jamais parce qu'un modèle est indisponible : la ligne [modeles]
+// du journal Render dit lequel a réellement répondu.
+// Les modèles de génération 3 et plus sont servis par l'endpoint global ; les 2.5 par
+// l'endpoint régional (comme avant).
+const REPLIS_MODELES = {
+  'gemini-3.1-pro':  ['gemini-3.1-pro-preview', 'gemini-2.5-pro'],
+  'gemini-3-flash':  ['gemini-3-flash-preview', 'gemini-2.5-flash'],
+  'gemini-3.8-flash': ['gemini-3-flash', 'gemini-2.5-flash']
+};
+const _MODELES_INDISPO = new Map();   // modèle -> raison (indisponible pour toute la session)
+const _MODELES_VUS = new Set();       // couples tâche|modèle déjà annoncés dans le journal
+function generationModele(m) { const g = String(m || '').match(/^gemini-(\d+)/); return g ? parseInt(g[1], 10) : 0; }
+function chaineModeles(modele) {
+  const m = String(modele || '').trim();
+  let repli = REPLIS_MODELES[m];
+  if (!repli && generationModele(m) >= 3) repli = [/pro/i.test(m) ? 'gemini-2.5-pro' : 'gemini-2.5-flash'];
+  return [m, ...(repli || [])];
+}
+const _modeleIndispo = e => e && (e.statusCode === 404 || e.statusCode === 403 || /not found|NOT_FOUND|does not exist|PERMISSION_DENIED|permission|unknown model|invalid model/i.test(String(e.message || '')));
+function corpsPourModele(body, modele) {
+  const tc = body && body.generationConfig && body.generationConfig.thinkingConfig;
+  if (tc && generationModele(modele) >= 3 && tc.thinkingBudget === 0 && /pro/i.test(modele)) {
+    const c = JSON.parse(JSON.stringify(body)); delete c.generationConfig.thinkingConfig; return c;
+  }
+  return body;
+}
+function appelUnModele(token, modele, body, timeoutMs, typeAppel) {
+  return generationModele(modele) >= 3
+    ? vertexRequestGlobal(token, modele, body, timeoutMs, typeAppel)
+    : vertexRequestRegional(token, modele, body, timeoutMs, typeAppel);
+}
+async function vertexRequest(token, model, body, timeoutMs = 90000, typeAppel = 'texte_gemini') {
+  const chaine = chaineModeles(model);
+  let derniereErreur;
+  for (let i = 0; i < chaine.length; i++) {
+    const cand = chaine[i];
+    const dernier = i === chaine.length - 1;
+    if (_MODELES_INDISPO.has(cand) && !dernier) continue;
+    let corps = corpsPourModele(body, cand);
+    for (let essai = 0; essai < 2; essai++) {
+      try {
+        const data = await appelUnModele(token, cand, corps, timeoutMs, typeAppel);
+        const cle = typeAppel + '|' + cand;
+        if (!_MODELES_VUS.has(cle)) { _MODELES_VUS.add(cle); console.log('[modeles] ' + typeAppel + ' → ' + cand + (cand !== model ? ' (repli ; modèle demandé : ' + model + ')' : '')); }
+        return data;
+      } catch (e) {
+        derniereErreur = e;
+        if (e.isRateLimit || !e.statusCode) throw e;            // 429, réseau, délai : le réessai général s'en charge
+        if (_modeleIndispo(e)) {
+          _MODELES_INDISPO.set(cand, String(e.message).slice(0, 140));
+          console.log('[modeles] ' + cand + ' indisponible sur ce projet (' + String(e.message).slice(0, 120) + ')' + (dernier ? '' : ' → modèle suivant.'));
+          break;
+        }
+        if (e.statusCode === 400 && essai === 0 && corps.generationConfig && corps.generationConfig.thinkingConfig && generationModele(cand) >= 3) {
+          console.log('[modeles] ' + cand + ' refuse le réglage de réflexion → nouvel essai sans réglage.');
+          corps = JSON.parse(JSON.stringify(corps)); delete corps.generationConfig.thinkingConfig; continue;
+        }
+        if (e.statusCode === 400 && !dernier) { console.log('[modeles] ' + cand + ' a refusé la requête (' + String(e.message).slice(0, 120) + ') → modèle suivant.'); break; }
+        throw e;
+      }
+    }
+    if (dernier) throw derniereErreur;
+  }
+  throw derniereErreur;
+}
+
+// Sonde au démarrage : vérifie en une fois quels modèles répondent réellement sur ce projet
+// et l'écrit dans le journal. Appels minuscules (quelques tokens) ; ne bloque jamais le démarrage.
+async function sonderModeles() {
+  try {
+    const token = await getToken();
+    const candidats = new Set();
+    for (const cle of ['analyste', 'scraping', 'tendances', 'documents']) for (const m of chaineModeles(MODELES[cle])) candidats.add(m);
+    const lignes = [];
+    for (const m of candidats) {
+      try {
+        await appelUnModele(token, m, { contents: [{ role: 'user', parts: [{ text: 'ok' }] }], generationConfig: { maxOutputTokens: 16 } }, 30000, 'sonde_modele');
+        lignes.push(m + ' : OK');
+      } catch (e) {
+        if (_modeleIndispo(e)) { _MODELES_INDISPO.set(m, String(e.message).slice(0, 140)); lignes.push(m + ' : INDISPONIBLE (' + String(e.message).slice(0, 80) + ')'); }
+        else lignes.push(m + ' : non vérifié (' + String(e.message).slice(0, 60) + ')');
+      }
+    }
+    console.log('[modeles] sonde : ' + lignes.join(' | '));
+  } catch (e) { console.log('[modeles] sonde impossible : ' + e.message); }
+}
+
 // Réessaie automatiquement en cas d'échec — le générateur démo doit TOUJOURS terminer sa
 // tâche plutôt que d'abandonner sur un premier incident ponctuel (timeout réseau, limite de
 // débit passagère). 1 réessai immédiat pour une panne réseau/timeout ; pour une limite de
@@ -519,7 +641,7 @@ async function callGeminiPro(systemPrompt, contentBlocks, maxOutputTokens, optio
   // demandées par les compétences (décodage CT étape A→G, compréhension persona/produit/angles avant écriture).
   // Défaut permissif (8192) appliqué à TOUT appelant qui ne précise rien — les endpoints critiques
   // (/creative-prod, /analyste-synthese) forcent explicitement une valeur plus haute à l'appel (voir plus bas).
-  const { temperature = 0.7, thinkingBudget = 8192, logLabel = 'Gemini 2.5 Pro', timeoutMs = 90000, typeAppel = 'texte_gemini' } = options;
+  const { modele = MODELES.raisonnement, temperature = 0.7, thinkingBudget = 8192, logLabel = 'Gemini 2.5 Pro', timeoutMs = 90000, typeAppel = 'texte_gemini' } = options;
   const token = await getToken();
   const parts = (contentBlocks || []).map(b => {
     if (b.type === 'image' && b.source) {
@@ -535,7 +657,7 @@ async function callGeminiPro(systemPrompt, contentBlocks, maxOutputTokens, optio
   // thinkingBudget=null désactive explicitement le forçage (comportement dynamique natif de Gemini) —
   // utile si un futur appelant veut délibérément revenir au comportement par défaut de l'API.
   if (thinkingBudget !== null) {
-    generationConfig.thinkingConfig = { thinkingBudget };
+    Object.assign(generationConfig, reflexion(modele, thinkingBudget));
   }
 
   const geminiBody = {
@@ -550,7 +672,7 @@ async function callGeminiPro(systemPrompt, contentBlocks, maxOutputTokens, optio
   // ce cas (4 tentatives, attente croissante sur limite de débit détectée). callGeminiPro est
   // le point d'entrée partagé de l'Analyste, du Copywriter et de la Créative — ce seul
   // changement protège les trois d'un coup.
-  const data = await vertexRequestAvecReessai(token, 'gemini-2.5-pro', geminiBody, timeoutMs, typeAppel);
+  const data = await vertexRequestAvecReessai(token, modele, geminiBody, timeoutMs, typeAppel);
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
   const cand = data.candidates?.[0];
   // Cause profonde corrigée (texte dupliqué/tronqué au milieu d'une phrase dans les Ad Copies) :
@@ -1690,7 +1812,7 @@ const server = http.createServer(async (req, res) => {
         const token = await getToken();
         console.log('✓ Token OK');
 
-        const model = reqBody.model || 'gemini-2.5-flash';
+        const model = reqBody.model || MODELES.utilitaire;
         console.log(`→ Calling ${model} (text)...`);
         // Aucun thinkingConfig n'était fixé ici — ce endpoint générique sert notamment à tester
         // des agents directement, donc reçoit potentiellement des prompts complexes de skill
@@ -1701,7 +1823,7 @@ const server = http.createServer(async (req, res) => {
           generationConfig: {
             temperature: reqBody.temperature !== undefined ? reqBody.temperature : 0.7,
             maxOutputTokens: reqBody.maxOutputTokens || reqBody.maxTokens || 32000,
-            thinkingConfig: { thinkingBudget: reqBody.thinkingBudget !== undefined ? reqBody.thinkingBudget : 8192 }
+            ...reflexion(MODELES.utilitaire, reqBody.thinkingBudget !== undefined ? reqBody.thinkingBudget : 8192)
           }
         };
 
@@ -1831,11 +1953,11 @@ ${pageText}`;
         const vertexBody = {
           system_instruction: { parts: [{ text: 'Tu extrais des données structurées depuis du texte web brut. Tu ne réponds qu\'en JSON strict, jamais de texte autour.' }] },
           contents: [{ role: 'user', parts: partsRequete }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 8000, thinkingConfig: { thinkingBudget: 0 } }
+          generationConfig: { temperature: 0.1, maxOutputTokens: 8000, ...reflexion(MODELES.fiche, 0) }
         };
         // Corrigé pour utiliser le retry existant (vertexRequestAvecReessai) — cet appel pouvait
         // échouer sec sur une simple limite de débit transitoire, comme observé en pratique.
-        const data = await vertexRequestAvecReessai(token, 'gemini-2.5-flash', vertexBody, 90000, 'fetch_product_info');
+        const data = await vertexRequestAvecReessai(token, MODELES.fiche, vertexBody, 90000, 'fetch_product_info');
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
         let raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         raw = raw.replace(/```json\s*|\s*```/g, '').trim();
@@ -2017,14 +2139,14 @@ ${pageText}`;
           generationConfig: {
             temperature: 0.8,
             maxOutputTokens: 16000,
-            thinkingConfig: { thinkingBudget: 4096 }
+            ...reflexion(MODELES.demo, 4096)
           }
         };
         if (enrichWithSearch) {
           vertexBody.tools = [{ googleSearch: {} }];
         }
 
-        const data = await vertexRequestAvecReessai(token, 'gemini-2.5-flash', vertexBody, 150000, 'demo_stratege_synthese');
+        const data = await vertexRequestAvecReessai(token, MODELES.demo, vertexBody, 150000, 'demo_stratege_synthese');
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
         const cand = data.candidates?.[0];
@@ -2058,9 +2180,9 @@ ${pageText}`;
                 "Tu reçois une synthèse marketing structurée en sections S0 à S7. Ta seule tâche : la CONDENSER pour qu'elle fasse entre 9000 et 12000 caractères, jamais plus, jamais moins de 9000. Règles strictes : garde EXACTEMENT les mêmes sections (S0 à S7), garde CHAQUE information factuelle et chaque donnée déjà présente (chiffres, noms, verbatims, couleurs), ne supprime aucun élément que la structure d'origine exige. Coupe uniquement : les répétitions, les reformulations multiples de la même idée, les phrases de transition superflues, les détails redondants entre sections. Réponds uniquement avec la synthèse condensée, sans commentaire, sans préambule, en commençant directement par 'S0'."
               }]},
               contents: [{ role: 'user', parts: [{ text: finalText }] }],
-              generationConfig: { temperature: 0.3, maxOutputTokens: 8000, thinkingConfig: { thinkingBudget: 1024 } }
+              generationConfig: { temperature: 0.3, maxOutputTokens: 8000, ...reflexion(MODELES.demo, 1024) }
             };
-            const compressData = await vertexRequestAvecReessai(token, 'gemini-2.5-flash', compressBody, 90000, 'demo_stratege_compression');
+            const compressData = await vertexRequestAvecReessai(token, MODELES.demo, compressBody, 90000, 'demo_stratege_compression');
             const compressCand = compressData.candidates?.[0];
             const compressedText = (compressCand?.content?.parts || [])
               .filter(p => !p.thought && typeof p.text === 'string')
@@ -2231,7 +2353,7 @@ ${pageText}`;
 
         console.log('→ Gemini 2.5 Pro (mode test) — génération des Ad Copy...');
         const text = await callGeminiPro(system, claudeContent, maxOutputTokens || 8000, {
-          temperature: 0.4, logLabel: 'Copywriter',
+          modele: MODELES.copywriter, temperature: 0.4, logLabel: 'Copywriter',
           typeAppel: isTest ? 'copywriter_test' : 'copywriter_prod'
         });
 
@@ -2336,9 +2458,9 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
           const geminiBody = {
             contents: [{ role: 'user', parts: [{ text: researchPrompt }] }],
             tools: [{ googleSearch: {} }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 8000, thinkingConfig: { thinkingBudget: 2048 } }
+            generationConfig: { temperature: 0.2, maxOutputTokens: 8000, ...reflexion(MODELES.scraping, 2048) }
           };
-          const data = await vertexRequest(token, 'gemini-2.5-flash', geminiBody, 150000, isTest ? 'analyste_grounding_test' : 'analyste_grounding_prod');
+          const data = await vertexRequest(token, MODELES.scraping, geminiBody, 150000, isTest ? 'analyste_grounding_test' : 'analyste_grounding_prod');
           if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
           const cand = data.candidates?.[0];
@@ -2369,9 +2491,9 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
           const tokenCat = await getToken();
           const catBody = {
             contents: [{ role: 'user', parts: [{ text: `Produit : "${produit}"${marque ? ` (marque : ${marque})` : ''}. En 2-4 mots maximum, donne UNIQUEMENT la catégorie générique ou le problème que ce produit résout — jamais le nom de marque, jamais le nom de produit exact, jamais un thème/motif visuel du produit (ex: un t-shirt à motif voiture reste un t-shirt, pas une voiture). Réponds uniquement ces 2-4 mots, rien d'autre, pas de ponctuation finale. Exemple : pour "Vitalina Energy" (complément énergisant), réponds "complément énergisant" ou "fatigue chronique".` }] }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 30, thinkingConfig: { thinkingBudget: 0 } }
+            generationConfig: { temperature: 0.2, maxOutputTokens: 30, ...reflexion(MODELES.tendances, 0) }
           };
-          const catData = await vertexRequest(tokenCat, 'gemini-2.5-flash', catBody, 15000, 'trends_categorie');
+          const catData = await vertexRequest(tokenCat, MODELES.tendances, catBody, 15000, 'trends_categorie');
           const catTerme = catData.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
           if (catTerme && catTerme.length > 2 && catTerme.length < 60) { termeCategorieDerivee = catTerme; console.log(`   → terme de catégorie dérivé (partagé Trends/YouTube) : "${termeCategorieDerivee}"`); }
         } catch(eCat) { console.log('   ✗ dérivation catégorie échouée, repli sur le nom exact :', eCat.message); }
@@ -2593,8 +2715,8 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
 
         // ── Synthèse finale — Gemini 2.5 Pro (mode test) ──
         console.log('\n→ Gemini 2.5 Pro (mode test) — synthèse S0→S7...');
-        const text = await callGeminiPro(system, claudeContent, maxOutputTokens || 32000, {
-          temperature: 0.4, thinkingBudget: 24576, logLabel: 'Analyste Synthèse', timeoutMs: 180000,
+        const text = await callGeminiPro(system, claudeContent, maxOutputTokens || 64000, {
+          modele: MODELES.analyste, temperature: 0.4, thinkingBudget: 24576, logLabel: 'Analyste Hypothèse', timeoutMs: 420000,
           typeAppel: isTest ? 'analyste_synthese_test' : 'analyste_synthese_prod'
         });
 
@@ -2701,7 +2823,7 @@ HARD LOCKS :
           }
         };
 
-        const data = await vertexRequestGlobalAvecReessai(token, 'gemini-3-pro-image', vertexBody, 120000, 'creative_image_demo');
+        const data = await vertexRequestGlobalAvecReessai(token, MODELES.image, vertexBody, 120000, 'creative_image_demo');
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
         const responseParts = data.candidates?.[0]?.content?.parts || [];
@@ -2714,7 +2836,7 @@ HARD LOCKS :
         res.end(JSON.stringify({
           imageData: imgPart.inlineData.data,
           imageMime: imgPart.inlineData.mimeType,
-          model: 'gemini-2.5-pro + gemini-3-pro-image',
+          model: MODELES.creative + ' + ' + MODELES.image,
           geminiPrompt
         }));
       } catch(e) {
@@ -2853,7 +2975,7 @@ ${nomMarque ? `Marque "${nomMarque}" : intégrée en TEXTE à l'emplacement appr
 
         console.log('→ Gemini 2.5 Pro (mode test) — compréhension persona/angles/CT, choix d\'angle, écriture du prompt...');
         const geminiPrompt = await callGeminiPro(systemPrompt, userParts, 8000, {
-          temperature: 0.4, thinkingBudget: 24576, logLabel: 'Creative Prod', timeoutMs: 150000,
+          modele: MODELES.creative, temperature: 0.4, thinkingBudget: 24576, logLabel: 'Creative Prod', timeoutMs: 150000,
           typeAppel: isTest ? 'creative_prod_texte_test' : 'creative_prod_texte_prod'
         });
 
@@ -2933,7 +3055,7 @@ HARD LOCKS :
           }
         };
 
-        const data = await vertexRequestGlobalAvecReessai(token, 'gemini-3-pro-image', vertexBody, 120000, isTest ? 'creative_image_prod_test' : 'creative_image_prod');
+        const data = await vertexRequestGlobalAvecReessai(token, MODELES.image, vertexBody, 120000, isTest ? 'creative_image_prod_test' : 'creative_image_prod');
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
         const responseParts = data.candidates?.[0]?.content?.parts || [];
@@ -2947,7 +3069,7 @@ HARD LOCKS :
         res.end(JSON.stringify({
           imageData: imgPart.inlineData.data,
           imageMime: imgPart.inlineData.mimeType,
-          model: 'gemini-2.5-pro + gemini-3-pro-image (mode test)',
+          model: MODELES.creative + ' + ' + MODELES.image + ' (mode test)',
           prompt: promptForGemini,
           meta: metaBlock,
           chosenAngle
@@ -3107,10 +3229,10 @@ Format exact (copie exactement ce style) : ["ct_xxx", "ct_yyy", "ct_zzz"]`;
           // tâche de sélection/classification comme celle-ci. maxOutputTokens élargi aussi, par
           // marge de sécurité (36 IDs ne devraient tenir qu'en ~400-500 tokens, mais mieux vaut
           // large que retomber dans le même piège).
-          generationConfig: { temperature: 0.3, maxOutputTokens: 2000, thinkingConfig: { thinkingBudget: 0 } }
+          generationConfig: { temperature: 0.3, maxOutputTokens: 2000, ...reflexion(MODELES.utilitaire, 0) }
         };
 
-        const data = await vertexRequest(token, 'gemini-2.5-flash', geminiBody);
+        const data = await vertexRequest(token, MODELES.utilitaire, geminiBody);
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
         const raw = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).join('').trim();
@@ -3266,10 +3388,10 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
           // laissant presque rien pour écrire les 4 lignes demandées. Tâche de classification
           // simple, la réflexion n'apporte rien ici — désactivée, comme pour les autres appels
           // légers du même type dans ce fichier (Quality Check Photo, filtres langue, etc.).
-          generationConfig: { temperature: 0.2, maxOutputTokens: 800, thinkingConfig: { thinkingBudget: 0 } }
+          generationConfig: { temperature: 0.2, maxOutputTokens: 800, ...reflexion(MODELES.utilitaire, 0) }
         };
 
-        const data = await vertexRequest(token, 'gemini-2.5-flash', geminiBody);
+        const data = await vertexRequest(token, MODELES.utilitaire, geminiBody);
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
         const raw = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).join('').trim();
@@ -3311,9 +3433,9 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         const token = await getToken();
         // Aucun thinkingConfig n'était fixé ici — repli sur le défaut natif de Gemini, non
         // borné. Fixé explicitement, cohérent avec le reste du fichier.
-        const data = await vertexRequest(token, 'gemini-2.5-pro', {
+        const data = await vertexRequest(token, MODELES.raisonnement, {
           contents: [{ role:'user', parts:[{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 4000, temperature: 0.3, thinkingConfig: { thinkingBudget: 1024 } }
+          generationConfig: { maxOutputTokens: 4000, temperature: 0.3, ...reflexion(MODELES.raisonnement, 1024) }
         });
         const text = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
         console.log(`→ /gen-messages → ${text.length} chars`);
@@ -3424,9 +3546,9 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         if (/\[Niche\]/i.test(tpl || '')) {
           try {
             const token = await getToken();
-            const nicheData = await vertexRequest(token, 'gemini-2.5-flash', {
+            const nicheData = await vertexRequest(token, MODELES.utilitaire, {
               contents: [{ role:'user', parts:[{ text: `Grande catégorie marketing 1-2 mots max pour: "${produit || slug}". Exemples: cosmétiques, santé, mode, beauté, nutrition. UNIQUEMENT la catégorie, rien d'autre.` }] }],
-              generationConfig: { maxOutputTokens: 50, temperature: 0, thinkingConfig: { thinkingBudget: 0 } }
+              generationConfig: { maxOutputTokens: 50, temperature: 0, ...reflexion(MODELES.utilitaire, 0) }
             }, 90000, 'remplissage_message_demo');
             niche = (nicheData.candidates?.[0]?.content?.parts?.[0]?.text || '').trim().split('\n')[0].replace(/['"«».,]/g,'');
           } catch(e) { niche = produit.split(' ')[0] || ''; }
@@ -3462,9 +3584,9 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
       const produit = (urlParams.get('produit') || '').trim();
       if (!produit) { res.writeHead(400); res.end(JSON.stringify({ error: 'produit manquant' })); return; }
       const token = await getToken();
-      const data = await vertexRequest(token, 'gemini-2.5-flash', {
+      const data = await vertexRequest(token, MODELES.utilitaire, {
         contents: [{ role:'user', parts:[{ text:'Grande catégorie marketing en 1-2 mots pour ce produit: "'+produit+'". Exemples: "cosmétiques", "santé", "mode", "nutrition", "bien-être". La catégorie la plus large possible. Réponds UNIQUEMENT avec la catégorie.' }] }],
-        generationConfig: { maxOutputTokens: 50, temperature: 0, thinkingConfig: { thinkingBudget: 0 } }
+        generationConfig: { maxOutputTokens: 50, temperature: 0, ...reflexion(MODELES.utilitaire, 0) }
       });
       const niche = (data.candidates?.[0]?.content?.parts?.[0]?.text || produit).trim().replace(/['"«»]/g,'').split('\n')[0].substring(0,30);
       console.log(`→ /niche "${produit}" → "${niche}"`);
@@ -4735,11 +4857,11 @@ Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`
         // un bug déjà rencontré et corrigé ailleurs dans ce fichier (le budget de réflexion
         // partage le même total que la sortie — sans budget dédié, la vraie réponse peut être
         // tronquée avant même d'être écrite). maxOutputTokens élargi en conséquence.
-        generationConfig: { maxOutputTokens: 900, temperature: 0.4, thinkingConfig: { thinkingBudget: 512 } },
+        generationConfig: { maxOutputTokens: 900, temperature: 0.4, ...reflexion(MODELES.chat, 512) },
         tools: [{ googleSearch: {} }],
       };
 
-      const CHAT_MODEL = 'gemini-2.5-flash';
+      const CHAT_MODEL = MODELES.chat;
       let token;
       try { token = await getToken(); }
       catch(e) { throw new Error('Token Vertex AI impossible: ' + e.message); }
@@ -4961,11 +5083,11 @@ Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`;
         // un bug déjà rencontré et corrigé ailleurs dans ce fichier (le budget de réflexion
         // partage le même total que la sortie — sans budget dédié, la vraie réponse peut être
         // tronquée avant même d'être écrite). maxOutputTokens élargi en conséquence.
-        generationConfig: { maxOutputTokens: 900, temperature: 0.4, thinkingConfig: { thinkingBudget: 512 } },
+        generationConfig: { maxOutputTokens: 900, temperature: 0.4, ...reflexion(MODELES.chat, 512) },
         tools: [{ googleSearch: {} }],
       };
 
-      const CHAT_MODEL = 'gemini-2.5-flash';
+      const CHAT_MODEL = MODELES.chat;
       let token;
       try { token = await getToken(); }
       catch(e) { throw new Error('Token Vertex AI impossible: ' + e.message); }
@@ -7196,7 +7318,7 @@ async function lireDocumentClient(doc) {
         contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'application/pdf', data: buf.toString('base64') } }, { text: 'Transcris ce document en entier.' }] }],
         generationConfig: { temperature: 0, maxOutputTokens: 60000, thinkingConfig: { thinkingBudget: 0 } }
       };
-      const data = await vertexRequestAvecReessai(token, 'gemini-2.5-flash', body, 150000, 'lecture_document_client');
+      const data = await vertexRequestAvecReessai(token, MODELES.documents, body, 150000, 'lecture_document_client');
       if (data.error) throw new Error(data.error.message || 'erreur Gemini');
       texte = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).filter(Boolean).join('');
     } else {
@@ -7759,7 +7881,7 @@ async function removeBackground(photoBase64, mime) {
     ]}],
     generationConfig: { responseModalities: ['TEXT', 'IMAGE'], temperature: 0.3 }
   };
-  const data = await vertexRequestGlobalAvecReessai(token, 'gemini-3-pro-image', vertexBody, 60000, 'background_removal');
+  const data = await vertexRequestGlobalAvecReessai(token, MODELES.image, vertexBody, 60000, 'background_removal');
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
   const parts = data.candidates?.[0]?.content?.parts || [];
   const imgPart = parts.find(p => p.inlineData?.mimeType?.startsWith('image/'));
@@ -7923,7 +8045,7 @@ async function genererPortraitPersona(persona) {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: { responseModalities: ['TEXT', 'IMAGE'], temperature: 0.6 }
   };
-  const data = await vertexRequestGlobalAvecReessai(token, 'gemini-3-pro-image', vertexBody, 60000, 'persona_portrait');
+  const data = await vertexRequestGlobalAvecReessai(token, MODELES.image, vertexBody, 60000, 'persona_portrait');
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
   const parts = data.candidates?.[0]?.content?.parts || [];
   const imgPart = parts.find(p => p.inlineData?.mimeType?.startsWith('image/'));
@@ -8312,6 +8434,7 @@ async function processProductPhoto(photoBase64, briefId) {
 
 server.listen(PORT, () => {
   console.log(`\n✅ AdStack Server → http://localhost:${PORT}\n`);
+  setTimeout(() => { sonderModeles(); }, 3000);
 });
 
 // ── Auto-ping — empêche Render (offre gratuite) de mettre le serveur en veille ──
