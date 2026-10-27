@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -3877,8 +3877,16 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
           history: data.history || { angles_used: [], personas_used: [], batches_count: 0 },
           photo_nobg: null,
         };
+        // v5.64 — le navigateur renvoie le brief jusqu'à 3 fois quand la réponse tarde (timeout de 15 s) : un brief déjà enregistré
+        // est acquitté sans rien refaire (ni e-mail, ni push, ni photos), et on n'enregistre plus que CE brief (et non toute la liste).
+        if (briefs.some(b0 => b0.id === brief.id)) {
+          console.log(`[Brief] ↩ doublon ignoré : ${brief.id}`);
+          res.writeHead(200, {'Content-Type':'application/json'});
+          res.end(JSON.stringify({ ok: true, id: brief.id, doublon: true }));
+          return;
+        }
         briefs.unshift(brief);
-        await saveBriefs(briefs);
+        await saveBriefs([brief]);
         console.log(`[Brief] ✅ Reçu: ${brief.id} — ${brief.product.nom} (${brief.quantity} images)`);
         res.writeHead(200, {'Content-Type':'application/json'});
         res.end(JSON.stringify({ ok: true, id: brief.id }));
@@ -3897,10 +3905,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
            <p>Client : ${brief.client.email || 'email non renseigné'} — Plan ${brief.client.plan}</p>
            <p style="color:#888;font-size:12px">Reçue le ${new Date(brief.created_at).toLocaleString('fr-FR')} — id ${brief.id}</p>`
         ).catch(()=>{});
-        // v5.61 — préparation des photos en arrière-plan (analyse, nettoyage intelligent, remplacement de personne, vérification)
-        if (brief.product.photo_base64 || brief.product.photo_url || (brief.product.galerie_images || []).length) {
-          preparationPhotosCommande(brief.id);
-        }
+        // v5.65 — plus de préparation des photos à la réception : elle ne se fait qu'au lancement de la production (/commandes/:id/start).
       } catch(e) {
         console.error('[Brief] Erreur:', e);
         res.writeHead(400); res.end(JSON.stringify({ error: e.message }));
@@ -8005,9 +8010,30 @@ const PHOTOS_MAX = 6;
 const PHOTOS_VERSION = 'v1';
 const _photosVues = new Map(); // petit cache mémoire (url → image normalisée) pour ne pas retélécharger à chaque créative
 function _photosVuesPoser(cle, val) { _photosVues.set(cle, val); if (_photosVues.size > 24) _photosVues.delete(_photosVues.keys().next().value); }
-function apparenceCibleDe(marches) {
-  const liste = Array.isArray(marches) ? marches : [];
-  for (const m of liste) { const i = infoMarche(m); if (i && i.a && APPARENCE_CIBLE[i.a]) return { cle: i.a, texte: APPARENCE_CIBLE[i.a] }; }
+const _apparencePays = new Map();
+async function apparenceCibleDe(marches, pays) {
+  let liste = Array.isArray(marches) ? marches.filter(Boolean) : [];
+  if (!liste.length && pays) liste = String(pays).split(/[,;/|\n]+/).map(x => x.trim()).filter(Boolean);
+  const vues = [];
+  for (const m of liste) {
+    const i = infoMarche(m);
+    if (i && i.a && APPARENCE_CIBLE[i.a]) return { cle: i.a, texte: APPARENCE_CIBLE[i.a] };
+    if (i && i.mixte && /cameroun/i.test(String(i.n))) return { cle: 'afrique_noire', texte: APPARENCE_CIBLE.afrique_noire }; // marché mixte en langue seulement : apparence majoritaire
+    if (!i) vues.push(m);
+  }
+  // pays absent de la table : une courte question à Gemini, mémorisée
+  for (const m of vues) {
+    if (_apparencePays.has(m)) { const c = _apparencePays.get(m); if (c) return { cle: c, texte: APPARENCE_CIBLE[c] }; continue; }
+    try {
+      const token = await getToken();
+      const body = { contents: [{ role: 'user', parts: [{ text: 'Pays ou marché : "' + m + '". Quelle est l\'apparence physique majoritaire de sa population, pour choisir les personnes d\'une publicité ? Réponds UNIQUEMENT par JSON {"apparence":"afrique_noire|maghreb|europe|ocean_indien|autre"}.' }] }], generationConfig: { temperature: 0, maxOutputTokens: 100, thinkingConfig: { thinkingBudget: 0 } } };
+      const data = await vertexRequestAvecReessai(token, MODELES.photos, body, 30000, 'apparence_pays');
+      const c = _jsonDe(data).apparence;
+      _apparencePays.set(m, APPARENCE_CIBLE[c] ? c : null);
+      if (APPARENCE_CIBLE[c]) return { cle: c, texte: APPARENCE_CIBLE[c] };
+    } catch (e) { console.log('[photos] apparence du marché « ' + m + ' » non déterminée : ' + e.message); }
+  }
+  console.log('[photos] apparence cible indéterminée pour : ' + (liste.join(', ') || '(aucun marché dans le brief)'));
   return null;
 }
 async function chargerImageNormalisee(source, tailleMax) {
@@ -8187,7 +8213,7 @@ function listerPhotosATraiter(product) {
   return items.slice(0, PHOTOS_MAX);
 }
 async function preparerPhotosProduit(product) {
-  const apparence = apparenceCibleDe(product && product.marches);
+  const apparence = await apparenceCibleDe(product && product.marches, product && product.pays);
   const items = listerPhotosATraiter(product);
   if (!items.length) return { photos: [], apparence };
   console.log('[photos] préparation de ' + items.length + ' photo(s)' + (apparence ? ' — apparence cible : ' + apparence.cle : ' — apparence cible inconnue') );
