@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -8007,34 +8007,41 @@ const APPARENCE_CIBLE = {
 const PHOTOS_ASPECTS_PRIORITE = ['face', 'forme', 'dos', 'cote', 'detail', 'kit', 'en_main', 'prepare', 'autre'];
 const PHOTOS_ASPECTS_PERSONNE = new Set(['en_main', 'prepare']);
 const PHOTOS_MAX = 6;
-const PHOTOS_VERSION = 'v1';
+const PHOTOS_VERSION = 'v2';
 const _photosVues = new Map(); // petit cache mémoire (url → image normalisée) pour ne pas retélécharger à chaque créative
 function _photosVuesPoser(cle, val) { _photosVues.set(cle, val); if (_photosVues.size > 24) _photosVues.delete(_photosVues.keys().next().value); }
-const _apparencePays = new Map();
-async function apparenceCibleDe(marches, pays) {
-  let liste = Array.isArray(marches) ? marches.filter(Boolean) : [];
-  if (!liste.length && pays) liste = String(pays).split(/[,;/|\n]+/).map(x => x.trim()).filter(Boolean);
-  const vues = [];
-  for (const m of liste) {
-    const i = infoMarche(m);
-    if (i && i.a && APPARENCE_CIBLE[i.a]) return { cle: i.a, texte: APPARENCE_CIBLE[i.a] };
-    if (i && i.mixte && /cameroun/i.test(String(i.n))) return { cle: 'afrique_noire', texte: APPARENCE_CIBLE.afrique_noire }; // marché mixte en langue seulement : apparence majoritaire
-    if (!i) vues.push(m);
-  }
-  // pays absent de la table : une courte question à Gemini, mémorisée
-  for (const m of vues) {
-    if (_apparencePays.has(m)) { const c = _apparencePays.get(m); if (c) return { cle: c, texte: APPARENCE_CIBLE[c] }; continue; }
-    try {
-      const token = await getToken();
-      const body = { contents: [{ role: 'user', parts: [{ text: 'Pays ou marché : "' + m + '". Quelle est l\'apparence physique majoritaire de sa population, pour choisir les personnes d\'une publicité ? Réponds UNIQUEMENT par JSON {"apparence":"afrique_noire|maghreb|europe|ocean_indien|autre"}.' }] }], generationConfig: { temperature: 0, maxOutputTokens: 100, thinkingConfig: { thinkingBudget: 0 } } };
-      const data = await vertexRequestAvecReessai(token, MODELES.photos, body, 30000, 'apparence_pays');
-      const c = _jsonDe(data).apparence;
-      _apparencePays.set(m, APPARENCE_CIBLE[c] ? c : null);
-      if (APPARENCE_CIBLE[c]) return { cle: c, texte: APPARENCE_CIBLE[c] };
-    } catch (e) { console.log('[photos] apparence du marché « ' + m + ' » non déterminée : ' + e.message); }
-  }
-  console.log('[photos] apparence cible indéterminée pour : ' + (liste.join(', ') || '(aucun marché dans le brief)'));
-  return null;
+const _apparenceCache = new Map();
+// v5.66 — La personne à montrer se déduit de la CIBLE réelle du brief, jamais d'une règle « pays = apparence ». Un marché peut
+// viser n'importe quelle apparence (une cible noire aux États-Unis, chinoise en France...). On ne remplace une personne que
+// lorsque la cible est certaine ET que la personne sur la photo la contredit nettement ; sinon la photo reste intacte.
+async function apparenceCibleDe(product) {
+  const p = product || {};
+  let pays = Array.isArray(p.marches) && p.marches.length ? p.marches.filter(Boolean).join(', ') : String(p.pays || '').trim();
+  const cibleExplicite = (p.cible && !p.cible_auto) ? String(p.cible).slice(0, 500) : '';
+  const cibleSuggeree = (p.cible && p.cible_auto) ? String(p.cible).slice(0, 300) : '';
+  if (!pays && !cibleExplicite) { console.log('[photos] ni pays ni cible dans le brief : aucune personne ne sera remplacée'); return null; }
+  const cle = [pays, cibleExplicite, cibleSuggeree, p.nom || ''].join('|');
+  if (_apparenceCache.has(cle)) return _apparenceCache.get(cle);
+  let res = null;
+  try {
+    const token = await getToken();
+    const body = { contents: [{ role: 'user', parts: [{ text:
+      'Tu prépares les photos d\'un produit pour des publicités Meta. Détermine l\'apparence physique des PERSONNES que ces publicités doivent montrer.\n' +
+      'Produit : ' + (p.nom || 'n/a') + '\nMarché(s) : ' + (pays || 'n/a') + '\n' +
+      'Cible indiquée par le client : ' + (cibleExplicite || 'aucune') + '\n' +
+      (cibleSuggeree ? 'Suggestion automatique de cible (non contraignante) : ' + cibleSuggeree + '\n' : '') +
+      'RÈGLES : (1) la cible indiquée par le client prime toujours sur le pays ; un marché peut viser n\'importe quelle origine (une cible noire aux États-Unis, chinoise en France, arabe en Allemagne...). (2) Sans origine précisée, le pays ne permet de conclure avec certitude que s\'il est très homogène (ex. Sénégal, Mali, Côte d\'Ivoire, Algérie, Maroc, Japon, Corée du Sud, Madagascar) : certitude "haute". (3) Pays multiethniques (États-Unis, France, Royaume-Uni, Canada, Brésil, Afrique du Sud, Émirats...) sans origine précisée : certitude "faible" — toute apparence est acceptable. (4) Plusieurs marchés d\'apparences différentes : certitude "faible". (5) Au moindre doute : "faible".\n' +
+      'Réponds UNIQUEMENT par JSON {"certitude":"haute|faible","apparence_en":"description courte en ANGLAIS de la personne attendue (origine, teint), vide si faible","raison":"une phrase"}.' }] }], generationConfig: { temperature: 0, maxOutputTokens: 300, thinkingConfig: { thinkingBudget: 0 } } };
+    const data = await vertexRequestAvecReessai(token, MODELES.photos, body, 30000, 'apparence_cible');
+    const j = _jsonDe(data);
+    if (j.certitude === 'haute' && String(j.apparence_en || '').trim()) {
+      const texte = 'a person who is ' + String(j.apparence_en).trim().replace(/^an? /i, '');
+      res = { cle: crypto.createHash('sha1').update(texte).digest('hex').slice(0, 10), texte };
+      console.log('[photos] cible certaine : ' + texte + ' (' + String(j.raison || '').slice(0, 100) + ')');
+    } else console.log('[photos] cible non tranchée (' + String(j.raison || '').slice(0, 100) + ') : aucune personne ne sera remplacée, les photos restent intactes sur ce point');
+  } catch (e) { console.log('[photos] cible non déterminée (' + e.message + ') : aucune personne remplacée'); }
+  _apparenceCache.set(cle, res);
+  return res;
 }
 async function chargerImageNormalisee(source, tailleMax) {
   const t = tailleMax || 2000;
@@ -8108,7 +8115,7 @@ async function analyserPhotoProduit(img, aspect, apparence) {
 async function editerPhotoProduit(img, mode, apparence) {
   const token = await getToken();
   const systeme = mode === 'remplacer'
-    ? `You are a professional photo retoucher. In the supplied photo, replace ONLY the person (skin, face, hands, arms and any visible body) by ${apparence ? apparence.texte : 'a person matching the target market'}, keeping the same gender, approximate age, pose, framing, clothing style and the exact same way of holding or using the product. The PRODUCT must stay strictly identical: same shape, same label, same printed text, same colours, same reflections, same position in the frame. Keep the rest of the scene unchanged, or simplify it to a clean neutral light background if it contains other people or distracting elements. The result must look like a real photograph; hands must have a natural anatomy. Output a single image.`
+    ? `You are a professional photo retoucher. In the supplied photo, change ONLY the person (skin tone, face, hands, arms and any visible body) so that it shows ${apparence ? apparence.texte : 'a person matching the target'}, with the smallest change that achieves it: keep the same gender, approximate age, pose, framing, clothing, hairstyle type, lighting and the exact same way of holding or using the product. The PRODUCT must stay strictly identical: same shape, same label, same printed text, same colours, same reflections, same position in the frame. Keep the rest of the scene unchanged, or simplify it to a clean neutral light background if it contains other people or distracting elements. The result must look like a real photograph; hands must have a natural anatomy. Output a single image.`
     : `You are a professional product-photo retoucher. Keep ONLY the product (or all items if it is a kit or a pack) from the supplied photo and place it on a pure white seamless background. Remove EVERYTHING else: background, surface, props, and ANY person, hand, arm, finger or face. If a hand hides part of the product, rebuild the hidden part only where it follows obviously from symmetry, never invent text or details. Do NOT redraw, restyle, recolour, crop or resize the product: same shape, same proportions, same label, same printed text, same colours, same reflections. Output a single image with the product centered and some margin around it.`;
   const body = {
     system_instruction: { parts: [{ text: systeme }] },
@@ -8213,10 +8220,10 @@ function listerPhotosATraiter(product) {
   return items.slice(0, PHOTOS_MAX);
 }
 async function preparerPhotosProduit(product) {
-  const apparence = await apparenceCibleDe(product && product.marches, product && product.pays);
+  const apparence = await apparenceCibleDe(product);
   const items = listerPhotosATraiter(product);
   if (!items.length) return { photos: [], apparence };
-  console.log('[photos] préparation de ' + items.length + ' photo(s)' + (apparence ? ' — apparence cible : ' + apparence.cle : ' — apparence cible inconnue') );
+  console.log('[photos] préparation de ' + items.length + ' photo(s)' + (apparence ? ' — personne attendue : ' + apparence.texte : ' — cible non tranchée, personnes conservées') );
   const resultats = new Array(items.length);
   let i = 0;
   const ouvrier = async () => { while (i < items.length) { const k = i++; try { resultats[k] = await preparerUnePhoto(items[k], apparence); } catch (e) { resultats[k] = { aspect: items[k].aspect, source: items[k].source, principale: !!items[k].principale, decision: 'garder', exclue: false, raison: 'erreur : ' + String(e.message).slice(0, 60), verifie: false, url: String(items[k].source).startsWith('data:') ? null : items[k].source }; } } };
