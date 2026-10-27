@@ -724,12 +724,13 @@ const SUPABASE_ANON_KEY_INT = process.env.SUPABASE_ANON_KEY || '';
 // autorisations. Toutes les écritures passent par le serveur (clé de service) ; la base (RLS) protège la lecture.
 // ═════════════════════════════════════════════════════════════════════════════
 const TEAM_SEATS = { starter: 2, pro: 5, scale: 15 };   // PERF+ / GROWTH / SCALE
-const TEAM_PERM_KEYS = ['view', 'download', 'edit_products', 'request_production', 'delete'];
+// Pas de droit « supprimer » : un membre ne supprime ni n'annule jamais rien, quoi qu'il arrive.
+const TEAM_PERM_KEYS = ['view', 'download', 'edit_products', 'request_production'];
 const TEAM_PRESETS = {
-  media_buyer: { view: true, download: true, edit_products: false, request_production: true,  delete: false },
-  assistant:   { view: true, download: true, edit_products: true,  request_production: true,  delete: false },
-  lecture:     { view: true, download: true, edit_products: false, request_production: false, delete: false },
-  personnalise:{ view: true, download: true, edit_products: false, request_production: false, delete: false },
+  media_buyer: { view: true, download: true, edit_products: false, request_production: true },
+  assistant:   { view: true, download: true, edit_products: true,  request_production: true },
+  lecture:     { view: true, download: true, edit_products: false, request_production: false },
+  personnalise:{ view: true, download: true, edit_products: false, request_production: false },
 };
 const teamSbHeaders = () => ({ apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' });
 const teamHash = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
@@ -793,7 +794,8 @@ async function teamEnforce(ownerId, sub) {
   }
   return rows;
 }
-const teamPublicRow = (m) => ({ id: m.id, email: m.email, role_preset: m.role_preset, permissions: m.permissions || {}, status: m.status, invited_at: m.invited_at, accepted_at: m.accepted_at });
+const teamNoDelete = (p) => { const o = { ...(p || {}) }; delete o.delete; return o; };
+const teamPublicRow = (m) => ({ id: m.id, email: m.email, role_preset: m.role_preset, permissions: teamNoDelete(m.permissions), status: m.status, invited_at: m.invited_at, accepted_at: m.accepted_at });
 async function teamSendInvite(email, ownerLabel, token, preset) {
   const RESEND_KEY = process.env.RESEND_API_KEY;
   const lien = `https://adstackofficial.com/adboard?invite=${token}`;
@@ -814,11 +816,39 @@ async function teamSendInvite(email, ownerLabel, token, preset) {
 }
 // Un membre peut-il faire cette action pour ce propriétaire ? (utilisé par /briefs/create)
 async function teamMemberCan(ownerId, memberId, perm) {
+  if (!TEAM_PERM_KEYS.includes(perm)) return false; // jamais de suppression pour un membre
   try {
     const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?owner_id=eq.${ownerId}&member_id=eq.${memberId}&status=eq.active&select=permissions&limit=1`, { headers: teamSbHeaders() });
     const rows = await r.json();
     return !!(Array.isArray(rows) && rows[0] && rows[0].permissions && rows[0].permissions[perm]);
   } catch (e) { return false; }
+}
+
+// Livraison : prévient par notification ET par email les membres d'équipe qui travaillent sur les créatives
+// (media buyer, assistant, personnalisé avec demande/édition). Les membres en lecture seule ne sont pas dérangés.
+async function teamNotifyDelivery(ownerId, produit) {
+  try {
+    const rows = await teamRows(ownerId);
+    const dests = rows.filter(r => r.status === 'active' && r.member_id && r.email && r.permissions && (r.permissions.request_production || r.permissions.edit_products));
+    if (!dests.length) return;
+    const ownerLabel = await teamOwnerLabel(ownerId);
+    const RESEND_KEY = process.env.RESEND_API_KEY;
+    const lien = 'https://adstackofficial.com/adboard/gallery';
+    for (const m of dests) {
+      notifyUserBoth(m.member_id, { title: '🎉 Créatives prêtes', body: `Les créatives pour ${produit} sont livrées dans l'espace de ${ownerLabel}.`, url: '/adboard/gallery', type: 'brief' }).catch(() => {});
+      if (!RESEND_KEY) continue;
+      const html = `<div style="font-family:-apple-system,Arial,sans-serif;max-width:520px;margin:0 auto;color:#222;font-size:15px;line-height:1.65;">
+        <p>Bonjour,</p>
+        <p>Les créatives pour <b>${produit}</b> viennent d'être livrées dans l'espace AdBoard de <b>${ownerLabel}</b>.</p>
+        <p style="margin:24px 0"><a href="${lien}" style="background:#2D7FF9;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:bold">Voir les créatives</a></p>
+        <p style="color:#777;font-size:13px">Connectez-vous avec l'adresse ${m.email}.</p></div>`;
+      try {
+        const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from: 'AdStack <contact@adstackofficial.com>', to: [m.email], subject: `Créatives prêtes : ${produit}`, html }) });
+        if (!r.ok) console.error('[Team] email livraison', r.status, (await r.text().catch(() => '')).slice(0, 150));
+      } catch (e) { console.error('[Team] email livraison :', e.message); }
+    }
+  } catch (e) { console.error('[Team] notification livraison :', e.message); }
 }
 
 // MAJ pricing (oct. 2026, nouvelle grille : voir OFFERS) : tarifs en FCFA (price_fcfa = prix MENSUEL du forfait, y compris pour le
@@ -1366,6 +1396,7 @@ async function activateSubscription(userId, planInfo, email, name, phone) {
         console.error('[Transactions] ❌ ÉCHEC écriture:', rTx.status, errTx.slice(0, 500));
       } else {
         console.log(`[Transactions] ✅ Loguée : ${plan} (${cycle}) — ${priceFcfa} FCFA`);
+        writeInAppNotification(userId, `Paiement reçu : forfait ${({starter:'PERF+',pro:'GROWTH',scale:'SCALE'})[plan] || plan} — ${Math.round(priceFcfa).toLocaleString('fr-FR')} FCFA. Retrouvez-le dans Facturation.`, 'info').catch(() => {});
       }
     } catch(e) { console.error('[Transactions] Erreur log:', e.message); }
   }
@@ -5885,6 +5916,26 @@ if (req.method === 'POST' && req.url === '/reconcile-account') {
 // (Platform.jsx) — DOIT rester identique, sinon le chiffre affiché au client contredirait ce
 // que le serveur autorise réellement.
 // ═════ ROUTES COMPTES ÉQUIPE (v5.68) ═════
+// ── Historique de facturation du propriétaire (jamais la commission interne) ──
+if (req.method === 'GET' && req.url.split('?')[0] === '/billing/history') {
+  (async () => {
+    const J = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
+    try {
+      const me = await teamAuthUser(req);
+      if (!me) return J(401, { error: 'connexion_requise' });
+      let tr = await fetch(`${SUPABASE_URL_INT}/rest/v1/transactions?user_id=eq.${me.id}&select=*&order=created_at.desc&limit=200`, { headers: teamSbHeaders() });
+      if (!tr.ok) tr = await fetch(`${SUPABASE_URL_INT}/rest/v1/transactions?user_id=eq.${me.id}&select=*&limit=200`, { headers: teamSbHeaders() });
+      const rows = tr.ok ? await tr.json() : [];
+      const transactions = (Array.isArray(rows) ? rows : []).map(t => ({ date: t.created_at || t.date || t.paid_at || null, plan: t.plan || null, cycle: t.cycle || null, montant_fcfa: t.montant_fcfa || 0 }))
+        .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+      const sub = await teamLatestSub(me.id);
+      const subscription = sub ? { plan: sub.plan, active: !!sub.active && !(sub.expires_at && new Date(sub.expires_at) < new Date()), started_at: sub.started_at, expires_at: sub.expires_at || null, type: sub.type || null } : null;
+      return J(200, { subscription, transactions });
+    } catch (e) { console.error('[Billing]', e.message); return J(500, { error: 'reseau' }); }
+  })();
+  return;
+}
+
 if (req.url.split('?')[0].startsWith('/team/')) {
   let body = '';
   req.on('data', c => body += c);
@@ -5906,7 +5957,7 @@ if (req.url.split('?')[0].startsWith('/team/')) {
         for (const m of (Array.isArray(mem) ? mem : [])) {
           const osub = await teamLatestSub(m.owner_id);
           if (!osub || !osub.active) continue;
-          memberships.push({ ownerId: m.owner_id, ownerLabel: await teamOwnerLabel(m.owner_id), preset: m.role_preset, permissions: m.permissions || {} });
+          memberships.push({ ownerId: m.owner_id, ownerLabel: await teamOwnerLabel(m.owner_id), preset: m.role_preset, permissions: teamNoDelete(m.permissions) });
         }
         const pr = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?email=eq.${encodeURIComponent(me.email)}&status=eq.invited&select=id,owner_id,token_expires_at`, { headers: teamSbHeaders() });
         const pend = await pr.json();
@@ -7041,6 +7092,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
       }
       // Email en complément du push (au cas où le push ne soit pas activé/vu) — texte à
       // valider, voir sendDeliverablesReadyEmail ci-dessous pour le contenu exact.
+      if (userId) teamNotifyDelivery(userId, briefs[idx].product?.nom || 'votre produit').catch(()=>{});
       if (briefs[idx].client?.email) {
         sendDeliverablesReadyEmail({
           email: briefs[idx].client.email,
