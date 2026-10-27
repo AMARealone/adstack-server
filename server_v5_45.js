@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -42,6 +42,7 @@ const MODELES = {
   utilitaire:   process.env.MODELE_UTILITAIRE   || 'gemini-2.5-flash',   // petites tâches courtes
   demo:         process.env.MODELE_DEMO         || 'gemini-2.5-flash',   // stratège de démo
   chat:         process.env.MODELE_CHAT         || 'gemini-2.5-flash',   // Ava
+  photos:       process.env.MODELE_PHOTOS       || 'gemini-3-flash',     // inspection et contrôle des photos du produit
   image:        process.env.MODELE_IMAGE        || 'gemini-3-pro-image'  // génération d'images
 };
 
@@ -1920,9 +1921,9 @@ const server = http.createServer(async (req, res) => {
 ATTENTION — désambiguïsation importante : beaucoup de fiches produit affichent aussi, plus loin sur la page, un tableau comparatif ou une liste "produits similaires/vous aimerez aussi/fréquemment achetés ensemble" listant D'AUTRES produits avec leurs propres noms et prix. N'extrais JAMAIS les infos de ces autres produits. Le VRAI produit de cette page est celui qui : (1) correspond au slug de l'URL ci-dessus, (2) apparaît le premier dans le texte, généralement juste avant ou après un bouton "Ajouter au panier"/"Acheter", (3) est répété plusieurs fois dans la page (titre, description détaillée, FAQ) — pas une simple mention isolée dans une liste comparative.
 
 Réponds en JSON strict, uniquement l'objet, aucun texte autour, aucun bloc markdown :
-{"nom":"nom du produit ou null","prix":"le prix COMPLET du produit, AVEC sa devise. S'il n'y a qu'un seul prix, donne-le simplement (ex: '13 900 FCFA'). S'il y a PLUSIEURS paliers/formules (ex: 1 mois / 2 mois / 3 mois, ou 1 unité / pack de 3 / pack de 5), liste-les TOUS, séparés par ' · ', chacun avec son propre prix et sa remise si affichée (ex: '19 000 FCFA (1 mois) · 36 100 FCFA (2 mois, -5%) · 51 300 FCFA (3 mois, -10%)') — jamais un seul prix choisi arbitrairement parmi plusieurs, jamais un nombre seul sans devise, null si aucun prix identifiable","pays":"pays/marché de vente : explicitement mentionné, OU clairement déductible de la devise et des zones de livraison affichées (ex : « $ » + « free US shipping » → United States ; FCFA + livraison à Dakar → Sénégal), écrit dans la langue du marché ; plusieurs possibles séparés par virgule ; null si rien ne permet de le dire","utilite":"à quoi sert le produit, en une phrase de deux lignes maximum, basée sur la description de la page, ou null","promo":"offre promotionnelle GÉNÉRALE, distincte des paliers de prix ci-dessus — seuil de livraison gratuite, BOGO (achetez-en X recevez-en Y), cadeau offert, code promo affiché, etc. (ex: 'Livraison gratuite dès 50 000 FCFA', '2 achetés = 1 offert') — jamais une remise déjà comptée dans un palier de prix, null si aucune","garantie":"garantie ou politique de retour / remboursement / échange EXPLICITEMENT écrite sur la page, recopiée fidèlement et brièvement (ex: 'Satisfait ou remboursé 30 jours'), null si la page n'en dit rien","livraison_paiement":"modes de paiement et conditions de livraison EXPLICITEMENT écrits sur la page (ex: 'Paiement à la livraison. Livraison en 48 h à Dakar'), recopiés fidèlement et brièvement, null si la page n'en dit rien","avis":["jusqu'à 15 avis clients ÉCRITS sur la page de CE produit, recopiés MOT POUR MOT tels qu'affichés (aucune reformulation, aucune correction, aucune invention, jamais un avis d'un autre produit), chacun suivi du prénom entre parenthèses s'il est affiché ; liste vide [] si la page ne contient aucun avis écrit"],"cible":"UNE seule phrase de 35 mots maximum décrivant à qui s'adresse ce produit, selon ces règles : (1) décris une SITUATION VÉCUE et une tension psychologique précise — un comportement observable, un réflexe ou une phrase que la personne se dit, ce contre quoi elle se bat concrètement — jamais une fiche démographique ; (2) n'indique ni métier, ni âge exact, ni tranche d'âge serrée : la démographie reste LARGE, la netteté vient du comportement et de la situation ; (3) la personne doit pouvoir s'offrir ce produit à ce prix et acheter en ligne ; (4) jamais générique : pas de « femmes actives de 30 à 45 ans stressées » — la phrase ne doit pas pouvoir être copiée telle quelle dans la publicité d'un concurrent direct ; (5) appuie-toi sur ce que la page et le marché de vente laissent réellement entendre, sans inventer de chiffre ni de fait ; (6) aucun mot technique (persona, angle, funnel, cible, awareness). null si la page ne permet pas de la déduire","couleurs":["2 ou 3 couleurs de la marque, au format #rrggbb, choisies UNIQUEMENT dans la liste de couleurs candidates fournie plus bas (copie-les exactement) ; liste vide [] si aucune liste n'est fournie ou si tu n'es pas sûr"],"images":[{"i":0,"type":"produit|autre_produit|inutile","aspect":"face|cote|dos|forme|prepare|en_main|detail|autre","q":1}],"principale":0,"confiance":"haute|moyenne|basse"}
+{"nom":"nom du produit ou null","prix":"le prix COMPLET du produit, AVEC sa devise. S'il n'y a qu'un seul prix, donne-le simplement (ex: '13 900 FCFA'). S'il y a PLUSIEURS paliers/formules (ex: 1 mois / 2 mois / 3 mois, ou 1 unité / pack de 3 / pack de 5), liste-les TOUS, séparés par ' · ', chacun avec son propre prix et sa remise si affichée (ex: '19 000 FCFA (1 mois) · 36 100 FCFA (2 mois, -5%) · 51 300 FCFA (3 mois, -10%)') — jamais un seul prix choisi arbitrairement parmi plusieurs, jamais un nombre seul sans devise, null si aucun prix identifiable","pays":"pays/marché de vente : explicitement mentionné, OU clairement déductible de la devise et des zones de livraison affichées (ex : « $ » + « free US shipping » → United States ; FCFA + livraison à Dakar → Sénégal), écrit dans la langue du marché ; plusieurs possibles séparés par virgule ; null si rien ne permet de le dire","utilite":"à quoi sert le produit, en une phrase de deux lignes maximum, basée sur la description de la page, ou null","promo":"offre promotionnelle GÉNÉRALE, distincte des paliers de prix ci-dessus — seuil de livraison gratuite, BOGO (achetez-en X recevez-en Y), cadeau offert, code promo affiché, etc. (ex: 'Livraison gratuite dès 50 000 FCFA', '2 achetés = 1 offert') — jamais une remise déjà comptée dans un palier de prix, null si aucune","garantie":"garantie ou politique de retour / remboursement / échange EXPLICITEMENT écrite sur la page, recopiée fidèlement et brièvement (ex: 'Satisfait ou remboursé 30 jours'), null si la page n'en dit rien","livraison_paiement":"modes de paiement et conditions de livraison EXPLICITEMENT écrits sur la page (ex: 'Paiement à la livraison. Livraison en 48 h à Dakar'), recopiés fidèlement et brièvement, null si la page n'en dit rien","avis":["jusqu'à 15 avis clients ÉCRITS sur la page de CE produit, recopiés MOT POUR MOT tels qu'affichés (aucune reformulation, aucune correction, aucune invention, jamais un avis d'un autre produit), chacun suivi du prénom entre parenthèses s'il est affiché ; liste vide [] si la page ne contient aucun avis écrit"],"cible":"UNE seule phrase de 35 mots maximum décrivant à qui s'adresse ce produit, selon ces règles : (1) décris une SITUATION VÉCUE et une tension psychologique précise — un comportement observable, un réflexe ou une phrase que la personne se dit, ce contre quoi elle se bat concrètement — jamais une fiche démographique ; (2) n'indique ni métier, ni âge exact, ni tranche d'âge serrée : la démographie reste LARGE, la netteté vient du comportement et de la situation ; (3) la personne doit pouvoir s'offrir ce produit à ce prix et acheter en ligne ; (4) jamais générique : pas de « femmes actives de 30 à 45 ans stressées » — la phrase ne doit pas pouvoir être copiée telle quelle dans la publicité d'un concurrent direct ; (5) appuie-toi sur ce que la page et le marché de vente laissent réellement entendre, sans inventer de chiffre ni de fait ; (6) aucun mot technique (persona, angle, funnel, cible, awareness). null si la page ne permet pas de la déduire","couleurs":["2 ou 3 couleurs de la marque, au format #rrggbb, choisies UNIQUEMENT dans la liste de couleurs candidates fournie plus bas (copie-les exactement) ; liste vide [] si aucune liste n'est fournie ou si tu n'es pas sûr"],"images":[{"i":0,"type":"produit|autre_produit|inutile","aspect":"face|cote|dos|forme|prepare|en_main|detail|kit|autre","q":1}],"principale":0,"confiance":"haute|moyenne|basse"}
 
-RÈGLES « images » (seulement si des images numérotées te sont fournies, sinon renvoie "images":[] et "principale":null) : pour CHAQUE image fournie, indique son numéro « i », son « type » et son « aspect ». « type » : « produit » = le produit de CETTE page lui-même — son pot, sachet, flacon, boîte ou tube COMPTE comme le produit (il n'y a plus de catégorie emballage) ; seul, en main, en situation d'usage, sous plusieurs angles ; « autre_produit » = un produit DIFFÉRENT (vente croisée, collection, comparatif) ; « inutile » = bannière, icône, logo, moyen de paiement, tableau, capture de texte, infographie de textes, photo sans le produit, visuel de réassurance. Au moindre doute entre « produit » et « autre_produit », choisis « autre_produit ». « aspect » (uniquement pour type « produit ») : « face » = le produit vu de face, étiquette principale visible ; « cote » = de côté ou en trois-quarts ; « dos » = l'arrière (étiquette arrière, composition, valeurs nutritionnelles) ; « forme » = le produit lui-même sorti de son contenant (poudre, gélule, capsule, comprimé, crème, texture, aliment) ; « prepare » = le produit préparé, servi ou en cours d'usage (tasse prête à boire, shaker, plat) ; « en_main » = tenu ou porté par une personne ; « detail » = gros plan sur un détail (matière, bouchon, ingrédient) ; « autre » sinon. « q » = note de 1 à 5 de la qualité de la photo (nette, bien cadrée, produit bien visible, sans texte superposé) ; UN SEUL EXEMPLAIRE PAR ASPECT sera gardé (la meilleure note), donc note honnêtement. Une image qui est une infographie ou une bannière pleine de texte (étapes de préparation, arguments, avis, comparatif) est « inutile », sauf une vraie étiquette arrière photographiée (dos). « principale » = le numéro de la meilleure image pour représenter le produit (nette, bien cadrée, produit bien visible, idéalement de face sur fond simple), ou null.
+RÈGLES « images » (seulement si des images numérotées te sont fournies, sinon renvoie "images":[] et "principale":null) : pour CHAQUE image fournie, indique son numéro « i », son « type » et son « aspect ». « type » : « produit » = le produit de CETTE page lui-même — son pot, sachet, flacon, boîte ou tube COMPTE comme le produit (il n'y a plus de catégorie emballage) ; seul, en main, en situation d'usage, sous plusieurs angles ; « autre_produit » = un produit DIFFÉRENT (vente croisée, collection, comparatif) ; « inutile » = bannière, icône, logo, moyen de paiement, tableau, capture de texte, infographie de textes, photo sans le produit, visuel de réassurance. Au moindre doute entre « produit » et « autre_produit », choisis « autre_produit ». « aspect » (uniquement pour type « produit ») : « face » = le produit vu de face, étiquette principale visible ; « cote » = de côté ou en trois-quarts ; « dos » = l'arrière (étiquette arrière, composition, valeurs nutritionnelles) ; « forme » = le produit lui-même sorti de son contenant (poudre, gélule, capsule, comprimé, crème, texture, aliment) ; « prepare » = le produit préparé, servi ou en cours d'usage (tasse prête à boire, shaker, plat) ; « en_main » = tenu ou porté par une personne ; « detail » = gros plan sur un détail (matière, bouchon, ingrédient) ; « kit » = le kit, le pack ou les cadeaux vendus ou offerts avec le produit (produits complémentaires, accessoires) ; « autre » sinon. « q » = note de 1 à 5 de la qualité de la photo (nette, bien cadrée, produit bien visible, sans texte superposé) ; UN SEUL EXEMPLAIRE PAR ASPECT sera gardé (la meilleure note), donc note honnêtement. Une image qui est une infographie ou une bannière pleine de texte (étapes de préparation, arguments, avis, comparatif) est « inutile », sauf une vraie étiquette arrière photographiée (dos). « principale » = le numéro de la meilleure image pour représenter le produit (nette, bien cadrée, produit bien visible, idéalement de face sur fond simple), ou null.
 
 Si la page n'est pas une fiche produit exploitable (site général, accueil, blog, catégorie...), tous les champs à null et confiance:"basse".
 
@@ -2024,7 +2025,7 @@ ${pageText}`;
         }
         // Tri des images : « produit » (principale en tête), avec l'aspect de chacune (face, côté, dos, forme, préparé…). Le reste est écarté.
         let imagesFinales = images, aspects = {}, triFait = false;
-        const ASPECTS_OK = ['face','cote','dos','forme','prepare','en_main','detail','autre'];
+        const ASPECTS_OK = ['face','cote','dos','forme','prepare','en_main','detail','kit','autre'];
         if (envoyees.length && Array.isArray(parsed.images) && parsed.images.length) {
           const verdict = {}, asp = {}, note = {};
           parsed.images.forEach(e => { if (e && Number.isInteger(e.i) && e.i >= 0 && e.i < envoyees.length && typeof e.type === 'string') { verdict[e.i] = e.type.toLowerCase(); note[e.i] = Number(e.q) || 3; asp[e.i] = ASPECTS_OK.includes(String(e.aspect || '').toLowerCase()) ? String(e.aspect).toLowerCase() : 'autre'; } });
@@ -2966,11 +2967,22 @@ Dans les INSTRUCTIONS GEMINI ADDITIONNELLES, inclus OBLIGATOIREMENT :
 ${nomMarque ? `Marque "${nomMarque}" : intégrée en TEXTE à l'emplacement approprié selon la structure décrite.` : `Aucune marque vendeur fournie dans ce brief : n'écris AUCUN nom de marque, générique ou inventé ("la marque", "le vendeur", etc.), nulle part dans le prompt final. Aucune zone dédiée à un nom de marque ne doit exister.`}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
+        // v5.61 — aspects disponibles (photos préparées) : l'agent choisit lesquels envoyer à Gemini Image pour CETTE créative.
+        const _dispoAsp = aspectsDisponibles(brief);
+        const blocAspects = _dispoAsp.length >= 2 ? [
+          '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+          'ASPECTS DU PRODUIT DISPONIBLES (tu choisis lesquels Gemini Image recevra pour CETTE créative) :',
+          ..._dispoAsp.map(a => `- ${a.code} : ${LIBELLE_ASPECT[a.code] || a.code}${a.principale ? ' (photo principale = IMAGE 1)' : ''}${a.description ? ' — ' + a.description : ''}`),
+          'Règle : choisis le ou les aspects dont CETTE scène a besoin (le produit de face, le dos si l\'étiquette arrière est montrée, le contenu, le produit en main, le détail...). 1 à 4 aspects maximum. Si la scène a besoin de PLUSIEURS éléments (ex. un pot ET sa capsule), choisis-les tous : le code les assemble en UNE seule image de référence. Ne choisis que ce qui sert la scène : chaque aspect en trop dilue la fidélité.',
+          'Déclare ton choix dans le bloc ===META=== : ASPECTS ENVOYÉS À GEMINI IMAGE : [codes séparés par des virgules]',
+          '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+        ].join('\n') : '';
         const userText = [
           // ⚠️ ANGLE IMPOSÉ EN TÊTE pour que Gemini le lise avant la synthèse
           angleInstruction ? `⚠️⚠️⚠️ ANGLE IMPOSÉ — LIS CECI EN PREMIER AVANT TOUT LE RESTE :\n${angleInstruction}\n⚠️⚠️⚠️ FIN INSTRUCTION ANGLE — NE PAS CHOISIR UN AUTRE ANGLE\n` : '',
           imageRoles,
           fidelityRule,
+          blocAspects,
           '',
           briefSummary,
           '',
@@ -3046,8 +3058,19 @@ HARD LOCKS :
 - QUALITÉ : haute définition, netteté maximale, qualité d'utilisation publicitaire réelle`;
 
         // Step 2 : Gemini Image reçoit UNIQUEMENT image produit + prompt texte (CT décrit en texte dans le prompt)
+        // v5.61 — UNE seule image de référence : la photo principale, ou une planche (2 à 4 aspects choisis par l'agent).
+        let aspectsUtilises = ['face'];
         const geminiParts = [];
-        if (productBase64) geminiParts.push({ inlineData: { mimeType: productMime || 'image/jpeg', data: productBase64 } });
+        try {
+          const asp = await preparerImageProduitPourCreative(brief, metaBlock, productBase64, productMime);
+          aspectsUtilises = asp.codes;
+          if (asp.image) geminiParts.push({ inlineData: { mimeType: asp.image.mime, data: asp.image.b64 } });
+          if (asp.bloc) promptForGemini = asp.bloc + promptForGemini;
+          console.log('   Aspects envoyés à Gemini Image : ' + aspectsUtilises.join(' + ') + (asp.bloc ? ' (planche assemblée)' : ''));
+        } catch (e) {
+          console.log('   ⚠️ assemblage des aspects impossible (' + e.message + ') → photo principale seule');
+          if (productBase64) geminiParts.push({ inlineData: { mimeType: productMime || 'image/jpeg', data: productBase64 } });
+        }
         geminiParts.push({ text: promptForGemini });
 
         const vertexBody = {
@@ -3083,7 +3106,8 @@ HARD LOCKS :
           model: MODELES.creative + ' + ' + MODELES.image + ' (mode test)',
           prompt: promptForGemini,
           meta: metaBlock,
-          chosenAngle
+          chosenAngle,
+          aspectsUtilises
         }));
       } catch(e) {
         console.error('✗ Creative Prod error:', e.message);
@@ -3100,7 +3124,7 @@ HARD LOCKS :
     req.on('data', chunk => body += chunk);
     req.on('end', async () => {
       try {
-        const { synthesis, ctList, count, mode, excludeIds } = JSON.parse(body);
+        const { synthesis, ctList, count, mode, excludeIds, assets } = JSON.parse(body);
         console.log('\n🎯 SELECT-CTs [' + (mode || 'demo') + '] — Sélection de ' + count + ' CTs parmi ' + ctList.length + '...');
 
         const token = await getToken();
@@ -3120,7 +3144,7 @@ HARD LOCKS :
         // sont denses (pricing complet, psychographie détaillée, journée type). Une troncature
         // trop courte la couperait, rendant la règle de matching par ton invisible pour l'IA
         // sans que rien ne le signale — mieux vaut une marge large que deviner juste.
-        const synthExcerpt = (synthesis || '').substring(0, 6000);
+        const synthExcerpt = (synthesis || '').substring(0, 7500);
 
         // Tolérance de redondance par volume — préparation pour les futurs batchs 18/36.
         // Un batch de 9 (3 angles × 3 niveaux) exige 0% de redondance structurelle. Au-delà,
@@ -3136,6 +3160,8 @@ HARD LOCKS :
           rotationTxt = `\n\nRÈGLE DE ROTATION (commande de renouvellement pour ce produit) : ces CT ont déjà été utilisés au lot précédent pour ce même produit : ${excludeIds.join(', ')}. Au moins 50 à 60% de ta sélection de ${count} CTs doit être composée de CT DIFFÉRENTS de cette liste — priorise la nouveauté visuelle. Tu peux réutiliser jusqu'à ~40-50% de ces CT si la galerie ne permet pas assez de diversité, jamais plus.`;
         }
 
+        // v5.62 — ASSETS DU CLIENT : le choix des CT tient compte de ce que le client a réellement fourni, pour que les créatives les mettent en valeur.
+        const assetsTxt = (assets && String(assets).trim()) ? '\n\n---\nASSETS RÉELS DU CLIENT (niveau 6 — FAISABILITÉ ET MISE EN VALEUR, à appliquer à CHAQUE choix) :\n' + String(assets).slice(0, 2500) + '\nRègles : (a) choisis les CT dont la structure met en valeur les assets disponibles (un CT qui montre le contenu ou la texture si l\'aspect « forme » existe ; un CT qui montre l\'étiquette arrière ou la composition si « dos » existe ; un CT pack/bundle/cadeaux si un kit est fourni ; un CT avec preuve sociale si des avis sont fournis ; un CT avec une personne tenant le produit si « en main » existe) ; (b) écarte les CT qui exigent un asset absent (zone prix quand le prix n\'est pas affichable, kit ou cadeaux quand aucun n\'est fourni, contenu quand le produit ne se montre pas ouvert, avis quand il n\'y en a pas, logo si absent) ; (c) un asset fort du client (kit généreux, avis nombreux, preuve concrète) doit être exploité par au moins un CT du lot ; (d) à qualité égale, préfère le CT que l\'on peut réaliser fidèlement avec les photos fournies.' : '';
         let systemText, userText;
 
         if (mode === 'production') {
@@ -3183,7 +3209,7 @@ Si la liste a moins de ${count} CTs distincts, retourne tous les IDs disponibles
 IMPORTANT FORMAT : réponds UNIQUEMENT avec un JSON array sur UNE SEULE LIGNE, dans l'ordre exact décrit ci-dessus, sans markdown, sans backticks, sans explication.
 Format exact (copie exactement ce style) : ["ct_xxx", "ct_yyy", "ct_zzz"]`;
           userText = 'SYNTHÈSE DE CAMPAGNE (extrait) :\n' + synthExcerpt +
-            '\n\n---\nCT DISPONIBLES :\n' + ctListText +
+            assetsTxt + '\n\n---\nCT DISPONIBLES :\n' + ctListText +
             '\n\nSélectionne ' + count + ' CTs optimaux, organisés en ' + (count/3) + ' groupes de 3 (Solution/Product/Most Aware par groupe).';
         } else {
           // Mode démo : pas de structure par niveau de conscience — un seul lot de CTs
@@ -3220,7 +3246,7 @@ Si la liste a moins de ${count} CTs distincts, retourne tous les IDs disponibles
 IMPORTANT FORMAT : réponds UNIQUEMENT avec un JSON array sur UNE SEULE LIGNE, sans markdown, sans backticks, sans explication.
 Format exact (copie exactement ce style) : ["ct_xxx", "ct_yyy", "ct_zzz"]`;
           userText = 'SYNTHÈSE DE CAMPAGNE (extrait) :\n' + synthExcerpt +
-            '\n\n---\nCT DISPONIBLES :\n' + ctListText +
+            assetsTxt + '\n\n---\nCT DISPONIBLES :\n' + ctListText +
             '\n\nSélectionne ' + count + ' CTs optimaux.';
         }
 
@@ -3855,18 +3881,9 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
            <p>Client : ${brief.client.email || 'email non renseigné'} — Plan ${brief.client.plan}</p>
            <p style="color:#888;font-size:12px">Reçue le ${new Date(brief.created_at).toLocaleString('fr-FR')} — id ${brief.id}</p>`
         ).catch(()=>{});
-        // Background removal en arrière-plan + analyse qualité (log seulement, voir checkPhotoQuality)
-        if (brief.product.photo_base64) {
-          checkPhotoQuality(brief.product.photo_base64).then(q => {
-            console.log(`[Quality Check] ${brief.id} : ${q.ok ? '✓ qualité correcte' : '⚠️  qualité douteuse'} — ${q.note}`);
-          });
-          processProductPhoto(brief.product.photo_base64, brief.id).then(async nobg => {
-            if (nobg) {
-              const all = await loadBriefs();
-              const idx = all.findIndex(b => b.id === brief.id);
-              if (idx >= 0) { all[idx].photo_nobg = nobg; await saveBriefs([all[idx]]); }
-            }
-          });
+        // v5.61 — préparation des photos en arrière-plan (analyse, nettoyage intelligent, remplacement de personne, vérification)
+        if (brief.product.photo_base64 || brief.product.photo_url || (brief.product.galerie_images || []).length) {
+          preparationPhotosCommande(brief.id);
         }
       } catch(e) {
         console.error('[Brief] Erreur:', e);
@@ -3908,65 +3925,17 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
       //    web (recherche par image, pas par mots-clés — garantit le même produit exact).
       //    Trouvée et validée → nettoyage de CELLE-LÀ. Rien de trouvé → on nettoie quand même
       //    l'originale plutôt que de bloquer la production.
-      if (!briefs[idx].photo_nobg) {
-        // Carrousel — si le client a plusieurs images (récupérées de sa page produit ou
-        // uploadées), on choisit d'abord LAQUELLE est la vraie photo produit, avant même de
-        // dériver photoOriginale ci-dessous. Prioritaire sur photo_url/photo_base64 seules —
-        // celles-ci ne servent de repli que si aucun carrousel n'est présent ou exploitable.
-        const galerie = briefs[idx].product?.galerie_images;
-        let photoOriginale;
-        if (Array.isArray(galerie) && galerie.length > 1) {
-          console.log(`[Photo Pipeline] Carrousel de ${galerie.length} image(s) reçu — sélection de la vraie photo produit...`);
-          photoOriginale = await choisirPhotoProduitDuCarrousel(galerie);
-          if (photoOriginale) console.log('[Photo Pipeline] → Photo produit retenue du carrousel.');
-        }
-        if (!photoOriginale) {
-          photoOriginale = briefs[idx].product?.photo_base64 || briefs[idx].product?.photo_url;
-        }
-        let photoBase64Source = null;
-        if (photoOriginale && photoOriginale.startsWith('data:')) {
-          photoBase64Source = photoOriginale;
-        } else if (photoOriginale) {
-          try {
-            const imgResp = await fetch(photoOriginale, { signal: AbortSignal.timeout(15000) });
-            if (imgResp.ok) {
-              const ct = imgResp.headers.get('content-type') || 'image/jpeg';
-              const buf = Buffer.from(await imgResp.arrayBuffer());
-              photoBase64Source = `data:${ct};base64,${buf.toString('base64')}`;
-            }
-          } catch(e) {
-            console.warn('[Photo Pipeline] Récupération de la photo échouée :', e.message);
-          }
-        }
-
-        if (photoBase64Source) {
-          console.log(`[Photo Pipeline] Démarrage pour commande ${id}...`);
-          let photoAUtiliser = photoBase64Source;
-          try {
-            const quality = await checkPhotoQuality(photoBase64Source);
-            console.log(`[Photo Pipeline] Qualité originale : ${quality.ok ? '✓ bonne' : '⚠️ insuffisante'} — ${quality.note}`);
-            if (!quality.ok) {
-              const meilleure = await chercherMeilleurePhotoProduit(photoBase64Source, null);
-              if (meilleure) {
-                photoAUtiliser = meilleure;
-                console.log('[Photo Pipeline] → Remplacement par la photo trouvée en ligne.');
-              } else {
-                console.log('[Photo Pipeline] → Aucune meilleure photo trouvée, on garde l\'originale malgré sa qualité.');
-              }
-            }
-          } catch(e) {
-            console.warn('[Photo Pipeline] Vérification qualité échouée, on continue avec l\'originale :', e.message);
-          }
-
-          const nobg = await processProductPhoto(photoAUtiliser, id);
-          if (nobg) {
-            briefs[idx].photo_nobg = nobg;
-            console.log(`[Photo Pipeline] ✅ Terminé pour commande ${id}.`);
-          } else {
-            console.warn(`[Photo Pipeline] ⚠️ Effacement de fond échoué pour ${id} — photo originale conservée telle quelle.`);
-          }
-        } else {
-          console.warn(`[Photo Pipeline] ⚠️ Aucune photo exploitable pour la commande ${id}.`);
+      // v5.61 — les photos du produit sont préparées aspect par aspect (voir preparerPhotosProduit). Plus de recherche
+      // d'une « meilleure » image sur le web, plus de choix dans le carrousel. Déjà prêtes (lancées à la réception du
+      // brief) → rien à attendre ; sinon on attend au plus 85 s pour rester sous la limite de temps de Render.
+      if (!Array.isArray(briefs[idx].product?.photos_produit)) {
+        console.log(`[Photos] commande ${id} : préparation en cours, attente...`);
+        await Promise.race([preparationPhotosCommande(id), new Promise(r => setTimeout(r, 85000))]);
+        const frais = await loadBriefs();
+        const f = frais.find(b => b.id === id);
+        if (f) {
+          briefs[idx].product = f.product;
+          if (f.photo_nobg) briefs[idx].photo_nobg = f.photo_nobg;
         }
       }
 
@@ -7999,6 +7968,348 @@ async function saveBriefs(briefs) {
 // Fond BLANC uni demandé plutôt qu'une vraie transparence : les modèles de génération d'image
 // ne produisent pas de canal alpha fiable, un fond blanc propre est un résultat solide et
 // directement exploitable pour des créatives publicitaires.
+// ───────── v5.61 — PHOTOS DU PRODUIT : ANALYSE, NETTOYAGE INTELLIGENT, REMPLACEMENT DE PERSONNE, VÉRIFICATION, CACHE ─────────
+// Chaque photo du client (jusqu'à 6, avec son aspect : face, côté, dos, produit lui-même, détail, en main, préparé)
+// est examinée UNE par UNE, puis :
+//   • déjà propre (fond uni, produit seul, personne conforme à la cible) → gardée telle quelle, aucune retouche ;
+//   • décor ou personne gênante autour d'un produit → produit isolé sur fond blanc ;
+//   • « en main » / « préparé » avec une personne qui ne ressemble pas à la cible du marché → la personne est remplacée
+//     par une apparence qui correspond à la cible, le produit restant identique.
+// Toute retouche est VÉRIFIÉE (même produit, même étiquette, rien de coupé, personne conforme) ; en cas d'échec on garde
+// l'original, ou on écarte la photo si elle montrerait une personne qui n'est pas la cible. Résultats stockés et réutilisés.
+const APPARENCE_CIBLE = {
+  afrique_noire: "une personne noire d'Afrique subsaharienne (peau foncée, traits typiques de la région)",
+  maghreb: "une personne d'apparence maghrébine (peau mate, type nord-africain)",
+  europe: "une personne d'apparence européenne",
+  ocean_indien: "une personne d'apparence malgache",
+};
+const PHOTOS_ASPECTS_PRIORITE = ['face', 'forme', 'dos', 'cote', 'detail', 'kit', 'en_main', 'prepare', 'autre'];
+const PHOTOS_ASPECTS_PERSONNE = new Set(['en_main', 'prepare']);
+const PHOTOS_MAX = 6;
+const PHOTOS_VERSION = 'v1';
+const _photosVues = new Map(); // petit cache mémoire (url → image normalisée) pour ne pas retélécharger à chaque créative
+function _photosVuesPoser(cle, val) { _photosVues.set(cle, val); if (_photosVues.size > 24) _photosVues.delete(_photosVues.keys().next().value); }
+function apparenceCibleDe(marches) {
+  const liste = Array.isArray(marches) ? marches : [];
+  for (const m of liste) { const i = infoMarche(m); if (i && i.a && APPARENCE_CIBLE[i.a]) return { cle: i.a, texte: APPARENCE_CIBLE[i.a] }; }
+  return null;
+}
+async function chargerImageNormalisee(source, tailleMax) {
+  const t = tailleMax || 2000;
+  let buf;
+  if (String(source).startsWith('data:')) {
+    buf = Buffer.from(String(source).replace(/^data:image\/[\w+.-]+;base64,/, ''), 'base64');
+  } else {
+    const cle = t + '|' + source;
+    if (_photosVues.has(cle)) return _photosVues.get(cle);
+    const r = await fetch(source, { signal: AbortSignal.timeout(20000) });
+    if (!r.ok) throw new Error('téléchargement HTTP ' + r.status);
+    buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > 20 * 1024 * 1024) throw new Error('image trop lourde');
+  }
+  const out = await sharp(buf).rotate().flatten({ background: '#ffffff' }).resize({ width: t, height: t, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 92 }).toBuffer();
+  const res = { mime: 'image/jpeg', b64: out.toString('base64') };
+  if (!String(source).startsWith('data:')) _photosVuesPoser(t + '|' + source, res);
+  return res;
+}
+function cleStockagePhoto(source, aspect, apparenceCle) {
+  return crypto.createHash('sha1').update([PHOTOS_VERSION, source, aspect, apparenceCle || 'sans'].join('|')).digest('hex');
+}
+async function lireCachePhoto(cle) {
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/storage/v1/object/public/product-photos/nettoyees/${cle}.json`, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return (j && j.decision) ? j : null;
+  } catch (e) { return null; }
+}
+async function ecrireStorage(chemin, buffer, contentType) {
+  if (!SUPABASE_SERVICE_KEY) throw new Error('clé Supabase absente');
+  const r = await fetch(`${SUPABASE_URL_INT}/storage/v1/object/product-photos/${chemin}`, {
+    method: 'POST',
+    headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': contentType, 'x-upsert': 'true' },
+    body: buffer, signal: AbortSignal.timeout(30000)
+  });
+  if (!r.ok) throw new Error('stockage refusé ' + r.status);
+  return `${SUPABASE_URL_INT}/storage/v1/object/public/product-photos/${chemin}`;
+}
+function _jsonDe(data) {
+  const t = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).filter(Boolean).join('');
+  return JSON.parse(t.replace(/```json|```/g, '').trim());
+}
+async function analyserPhotoProduit(img, aspect, apparence) {
+  const token = await getToken();
+  const cible = apparence ? apparence.texte : null;
+  const body = {
+    system_instruction: { parts: [{ text: "Tu inspectes UNE photo d'un produit e-commerce. Tu réponds UNIQUEMENT par un objet JSON strict, sans texte autour." }] },
+    contents: [{ role: 'user', parts: [
+      { inlineData: { mimeType: img.mime, data: img.b64 } },
+      { text: `Aspect annoncé par le client : ${aspect}.\n` + (cible ? `Personne attendue sur les visuels de ce marché : ${cible}.\n` : 'Aucune apparence cible connue (ne juge pas la personne).\n') +
+        `Réponds par ce JSON exact :\n{"fond":"aucun|uni|decor","personne":{"presente":true,"correspond_cible":"oui|non|incertain"},"produit_complet":true,"qualite":"bonne|moyenne|mauvaise","description":"une phrase sur ce que montre la photo"}\n` +
+        `fond : "aucun" = fond blanc pur ou transparent ; "uni" = une seule couleur lisse sans objet ; "decor" = scène, surface texturée, objets, plusieurs plans.\n` +
+        `personne.presente = true si un visage, une main, un bras ou un corps est visible (même partiel). correspond_cible : "oui" si l'apparence (couleur de peau, traits) correspond à la personne attendue, "non" si elle est nettement différente, "incertain" si on ne peut pas juger. Sans personne : presente=false et correspond_cible="oui".\n` +
+        `produit_complet = false si le produit est coupé ou largement masqué.` }
+    ]}],
+    generationConfig: { temperature: 0, maxOutputTokens: 700, thinkingConfig: { thinkingBudget: 0 } }
+  };
+  const data = await vertexRequestAvecReessai(token, MODELES.photos, body, 60000, 'analyse_photo_produit');
+  if (data.error) throw new Error(data.error.message || 'erreur Gemini');
+  const j = _jsonDe(data);
+  return {
+    fond: ['aucun', 'uni', 'decor'].includes(j.fond) ? j.fond : 'decor',
+    personne: { presente: !!(j.personne && j.personne.presente), correspond: (j.personne && j.personne.correspond_cible) || 'incertain' },
+    complet: j.produit_complet !== false,
+    qualite: j.qualite || 'moyenne',
+    description: String(j.description || '').slice(0, 220),
+  };
+}
+async function editerPhotoProduit(img, mode, apparence) {
+  const token = await getToken();
+  const systeme = mode === 'remplacer'
+    ? `You are a professional photo retoucher. In the supplied photo, replace ONLY the person (skin, face, hands, arms and any visible body) by ${apparence ? apparence.texte : 'a person matching the target market'}, keeping the same gender, approximate age, pose, framing, clothing style and the exact same way of holding or using the product. The PRODUCT must stay strictly identical: same shape, same label, same printed text, same colours, same reflections, same position in the frame. Keep the rest of the scene unchanged, or simplify it to a clean neutral light background if it contains other people or distracting elements. The result must look like a real photograph; hands must have a natural anatomy. Output a single image.`
+    : `You are a professional product-photo retoucher. Keep ONLY the product (or all items if it is a kit or a pack) from the supplied photo and place it on a pure white seamless background. Remove EVERYTHING else: background, surface, props, and ANY person, hand, arm, finger or face. If a hand hides part of the product, rebuild the hidden part only where it follows obviously from symmetry, never invent text or details. Do NOT redraw, restyle, recolour, crop or resize the product: same shape, same proportions, same label, same printed text, same colours, same reflections. Output a single image with the product centered and some margin around it.`;
+  const body = {
+    system_instruction: { parts: [{ text: systeme }] },
+    contents: [{ role: 'user', parts: [
+      { inlineData: { mimeType: img.mime, data: img.b64 } },
+      { text: mode === 'remplacer' ? 'Replace only the person as described. Keep the product identical.' : 'Isolate only the product on a pure white background.' }
+    ]}],
+    generationConfig: { responseModalities: ['TEXT', 'IMAGE'], temperature: 0.2 }
+  };
+  const data = await vertexRequestGlobalAvecReessai(token, MODELES.image, body, 120000, 'photo_produit_' + mode);
+  if (data.error) throw new Error(data.error.message || 'erreur image');
+  const part = (data.candidates?.[0]?.content?.parts || []).find(p => p.inlineData?.mimeType?.startsWith('image/'));
+  if (!part) throw new Error('pas d\'image dans la réponse');
+  // renormalise (jpeg, fond blanc, taille raisonnable) pour que tout le reste du système reçoive le même format
+  return await chargerImageNormalisee('data:' + part.inlineData.mimeType + ';base64,' + part.inlineData.data, 2000);
+}
+async function verifierPhotoProduit(orig, res, mode, apparence) {
+  const token = await getToken();
+  const body = {
+    system_instruction: { parts: [{ text: "Tu contrôles une retouche photo. Tu réponds UNIQUEMENT par un objet JSON strict." }] },
+    contents: [{ role: 'user', parts: [
+      { text: 'PHOTO ORIGINALE :' }, { inlineData: { mimeType: orig.mime, data: orig.b64 } },
+      { text: 'PHOTO RETOUCHÉE :' }, { inlineData: { mimeType: res.mime, data: res.b64 } },
+      { text: `Compare. JSON exact :\n{"produit_identique":true,"texte_etiquette_identique":true,"rien_coupe":true,"personne_presente":false,"personne_correspond_cible":"oui|non|sans_objet","anatomie_naturelle":true,"probleme":"phrase courte ou vide"}\n` +
+        `produit_identique : même forme, mêmes proportions, mêmes couleurs, même packaging que sur l'originale. texte_etiquette_identique : le texte imprimé est le même et lisible (false s'il est déformé, inventé ou illisible alors qu'il l'était). rien_coupe : le produit est entier. personne_presente : une personne, une main ou un visage est visible sur la RETOUCHÉE. personne_correspond_cible` + (apparence ? ` : la personne de la RETOUCHÉE correspond à ${apparence.texte} ("oui"/"non", "sans_objet" s'il n'y a personne)` : ' : "sans_objet"') + `. anatomie_naturelle : mains et corps naturels (cinq doigts, pas de déformation).` }
+    ]}],
+    generationConfig: { temperature: 0, maxOutputTokens: 600, thinkingConfig: { thinkingBudget: 0 } }
+  };
+  const data = await vertexRequestAvecReessai(token, MODELES.photos, body, 60000, 'verification_photo_produit');
+  if (data.error) throw new Error(data.error.message || 'erreur Gemini');
+  const j = _jsonDe(data);
+  const fidele = j.produit_identique !== false && j.texte_etiquette_identique !== false && j.rien_coupe !== false;
+  let ok = fidele;
+  if (mode === 'isoler') ok = ok && !j.personne_presente;
+  if (mode === 'remplacer') ok = ok && (!apparence || j.personne_correspond_cible === 'oui') && j.anatomie_naturelle !== false;
+  return { ok, probleme: String(j.probleme || '').slice(0, 160) };
+}
+// Décision pour UNE photo, à partir de son analyse (fonction pure : testée à part).
+function decisionPhoto(aspect, analyse, apparence) {
+  const personneGenante = !!(apparence && analyse.personne.presente && analyse.personne.correspond !== 'oui');
+  if (personneGenante) return PHOTOS_ASPECTS_PERSONNE.has(aspect) ? 'remplacer' : 'isoler';
+  if (analyse.fond === 'decor' && !PHOTOS_ASPECTS_PERSONNE.has(aspect)) return 'isoler';
+  return 'garder';
+}
+async function preparerUnePhoto(item, apparence) {
+  const aspect = item.aspect || 'autre';
+  const cle = cleStockagePhoto(item.source, aspect, apparence && apparence.cle);
+  const cache = await lireCachePhoto(cle);
+  if (cache) { console.log('   [photos] ' + aspect + ' : réutilisée (' + cache.decision + (cache.exclue ? ', écartée' : '') + ')'); return { ...cache, principale: !!item.principale, depuis_cache: true }; }
+  const res = { aspect, source: String(item.source).startsWith('data:') ? null : item.source, principale: !!item.principale, decision: 'garder', exclue: false, raison: '', verifie: false, description: '', url: null };
+  let orig;
+  try { orig = await chargerImageNormalisee(item.source, 2000); }
+  catch (e) { res.exclue = true; res.raison = 'photo illisible (' + String(e.message).slice(0, 60) + ')'; return res; }
+  let analyse;
+  try { analyse = await analyserPhotoProduit(orig, aspect, apparence); }
+  catch (e) { console.log('   [photos] ' + aspect + ' : analyse impossible (' + e.message + ') → photo gardée telle quelle'); analyse = { fond: 'uni', personne: { presente: false, correspond: 'oui' }, complet: true, qualite: 'moyenne', description: '' }; res.raison = 'non analysée'; }
+  res.description = analyse.description;
+  const decision = decisionPhoto(aspect, analyse, apparence);
+  res.decision = decision;
+  let finale = orig;
+  if (decision !== 'garder') {
+    let reussi = false, dernierProbleme = '';
+    for (let essai = 0; essai < 2 && !reussi; essai++) {
+      try {
+        const cand = await editerPhotoProduit(orig, decision, apparence);
+        const v = await verifierPhotoProduit(orig, cand, decision, apparence);
+        if (v.ok) { finale = cand; reussi = true; } else dernierProbleme = v.probleme || 'retouche non fidèle';
+      } catch (e) { dernierProbleme = String(e.message).slice(0, 80); }
+    }
+    if (reussi) { res.verifie = true; }
+    else if (analyse.personne.presente && apparence && analyse.personne.correspond !== 'oui') {
+      res.exclue = true; res.raison = 'personne ne correspondant pas à la cible et retouche non fiable (' + dernierProbleme + ')';
+    } else {
+      res.decision = 'garder'; res.raison = 'retouche abandonnée, original conservé (' + dernierProbleme + ')';
+    }
+  } else { res.verifie = true; }
+  if (!res.exclue) {
+    if (res.decision === 'garder' && res.source) res.url = res.source;
+    else {
+      try { res.url = await ecrireStorage('nettoyees/' + cle + '.jpg', Buffer.from(finale.b64, 'base64'), 'image/jpeg'); }
+      catch (e) { res.raison = (res.raison ? res.raison + ' ; ' : '') + 'stockage impossible'; }
+    }
+  }
+  console.log('   [photos] ' + aspect + ' : ' + res.decision + (res.exclue ? ' → ÉCARTÉE (' + res.raison + ')' : res.raison ? ' (' + res.raison + ')' : '') + ' [fond ' + analyse.fond + ', personne ' + (analyse.personne.presente ? analyse.personne.correspond : 'non') + ']');
+  try { await ecrireStorage('nettoyees/' + cle + '.json', Buffer.from(JSON.stringify({ aspect, source: res.source, decision: res.decision, exclue: res.exclue, raison: res.raison, verifie: res.verifie, description: res.description, url: res.url })), 'application/json'); } catch (e) { /* le cache est un bonus */ }
+  res._b64 = finale.b64; res._mime = finale.mime;
+  return res;
+}
+// Construit la liste des photos à traiter (6 max, la principale d'abord, puis par ordre d'utilité).
+function listerPhotosATraiter(product) {
+  const p = product || {};
+  const aspects = (p.galerie_aspects && typeof p.galerie_aspects === 'object') ? p.galerie_aspects : {};
+  const principale = p.photo_base64 || p.photo_url || null;
+  const items = [];
+  (Array.isArray(p.galerie_images) ? p.galerie_images : []).forEach(u => { if (u) items.push({ source: u, aspect: aspects[u] || 'autre', principale: !!(p.photo_url && u === p.photo_url) }); });
+  if (principale && !items.some(x => x.principale)) {
+    const deja = items.find(x => x.source === principale);
+    if (deja) deja.principale = true; else items.unshift({ source: principale, aspect: 'face', principale: true });
+  }
+  const rang = (a) => { const i = PHOTOS_ASPECTS_PRIORITE.indexOf(a); return i < 0 ? 99 : i; };
+  items.sort((a, b) => (b.principale ? 1 : 0) - (a.principale ? 1 : 0) || rang(a.aspect) - rang(b.aspect));
+  return items.slice(0, PHOTOS_MAX);
+}
+async function preparerPhotosProduit(product) {
+  const apparence = apparenceCibleDe(product && product.marches);
+  const items = listerPhotosATraiter(product);
+  if (!items.length) return { photos: [], apparence };
+  console.log('[photos] préparation de ' + items.length + ' photo(s)' + (apparence ? ' — apparence cible : ' + apparence.cle : ' — apparence cible inconnue') );
+  const resultats = new Array(items.length);
+  let i = 0;
+  const ouvrier = async () => { while (i < items.length) { const k = i++; try { resultats[k] = await preparerUnePhoto(items[k], apparence); } catch (e) { resultats[k] = { aspect: items[k].aspect, source: items[k].source, principale: !!items[k].principale, decision: 'garder', exclue: false, raison: 'erreur : ' + String(e.message).slice(0, 60), verifie: false, url: String(items[k].source).startsWith('data:') ? null : items[k].source }; } } };
+  await Promise.all([ouvrier(), ouvrier(), ouvrier()]);
+  return { photos: resultats, apparence };
+}
+// Tâche liée à une commande : une seule à la fois par commande, résultat écrit dans la commande (product.photos_produit + photo_nobg).
+const _prepPhotos = new Map();
+function preparationPhotosCommande(idCommande) {
+  if (_prepPhotos.has(idCommande)) return _prepPhotos.get(idCommande);
+  const p = (async () => {
+    try {
+      const briefs = await loadBriefs();
+      const b = briefs.find(x => x.id === idCommande);
+      if (!b) return null;
+      const { photos } = await preparerPhotosProduit(b.product);
+      if (!photos.length) return null;
+      const utilisables = photos.filter(x => !x.exclue);
+      const principale = utilisables.find(x => x.principale) || utilisables.find(x => x.aspect === 'face') || utilisables[0] || null;
+      let nobg = null;
+      if (principale) {
+        try {
+          const base = principale._b64 ? { mime: principale._mime, b64: principale._b64 } : await chargerImageNormalisee(principale.url || principale.source, 2000);
+          nobg = 'data:' + base.mime + ';base64,' + base.b64;
+        } catch (e) { console.log('[photos] photo principale non rechargée : ' + e.message); }
+      }
+      const frais = await loadBriefs();
+      const fb = frais.find(x => x.id === idCommande);
+      if (!fb) return null;
+      fb.product = fb.product || {};
+      fb.product.photos_produit = photos.map(x => ({ aspect: x.aspect, url: x.exclue ? null : (x.url || x.source || null), url_originale: x.source || null, decision: x.decision, exclue: !!x.exclue, raison: x.raison || '', verifie: !!x.verifie, description: x.description || '', principale: !!x.principale }));
+      if (nobg) fb.photo_nobg = nobg;
+      await saveBriefs([fb]);
+      console.log('[photos] commande ' + idCommande + ' : ' + photos.length + ' photo(s) prêtes (' + photos.filter(x => x.exclue).length + ' écartée(s))');
+      return fb.product.photos_produit;
+    } catch (e) { console.log('[photos] préparation échouée : ' + e.message); return null; }
+    finally { setTimeout(() => _prepPhotos.delete(idCommande), 60000); }
+  })();
+  _prepPhotos.set(idCommande, p);
+  return p;
+}
+
+// ───────── v5.61 — ASPECTS POUR LES CRÉATIVES : choix par l'agent, assemblage en UNE seule image (4 max) ─────────
+const LIBELLE_ASPECT = { face:'face (devant)', cote:'côté', dos:'dos (étiquette arrière)', forme:'le produit lui-même (poudre, gélule, liquide, texture)', prepare:'préparé / en usage', en_main:'tenu en main', detail:'détail', kit:'kit / pack / cadeaux offerts avec le produit', autre:'autre vue' };
+// Aspects réellement disponibles pour une commande : la principale (déjà fournie par Factory) + les autres photos préparées.
+function aspectsDisponibles(brief) {
+  const liste = Array.isArray(brief && brief.photos_produit) ? brief.photos_produit : [];
+  const out = [];
+  const vus = new Set();
+  liste.forEach(p => {
+    if (!p || p.exclue || !p.url || !p.aspect) return;
+    let code = String(p.aspect);
+    if (p.principale && !vus.has('face')) code = code === 'autre' ? 'face' : code;
+    if (vus.has(code)) return; // un seul exemplaire par aspect (le plus prioritaire, la liste est déjà triée)
+    vus.add(code);
+    out.push({ code, url: p.url, principale: !!p.principale, description: p.description || '' });
+  });
+  return out;
+}
+// Lit la ligne « ASPECTS ENVOYÉS À GEMINI IMAGE : face, forme » du bloc META et ne garde que des aspects qui existent.
+function lireAspectsChoisis(metaBlock, dispo) {
+  const m = String(metaBlock || '').match(/ASPECTS\s+ENVOY[ÉE]S\s+[ÀA]\s+GEMINI\s+IMAGE\s*:\s*([^\n]+)/i);
+  if (!m) return [];
+  const codes = m[1].toLowerCase().replace(/[éèê]/g, 'e').split(/[,;·+\/]| et /).map(x => x.trim().replace(/[^a-z_]/g, '')).filter(Boolean);
+  const alias = { devant:'face', front:'face', produit:'forme', contenu:'forme', poudre:'forme', main:'en_main', enmain:'en_main', preparation:'prepare', cote_:'cote', arriere:'dos', back:'dos', side:'cote' };
+  const res = [];
+  codes.forEach(c => { const k = alias[c] || c; if (dispo.some(d => d.code === k) && !res.includes(k)) res.push(k); });
+  return res.slice(0, 4);
+}
+// Assemble 1 à 4 images en UNE seule image. v5.62 : c'est Gemini 3 Pro Image qui compose la planche (fond neutre propre, vues
+// fidèles, rendu fluide), un contrôle vérifie la fidélité, et le montage simple par le code ne sert que de repli.
+async function composerPlancheSimple(imgs) {
+  if (!imgs.length) return null;
+  if (imgs.length === 1) return imgs[0];
+  const n = imgs.length;
+  const cols = n === 4 ? 2 : n;
+  const rows = n === 4 ? 2 : 1;
+  const cell = n === 3 ? 800 : 1000;
+  const bg = { create: { width: cols * cell, height: rows * cell, channels: 3, background: '#ffffff' } };
+  const compos = [];
+  for (let i = 0; i < n; i++) {
+    const buf = await sharp(Buffer.from(imgs[i].b64, 'base64')).resize({ width: cell - 40, height: cell - 40, fit: 'inside', background: '#ffffff' }).png().toBuffer();
+    const meta = await sharp(buf).metadata();
+    compos.push({ input: buf, left: (i % cols) * cell + Math.round((cell - meta.width) / 2), top: Math.floor(i / cols) * cell + Math.round((cell - meta.height) / 2) });
+  }
+  const out = await sharp(bg).composite(compos).jpeg({ quality: 92 }).toBuffer();
+  return { mime: 'image/jpeg', b64: out.toString('base64') };
+}
+async function composerPlancheAspects(imgs, codes) {
+  if (!imgs.length) return null;
+  if (imgs.length === 1) return imgs[0];
+  try {
+    const token = await getToken();
+    const parts = [];
+    imgs.forEach((im, i) => { parts.push({ text: 'VIEW ' + (i + 1) + ' = ' + (LIBELLE_ASPECT[codes[i]] || codes[i]) + ' :' }); parts.push({ inlineData: { mimeType: im.mime, data: im.b64 } }); });
+    parts.push({ text: `These ${imgs.length} photos show the SAME product (or the same set) from different aspects. Create ONE single clean product reference image that shows all of them together, arranged naturally and harmoniously side by side (or slightly overlapping when it looks natural, like a commercial packshot), on a plain seamless light-neutral background, soft even studio light, a soft contact shadow under each item. Every item must stay STRICTLY identical to its photo: same shape, proportions, colours, material, label, printed text, quantity and details. Remove any background, hand, person or décor from the source photos. Do not add any item, text, logo or prop that is not in the photos. Do not crop any item. Square format.` });
+    const body = { system_instruction: { parts: [{ text: 'You are a professional product photographer composing a packshot. Fidelity to the supplied products is absolute.' }] }, contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'], temperature: 0.3 } };
+    for (let essai = 0; essai < 2; essai++) {
+      const data = await vertexRequestGlobalAvecReessai(token, MODELES.image, body, 120000, 'assemblage_aspects_produit');
+      if (data.error) throw new Error(data.error.message || 'erreur image');
+      const part = (data.candidates?.[0]?.content?.parts || []).find(p => p.inlineData?.mimeType?.startsWith('image/'));
+      if (!part) continue;
+      const cand = await chargerImageNormalisee('data:' + part.inlineData.mimeType + ';base64,' + part.inlineData.data, 2000);
+      const vb = { system_instruction: { parts: [{ text: 'Tu contrôles une composition de packshot. Tu réponds UNIQUEMENT par un objet JSON strict.' }] }, contents: [{ role: 'user', parts: [...imgs.flatMap((im, i) => [{ text: 'SOURCE ' + (i + 1) + ' :' }, { inlineData: { mimeType: im.mime, data: im.b64 } }]), { text: 'COMPOSITION :' }, { inlineData: { mimeType: cand.mime, data: cand.b64 } }, { text: 'JSON exact : {"tous_presents":true,"identiques":true,"texte_etiquette_conserve":true,"rien_ajoute":true,"probleme":""}. tous_presents : chacun des ' + imgs.length + ' éléments/aspects des sources figure entier dans la composition. identiques : forme, couleurs, packaging, quantité identiques aux sources. texte_etiquette_conserve : texte imprimé identique et lisible. rien_ajoute : aucun objet, texte ou personne absent des sources.' }] }], generationConfig: { temperature: 0, maxOutputTokens: 500, thinkingConfig: { thinkingBudget: 0 } } };
+      const vd = await vertexRequestAvecReessai(token, MODELES.photos, vb, 60000, 'verification_assemblage_aspects');
+      const j = _jsonDe(vd);
+      if (j.tous_presents !== false && j.identiques !== false && j.texte_etiquette_conserve !== false && j.rien_ajoute !== false) return cand;
+      console.log('   [aspects] assemblage IA refusé au contrôle (' + String(j.probleme || '').slice(0, 100) + ')' + (essai === 0 ? ' → nouvel essai' : ''));
+    }
+  } catch (e) { console.log('   [aspects] assemblage IA impossible (' + String(e.message).slice(0, 100) + ')'); }
+  console.log('   [aspects] repli : montage simple par le code');
+  return await composerPlancheSimple(imgs);
+}
+function blocPlancheAspects(codes) {
+  if (codes.length < 2) return '';
+  return `⚠️ L'IMAGE FOURNIE EST UNE IMAGE DE RÉFÉRENCE DU MÊME PRODUIT montrant ${codes.length} aspects réunis sur fond neutre (${codes.map(c => LIBELLE_ASPECT[c] || c).join(' ; ')}). Ces éléments appartiennent à UN SEUL produit (ou ensemble) : ils servent UNIQUEMENT à reproduire fidèlement le produit. Le visuel final ne doit PAS ressembler à cette image de référence : ni fond neutre, ni éléments juxtaposés comme un packshot, sauf si la scène décrite plus bas le demande. Tu utilises chaque élément là où la scène le demande, avec exactement la même forme, la même étiquette, les mêmes couleurs, la même matière.\n\n`;
+}
+async function preparerImageProduitPourCreative(brief, metaBlock, productBase64, productMime) {
+  const dispo = aspectsDisponibles(brief);
+  const codes = lireAspectsChoisis(metaBlock, dispo);
+  if (codes.length === 0) return { image: productBase64 ? { mime: productMime || 'image/jpeg', b64: productBase64 } : null, codes: ['face'], bloc: '' };
+  const imgs = [], gardes = [];
+  for (const c of codes) {
+    const d = dispo.find(x => x.code === c);
+    try {
+      if (d.principale && productBase64) { imgs.push({ mime: productMime || 'image/jpeg', b64: productBase64 }); }
+      else { imgs.push(await chargerImageNormalisee(d.url, 1600)); }
+      gardes.push(c);
+    } catch (e) { console.log('   [aspects] ' + c + ' non chargé : ' + e.message); }
+  }
+  if (!imgs.length) return { image: productBase64 ? { mime: productMime || 'image/jpeg', b64: productBase64 } : null, codes: ['face'], bloc: '' };
+  const planche = await composerPlancheAspects(imgs, gardes);
+  return { image: planche, codes: gardes, bloc: blocPlancheAspects(gardes) };
+}
+
 async function removeBackground(photoBase64, mime) {
   const token = await getToken();
   const base64Only = photoBase64.replace(/^data:image\/\w+;base64,/, '');
