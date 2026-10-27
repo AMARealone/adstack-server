@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -3468,6 +3468,51 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         res.end(JSON.stringify({ name: clean, meta: meta, awareness: awareness, styleTags: styleTags, niche: niche }));
       } catch(e) {
         console.error('✗ NAME-CT error:', e.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // ── /name-ct-video — Nom, méta-description et balises d'un CT VIDÉO (texte), par Gemini ──
+  if (req.method === 'POST' && req.url === '/name-ct-video') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { texte } = JSON.parse(body);
+        if (!texte || String(texte).length < 200) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'texte du CT vidéo requis (200 caractères minimum)' })); }
+        console.log('\n🎬 NAME-CT-VIDEO — nommage d\'un CT vidéo (' + String(texte).length + ' caractères)...');
+        const token = await getToken();
+        const consigne = 'Tu lis un CT VIDÉO (modèle de publicité vidéo utilisé par un agent créatif pour choisir la bonne structure selon le produit et la synthèse du marché). '
+          + 'Réponds UNIQUEMENT en JSON valide, sans texte autour, avec ces clés : '
+          + '"name" (nom court et précis, 70 caractères maximum : la structure + le mécanisme, jamais un nom générique), '
+          + '"meta" (3 phrases, 500 caractères maximum : 1) la structure narrative et le rythme, 2) le mécanisme de persuasion et le ton, 3) les produits, marchés et situations pour lesquels ce CT est le plus adapté ET ceux pour lesquels il ne l\'est pas), '
+          + '"awareness" (liste parmi "solution", "product", "most" ; une seule valeur de préférence), '
+          + '"styleTags" (1 à 3 balises courtes en minuscules : humour, urgence, chaleureux, luxe, scientifique, communautaire, audacieux...), '
+          + '"niche" (UNE catégorie large : cosmétique, complément alimentaire, fashion, chaussures, bijoux et accessoires, montres, tech et électronique, maison et déco, cuisine et électroménager, bien-être et santé, sport et fitness, automobile, bébé et enfant, animaux, alimentation, jouets et jeux, outils et bricolage, voyage et bagages, bureau et papeterie, services, ou "autre" seulement si rien ne convient). '
+          + 'Ne recopie jamais de phrases du CT, décris-le. Si une information manque dans le CT, ne l\'invente pas.\n\n=== CT_VIDEO ===\n' + String(texte).slice(0, 40000);
+        const data = await vertexRequest(token, MODELES.utilitaire, {
+          contents: [{ role: 'user', parts: [{ text: consigne }] }],
+          generationConfig: { temperature: 0.2, maxOutputTokens: 1200, responseMimeType: 'application/json', ...reflexion(MODELES.utilitaire, 0) }
+        });
+        if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+        const raw = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).join('').trim().replace(/^```(?:json)?|```$/g, '').trim();
+        let j; try { j = JSON.parse(raw); } catch (e) { throw new Error('Réponse illisible : ' + raw.slice(0, 120)); }
+        const AW = ['solution', 'product', 'most'];
+        const out = {
+          name: String(j.name || '').replace(/^["'«»\-]|["'«»]$/g, '').slice(0, 70),
+          meta: String(j.meta || '').slice(0, 500),
+          awareness: (Array.isArray(j.awareness) ? j.awareness : []).map(x => String(x).toLowerCase().trim()).filter(x => AW.includes(x)).slice(0, 3),
+          styleTags: (Array.isArray(j.styleTags) ? j.styleTags : []).map(x => String(x).toLowerCase().replace(/^#/, '').trim()).filter(Boolean).slice(0, 3),
+          niche: String(j.niche || 'autre').toLowerCase().trim().slice(0, 40)
+        };
+        console.log('  → "' + out.name + '" · ' + out.awareness.join('/') + ' · ' + out.styleTags.join(',') + ' · ' + out.niche);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(out));
+      } catch (e) {
+        console.error('✗ NAME-CT-VIDEO error:', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
       }
