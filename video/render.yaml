@@ -1,0 +1,31 @@
+# Service vidéo AdStack — à placer dans le dossier "video" du dépôt adstack-server.
+services:
+  - type: web
+    name: adstack-video
+    runtime: docker
+    rootDir: video
+    dockerfilePath: ./Dockerfile
+    plan: standard          # Chromium + ffmpeg : prévoir au moins 2 Go de mémoire
+    healthCheckPath: /health
+    autoDeploy: true
+    disk:
+      name: video-data
+      mountPath: /data
+      sizeGB: 10
+    envVars:
+      - key: LAB_KEY            # clé d'accès : à saisir une fois dans Factory
+        sync: false
+      - key: GOOGLE_CREDENTIALS # même valeur que sur le service adstack-server
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: BUDGET_USD         # plafond de dépense par vidéo
+        value: "10"
+      - key: MAX_JOBS           # vidéos produites en même temps
+        value: "2"
+      - key: RETENTION_DAYS     # les productions plus vieilles sont effacées du disque (la vidéo finale reste dans Supabase)
+        value: "14"

@@ -1,0 +1,10 @@
+node_modules
+lab_out
+_retires
+CT_VIDEO_*.md
+CHANGELOG*.md
+LISEZMOI.md
+*.key
+*.env
+.env*
+.git
