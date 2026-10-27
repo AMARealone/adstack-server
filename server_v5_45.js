@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -2391,7 +2391,11 @@ ${pageText}`;
         let donneesBrutes = '';
         try {
           const token = await getToken();
-          const researchPrompt = `Tu es un analyste de marché senior. Tu mènes une recherche APPROFONDIE et MULTI-SOURCE sur le produit "${produit}" de la marque "${marque}" vendu en ${pays}.
+          const _marchesBrief = Array.isArray(brief && brief.marches) ? brief.marches.filter(Boolean) : [];
+          const _blocMulti = _marchesBrief.length > 1
+            ? `\n\n⚠️ MODE MULTI-MARCHÉ : ce produit est vendu sur ${_marchesBrief.join(', ')} avec UNE SEULE campagne. Cherche pour CHAQUE pays (au moins le prix local, les concurrents présents et la perception de la catégorie, 2 requêtes par pays), puis ramène ce qui est COMMUN à ces pays. Signale clairement ce qui n'existe que dans un seul pays (concurrent local, usage propre à un pays) : il sera écarté de l'analyse, jamais présenté comme valable partout.`
+            : '';
+      const researchPrompt = `Tu es un analyste de marché senior. Tu mènes une recherche APPROFONDIE et MULTI-SOURCE sur le produit "${produit}" de la marque "${marque}" vendu en ${pays}.${_blocMulti}
 
 OBJECTIF : ramener un MAXIMUM de DATA RÉELLE et de VERBATIMS clients authentiques — pas de paraphrase, pas de généralités. Cite les sources URL précises trouvées et les extraits textuels exacts (entre guillemets quand c\'est un verbatim).
 
@@ -2703,6 +2707,11 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
           const _docsTxt = await blocDocumentsClient(brief && brief.documents);
           if (_docsTxt) updatedParts.push({ text: _docsTxt });
         } catch (e) { console.log('   ⚠ documents client ignorés : ' + e.message); }
+        // v5.60 : captures d'avis fournies par le client, transcrites en texte
+        try {
+          const _capTxt = await blocCapturesAvis(brief && brief.avis_captures);
+          if (_capTxt) updatedParts.push({ text: _capTxt });
+        } catch (e) { console.log('   ⚠ captures d\'avis ignorées : ' + e.message); }
 
         // ── Conversion format Gemini (inline_data/text) → format Claude (image/text blocks) ──
         const claudeContent = updatedParts.map(p => {
@@ -2895,6 +2904,8 @@ HARD LOCKS :
           nomMarque ? `- Marque : ${nomMarque}` : null,
           `- Produit : ${nomProduit}`,
           `- Pays : ${brief.pays || 'n/a'}`,
+          (Array.isArray(brief.marches) && brief.marches.length > 1) ? `- MODE MULTI-MARCHÉ (${brief.marches.join(', ')}) : n'écris AUCUN nom de pays, de ville, de quartier ni de région dans la créative ; aucun dialecte ni argot local, aucune référence locale (marque, plat, monument) ; décors génériques mais crédibles pour tous ces marchés.` : null,
+          brief.prix_affichable === false ? `- PRIX : il diffère selon les pays de cette demande → n'affiche AUCUN prix, AUCUNE remise chiffrée ni prix barré, même si la zone du CT en prévoit un (remplace-la par un élément sans chiffre : garantie, bénéfice, appel à l'action).` : null,
           (brief.couleurs_marque || brief.couleurs) && (brief.couleurs_marque || brief.couleurs).length ? `- Couleurs marque : ${(brief.couleurs_marque || brief.couleurs).join(', ')}` : null,
           brief.pricing ? `- Pricing : ${brief.pricing}` : null,
           (brief.offre_promo || brief.promo) ? `- Offre promo : ${brief.offre_promo || brief.promo}` : null,
@@ -3771,6 +3782,14 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
       try {
         const data = JSON.parse(body);
         const briefs = await loadBriefs();
+        // v5.60 — marchés : le serveur garde la liste et re-vérifie la compatibilité (langue, apparence des personnages).
+        // Un marché incompatible avec le groupe principal est écarté et signalé, jamais mélangé dans la même production.
+        const _lstM = (Array.isArray(data.product.marches) && data.product.marches.length ? data.product.marches : String(data.product.pays || '').split(/[,;/|\n]+/)).map(x => String(x).trim()).filter(Boolean);
+        const _am = analyserMarches(_lstM);
+        const _retenus = _am.retenus.length ? _am.retenus : _lstM;
+        const _pppBrut = (data.product.prix_par_pays && typeof data.product.prix_par_pays === 'object') ? data.product.prix_par_pays : {};
+        const _ppp = {}; _retenus.forEach(m => { const v = String(_pppBrut[m] || '').trim(); if (v) _ppp[m] = v.slice(0, 160); });
+        if (_am.ecartes.length) console.log('[Brief] ⚠ marchés incompatibles écartés : ' + _am.ecartes.map(e => e.nom + ' (' + e.raison + ')').join(' ; '));
         const brief = {
           id: data.brief_id || `brief_${Date.now()}`,
           created_at: new Date().toISOString(),
@@ -3784,7 +3803,12 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
             id: data.product.id,
             nom: data.product.nom,
             pricing: data.product.pricing,
-            pays: data.product.pays,
+            pays: _retenus.length ? _retenus.join(', ') : data.product.pays,
+            marches: _retenus,
+            marches_ecartes: _am.ecartes,
+            prix_par_pays: _ppp,
+            prix_affichable: prixAffichable(_retenus, _ppp, data.product.pricing),
+            promo_ponctuelle: !!data.product.promo_ponctuelle,
             promo: data.product.promo || '',
             cible: data.product.cible,
             utilite: data.product.utilite,
@@ -7211,6 +7235,111 @@ function telechargerImagePourTri(urlStr, profondeur) {
   });
 }
 
+
+// ── Marchés : langue, apparence des personnages, devise ─────────────────────────────────
+// Sert à décider si plusieurs pays peuvent être produits dans UNE seule demande. Deux pays sont compatibles
+// s'ils partagent la même langue ET la même apparence des personnages montrés dans les créatives. La devise ne
+// bloque rien : si le prix diffère d'un pays à l'autre, les créatives n'affichent simplement pas de prix.
+// Un pays absent de cette table n'est jamais bloqué (il suit le groupe principal). Cameroun (bilingue) et
+// Mauritanie (apparences très variées) sont volontairement « à part ».
+// NB : cette table existe aussi côté serveur (server) — toute modification se fait aux deux endroits.
+const MARCHES_LANGUES = { fr:'français', en:'anglais', ar_fr:'arabe / français', mg:'malgache / français', pt:'portugais' };
+const MARCHES_APPARENCES = { afrique_noire:'Afrique subsaharienne', maghreb:'Maghreb', europe:'Europe', ocean_indien:'océan Indien' };
+const MARCHES_INFOS = {
+  'senegal':{n:'Sénégal',l:'fr',a:'afrique_noire',d:'XOF'}, 'mali':{n:'Mali',l:'fr',a:'afrique_noire',d:'XOF'},
+  'cote d ivoire':{n:"Côte d'Ivoire",l:'fr',a:'afrique_noire',d:'XOF'}, 'burkina faso':{n:'Burkina Faso',l:'fr',a:'afrique_noire',d:'XOF'},
+  'benin':{n:'Bénin',l:'fr',a:'afrique_noire',d:'XOF'}, 'togo':{n:'Togo',l:'fr',a:'afrique_noire',d:'XOF'},
+  'niger':{n:'Niger',l:'fr',a:'afrique_noire',d:'XOF'}, 'guinee':{n:'Guinée',l:'fr',a:'afrique_noire',d:'GNF'},
+  'gabon':{n:'Gabon',l:'fr',a:'afrique_noire',d:'XAF'}, 'congo':{n:'Congo',l:'fr',a:'afrique_noire',d:'XAF'},
+  'tchad':{n:'Tchad',l:'fr',a:'afrique_noire',d:'XAF'}, 'rdc':{n:'RDC',l:'fr',a:'afrique_noire',d:'CDF'},
+  'burundi':{n:'Burundi',l:'fr',a:'afrique_noire',d:'BIF'}, 'rwanda':{n:'Rwanda',l:'fr',a:'afrique_noire',d:'RWF'},
+  'nigeria':{n:'Nigeria',l:'en',a:'afrique_noire',d:'NGN'}, 'ghana':{n:'Ghana',l:'en',a:'afrique_noire',d:'GHS'},
+  'kenya':{n:'Kenya',l:'en',a:'afrique_noire',d:'KES'}, 'tanzanie':{n:'Tanzanie',l:'en',a:'afrique_noire',d:'TZS'},
+  'ouganda':{n:'Ouganda',l:'en',a:'afrique_noire',d:'UGX'}, 'zambie':{n:'Zambie',l:'en',a:'afrique_noire',d:'ZMW'},
+  'afrique du sud':{n:'Afrique du Sud',l:'en',a:'afrique_noire',d:'ZAR'},
+  'maroc':{n:'Maroc',l:'ar_fr',a:'maghreb',d:'MAD'}, 'algerie':{n:'Algérie',l:'ar_fr',a:'maghreb',d:'DZD'}, 'tunisie':{n:'Tunisie',l:'ar_fr',a:'maghreb',d:'TND'},
+  'madagascar':{n:'Madagascar',l:'mg',a:'ocean_indien',d:'MGA'},
+  'france':{n:'France',l:'fr',a:'europe',d:'EUR'}, 'belgique':{n:'Belgique',l:'fr',a:'europe',d:'EUR'},
+  'cameroun':{n:'Cameroun',mixte:'marché bilingue (français et anglais)',d:'XAF'},
+  'mauritanie':{n:'Mauritanie',mixte:'apparence des personnes très variée',d:'MRU'},
+};
+const MARCHES_ALIAS = { 'senegal':'senegal','sn':'senegal','cote divoire':'cote d ivoire','ci':'cote d ivoire','ivory coast':'cote d ivoire','cotedivoire':'cote d ivoire','burkina':'burkina faso','bf':'burkina faso','guinee conakry':'guinee','guinea':'guinee','congo brazzaville':'congo','republique du congo':'congo','congo kinshasa':'rdc','republique democratique du congo':'rdc','drc':'rdc','cameroon':'cameroun','mauritania':'mauritanie','morocco':'maroc','algeria':'algerie','tunisia':'tunisie','tanzania':'tanzanie','uganda':'ouganda','zambia':'zambie','south africa':'afrique du sud','togo':'togo','benin':'benin','mali':'mali','niger':'niger','ml':'mali','tg':'togo','bj':'benin','ng':'nigeria','gh':'ghana','ke':'kenya','cm':'cameroun','ga':'gabon','ma':'maroc','dz':'algerie','tn':'tunisie','mg':'madagascar','fr':'france','be':'belgique' };
+const _cleMarche = (s) => { const k = String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); return MARCHES_INFOS[k] ? k : (MARCHES_ALIAS[k] || k); };
+const infoMarche = (nom) => MARCHES_INFOS[_cleMarche(nom)] || null;
+// Classe de compatibilité : deux marchés de même classe peuvent partager une demande.
+const classeMarche = (nom) => { const i = infoMarche(nom); if (!i) return 'inconnu'; return i.mixte ? 'mixte:' + _cleMarche(nom) : i.l + '|' + i.a; };
+// Raison (en français, pour le client) pour laquelle `nom` ne peut pas être produit avec `ref`.
+const raisonIncompatibilite = (nom, ref) => {
+  const a = infoMarche(nom), b = infoMarche(ref);
+  if (!a || !b) return '';
+  if (a.mixte) return a.mixte + ' : il faut une demande à part pour choisir la langue et l’apparence des personnages';
+  if (b.mixte) return 'le marché ' + (b.n) + ' (' + b.mixte + ') doit être produit à part';
+  const dl = a.l !== b.l, da = a.a !== b.a;
+  if (dl && da) return 'langue et apparence des personnages différentes (' + MARCHES_LANGUES[a.l] + ', ' + MARCHES_APPARENCES[a.a] + ' — contre ' + MARCHES_LANGUES[b.l] + ', ' + MARCHES_APPARENCES[b.a] + ')';
+  if (dl) return 'langue différente (' + MARCHES_LANGUES[a.l] + ' au lieu de ' + MARCHES_LANGUES[b.l] + ')';
+  return 'apparence des personnages différente (' + MARCHES_APPARENCES[a.a] + ' au lieu de ' + MARCHES_APPARENCES[b.a] + ')';
+};
+// Sépare une liste de marchés en { retenus, ecartes:[{nom, raison}] }. Groupe principal = le plus nombreux
+// (à égalité, celui du premier de la liste), ou celui du marché `prefere` s'il est fourni. Les marchés absents
+// de la table suivent le groupe principal.
+const analyserMarches = (liste, prefere) => {
+  const noms = [...new Set((liste || []).map(x => String(x || '').trim()).filter(Boolean))];
+  const classes = new Map();
+  noms.forEach(n => { const c = classeMarche(n); if (c === 'inconnu') return; if (!classes.has(c)) classes.set(c, []); classes.get(c).push(n); });
+  let principale = null;
+  if (prefere && classeMarche(prefere) !== 'inconnu') principale = classeMarche(prefere);
+  else { let max = 0; classes.forEach((v, k) => { if (v.length > max) { max = v.length; principale = k; } }); }
+  const retenus = [], ecartes = [];
+  const ref = principale ? (classes.get(principale) || [])[0] : null;
+  noms.forEach(n => {
+    const c = classeMarche(n);
+    if (c === 'inconnu' || c === principale) retenus.push(n);
+    else ecartes.push({ nom: n, raison: raisonIncompatibilite(n, ref) });
+  });
+  return { retenus, ecartes, reference: ref };
+};
+// Le prix peut figurer sur une créative seulement s'il est identique sur tous les marchés retenus.
+// `prixParPays` : { pays: texte du prix } ; `prixGeneral` : prix de la fiche, utilisé pour les pays non précisés.
+const _normPrix = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+const prixAffichable = (retenus, prixParPays, prixGeneral) => {
+  if (!retenus || retenus.length < 2) return true;
+  const vus = new Set(retenus.map(m => _normPrix((prixParPays && prixParPays[m]) || prixGeneral)));
+  return vus.size === 1;
+};
+
+// ───────── v5.60 — CAPTURES D'AVIS DU CLIENT, TRANSCRITES ─────────
+// Le client peut fournir ses avis sous forme de captures d'écran. L'analyste ne voit pas les images : on les fait
+// transcrire mot pour mot par Gemini Flash, puis le texte rejoint son entrée (comme les documents). Jamais bloquant.
+async function transcrireCaptureAvis(url) {
+  try {
+    const buf = await telechargerBuffer(url, 8 * 1024 * 1024);
+    if (!buf || !buf.length) return { url, statut: 'illisible', raison: 'téléchargement impossible' };
+    const ext = (String(url).split('?')[0].split('.').pop() || '').toLowerCase();
+    const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+    const token = await getToken();
+    const body = {
+      system_instruction: { parts: [{ text: "Tu es un outil de transcription. Tu recopies MOT POUR MOT les avis clients visibles sur la capture d'écran fournie, sans rien corriger, reformuler, résumer ni inventer. Pour chaque avis : le texte exact, suivi entre parenthèses du prénom et de la note SEULEMENT s'ils sont affichés. Un avis par ligne, séparés par une ligne vide. Si l'image ne contient aucun avis lisible, réponds uniquement : AUCUN AVIS LISIBLE." }] },
+      contents: [{ role: 'user', parts: [{ inlineData: { mimeType: mime, data: buf.toString('base64') } }, { text: 'Transcris les avis de cette capture.' }] }],
+      generationConfig: { temperature: 0, maxOutputTokens: 8000, thinkingConfig: { thinkingBudget: 0 } }
+    };
+    const data = await vertexRequestAvecReessai(token, MODELES.documents, body, 90000, 'lecture_capture_avis');
+    if (data.error) throw new Error(data.error.message || 'erreur Gemini');
+    const t = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).filter(Boolean).join('').trim();
+    if (!t || /^AUCUN AVIS LISIBLE/i.test(t)) return { url, statut: 'vide', raison: 'aucun avis lisible' };
+    return { url, statut: 'ok', texte: t.slice(0, 6000) };
+  } catch (err) {
+    return { url, statut: 'illisible', raison: String(err && err.message || err).slice(0, 100) };
+  }
+}
+async function blocCapturesAvis(captures) {
+  const liste = (Array.isArray(captures) ? captures : []).filter(u => typeof u === 'string' && u).slice(0, 8);
+  if (!liste.length) return '';
+  const lus = await Promise.all(liste.map(transcrireCaptureAvis));
+  const ok = lus.filter(x => x.statut === 'ok');
+  console.log('   → captures d\'avis : ' + ok.length + '/' + lus.length + ' transcrites');
+  if (!ok.length) return '';
+  return '\n\n=== AVIS CLIENTS FOURNIS EN CAPTURES D\'ÉCRAN PAR LA MARQUE (transcrits mot pour mot — preuve fournie par la marque, jamais donnée de marché) ===\n' + ok.map((x, i) => '--- Capture ' + (i + 1) + ' ---\n' + x.texte).join('\n\n');
+}
 
 // ───────── v5.50 — DOCUMENTS DU CLIENT, LUS EN ENTIER ─────────
 // Le client peut joindre un document écrit (PDF, Word, Markdown, texte, tableur, présentation). On le lit TEL QUEL,
