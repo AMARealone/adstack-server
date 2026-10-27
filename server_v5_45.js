@@ -3489,7 +3489,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
           + 'Réponds UNIQUEMENT en JSON valide, sans texte autour, avec ces clés : '
           + '"name" (nom court et précis, 70 caractères maximum : la structure + le mécanisme, jamais un nom générique), '
           + '"meta" (3 phrases, 500 caractères maximum : 1) la structure narrative et le rythme, 2) le mécanisme de persuasion et le ton, 3) les produits, marchés et situations pour lesquels ce CT est le plus adapté ET ceux pour lesquels il ne l\'est pas), '
-          + '"awareness" (liste parmi "solution", "product", "most" ; une seule valeur de préférence), '
+          + '"awareness" (liste parmi "problem", "solution", "product", "most" ; une seule valeur de préférence), '
           + '"styleTags" (1 à 3 balises courtes en minuscules : humour, urgence, chaleureux, luxe, scientifique, communautaire, audacieux...), '
           + '"niche" (UNE catégorie large : cosmétique, complément alimentaire, fashion, chaussures, bijoux et accessoires, montres, tech et électronique, maison et déco, cuisine et électroménager, bien-être et santé, sport et fitness, automobile, bébé et enfant, animaux, alimentation, jouets et jeux, outils et bricolage, voyage et bagages, bureau et papeterie, services, ou "autre" seulement si rien ne convient). '
           + 'Ne recopie jamais de phrases du CT, décris-le. Si une information manque dans le CT, ne l\'invente pas.\n\n=== CT_VIDEO ===\n' + String(texte).slice(0, 40000);
@@ -3500,7 +3500,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
         const raw = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).join('').trim().replace(/^```(?:json)?|```$/g, '').trim();
         let j; try { j = JSON.parse(raw); } catch (e) { throw new Error('Réponse illisible : ' + raw.slice(0, 120)); }
-        const AW = ['solution', 'product', 'most'];
+        const AW = ['problem', 'solution', 'product', 'most'];
         const out = {
           name: String(j.name || '').replace(/^["'«»\-]|["'«»]$/g, '').slice(0, 70),
           meta: String(j.meta || '').slice(0, 500),
