@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.68-equipe (comptes équipe : invitations, autorisations, places selon l'offre ; /briefs/create vérifie le propriétaire du produit et les droits des membres) | v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -718,6 +718,108 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 // Nécessaire pour /admin/impersonate : vérifier un token utilisateur (auth/v1/user) et
 // finaliser un magiclink (auth/v1/verify) se font avec la clé anon, jamais la service key.
 const SUPABASE_ANON_KEY_INT = process.env.SUPABASE_ANON_KEY || '';
+
+// ═════════════════════════════════════════════════════════════════════════════
+// COMPTES ÉQUIPE (v5.68) — le propriétaire (celui qui a payé) invite des membres ; chaque membre a ses
+// autorisations. Toutes les écritures passent par le serveur (clé de service) ; la base (RLS) protège la lecture.
+// ═════════════════════════════════════════════════════════════════════════════
+const TEAM_SEATS = { starter: 2, pro: 5, scale: 15 };   // PERF+ / GROWTH / SCALE
+const TEAM_PERM_KEYS = ['view', 'download', 'edit_products', 'request_production', 'delete'];
+const TEAM_PRESETS = {
+  media_buyer: { view: true, download: true, edit_products: false, request_production: true,  delete: false },
+  assistant:   { view: true, download: true, edit_products: true,  request_production: true,  delete: false },
+  lecture:     { view: true, download: true, edit_products: false, request_production: false, delete: false },
+  personnalise:{ view: true, download: true, edit_products: false, request_production: false, delete: false },
+};
+const teamSbHeaders = () => ({ apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' });
+const teamHash = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
+
+async function teamAuthUser(req) {
+  const tok = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
+  if (!tok || !SUPABASE_ANON_KEY_INT) return null;
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/auth/v1/user`, { headers: { apikey: SUPABASE_ANON_KEY_INT, Authorization: `Bearer ${tok}` } });
+    if (!r.ok) return null;
+    const u = await r.json();
+    return u && u.id ? { id: u.id, email: String(u.email || '').toLowerCase(), name: (u.user_metadata && (u.user_metadata.full_name || u.user_metadata.name)) || '' } : null;
+  } catch (e) { return null; }
+}
+function teamCleanPerms(perms, preset) {
+  const base = TEAM_PRESETS[preset] || TEAM_PRESETS.personnalise;
+  const out = {};
+  TEAM_PERM_KEYS.forEach(k => { out[k] = (perms && Object.prototype.hasOwnProperty.call(perms, k)) ? !!perms[k] : !!base[k]; });
+  out.view = true;                                   // sans lecture, un membre ne servirait à rien
+  if (out.edit_products || out.request_production || out.delete) out.download = out.download !== false;
+  return out;
+}
+async function teamLatestSub(ownerId) {
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?user_id=eq.${ownerId}&select=*&order=started_at.desc&limit=1`, { headers: teamSbHeaders() });
+    const rows = await r.json();
+    const s = Array.isArray(rows) ? rows[0] : null;
+    if (!s) return null;
+    const expired = s.expires_at && new Date(s.expires_at) < new Date();
+    return { plan: s.plan, type: s.type, active: !!s.active && !expired };
+  } catch (e) { return null; }
+}
+async function teamOwnerLabel(ownerId) {
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/auth/v1/admin/users/${ownerId}`, { headers: teamSbHeaders() });
+    const u = await r.json();
+    const meta = u.user_metadata || {};
+    return meta.full_name || meta.name || (u.email ? u.email.split('@')[0] : 'Propriétaire');
+  } catch (e) { return 'Propriétaire'; }
+}
+async function teamRows(ownerId) {
+  const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?owner_id=eq.${ownerId}&status=neq.removed&select=*&order=created_at.asc`, { headers: teamSbHeaders() });
+  const rows = await r.json();
+  return Array.isArray(rows) ? rows : [];
+}
+// Applique la limite de places selon l'offre : les derniers ajoutés sont suspendus (jamais supprimés) si l'offre baisse ; réactivés si la place revient.
+async function teamEnforce(ownerId, sub) {
+  let rows = await teamRows(ownerId);
+  if (!sub || !sub.plan || !(sub.plan in TEAM_SEATS)) return rows;
+  const max = TEAM_SEATS[sub.plan];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const devraitEtreSuspendu = i >= max;
+    let nouveau = null;
+    if (devraitEtreSuspendu && (row.status === 'active' || row.status === 'invited')) nouveau = 'suspended';
+    if (!devraitEtreSuspendu && row.status === 'suspended') nouveau = row.member_id ? 'active' : 'invited';
+    if (nouveau) {
+      await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?id=eq.${row.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ status: nouveau }) });
+      row.status = nouveau;
+    }
+  }
+  return rows;
+}
+const teamPublicRow = (m) => ({ id: m.id, email: m.email, role_preset: m.role_preset, permissions: m.permissions || {}, status: m.status, invited_at: m.invited_at, accepted_at: m.accepted_at });
+async function teamSendInvite(email, ownerLabel, token, preset) {
+  const RESEND_KEY = process.env.RESEND_API_KEY;
+  const lien = `https://adstackofficial.com/adboard?invite=${token}`;
+  if (!RESEND_KEY) return { sent: false, lien };
+  const roleTxt = { media_buyer: 'Media buyer', assistant: 'Assistant', lecture: 'Lecture seule', personnalise: 'Accès personnalisé' }[preset] || 'Membre';
+  const html = `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:24px;color:#111">
+    <h2 style="margin:0 0 12px">${ownerLabel} vous invite sur AdBoard</h2>
+    <p style="line-height:1.5">${ownerLabel} vous donne accès à son espace AdBoard (${roleTxt}) pour suivre et gérer les créatives publicitaires de sa marque.</p>
+    <p style="margin:24px 0"><a href="${lien}" style="background:#2D7FF9;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:bold">Accepter l'invitation</a></p>
+    <p style="line-height:1.5;color:#555;font-size:13px">Connectez-vous avec l'adresse Google ${email}. Ce lien est valable 7 jours.</p></div>`;
+  try {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST', headers: { Authorization: `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: 'AdStack <contact@adstackofficial.com>', to: [email], subject: `${ownerLabel} vous invite sur AdBoard`, html })
+    });
+    return { sent: r.ok, lien };
+  } catch (e) { return { sent: false, lien }; }
+}
+// Un membre peut-il faire cette action pour ce propriétaire ? (utilisé par /briefs/create)
+async function teamMemberCan(ownerId, memberId, perm) {
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?owner_id=eq.${ownerId}&member_id=eq.${memberId}&status=eq.active&select=permissions&limit=1`, { headers: teamSbHeaders() });
+    const rows = await r.json();
+    return !!(Array.isArray(rows) && rows[0] && rows[0].permissions && rows[0].permissions[perm]);
+  } catch (e) { return false; }
+}
 
 // MAJ pricing (oct. 2026, nouvelle grille : voir OFFERS) : tarifs en FCFA (price_fcfa = prix MENSUEL du forfait, y compris pour le
 // cycle trimestriel — c'est ce que Chariow facture chaque mois de la période, comme avant), volumes
@@ -5782,13 +5884,154 @@ if (req.method === 'POST' && req.url === '/reconcile-account') {
 // Même logique de calcul que computeCredits()/verifierPlafondProduction() côté client
 // (Platform.jsx) — DOIT rester identique, sinon le chiffre affiché au client contredirait ce
 // que le serveur autorise réellement.
+// ═════ ROUTES COMPTES ÉQUIPE (v5.68) ═════
+if (req.url.split('?')[0].startsWith('/team/')) {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', async () => {
+    const J = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
+    try {
+      const route = req.url.split('?')[0];
+      const me = await teamAuthUser(req);
+      if (!me) return J(401, { error: 'connexion_requise' });
+      let b = {}; try { b = body ? JSON.parse(body) : {}; } catch (_) {}
+
+      // Mes espaces : le mien + ceux où je suis membre + invitations en attente pour mon adresse
+      if (req.method === 'GET' && route === '/team/workspaces') {
+        const ownSub = await teamLatestSub(me.id);
+        const rows = await teamRows(me.id);
+        const mr = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?member_id=eq.${me.id}&status=eq.active&select=owner_id,role_preset,permissions`, { headers: teamSbHeaders() });
+        const mem = await mr.json();
+        const memberships = [];
+        for (const m of (Array.isArray(mem) ? mem : [])) {
+          const osub = await teamLatestSub(m.owner_id);
+          if (!osub || !osub.active) continue;
+          memberships.push({ ownerId: m.owner_id, ownerLabel: await teamOwnerLabel(m.owner_id), preset: m.role_preset, permissions: m.permissions || {} });
+        }
+        const pr = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?email=eq.${encodeURIComponent(me.email)}&status=eq.invited&select=id,owner_id,token_expires_at`, { headers: teamSbHeaders() });
+        const pend = await pr.json();
+        const pending = [];
+        for (const p of (Array.isArray(pend) ? pend : [])) {
+          if (p.token_expires_at && new Date(p.token_expires_at) < new Date()) continue;
+          pending.push({ id: p.id, ownerLabel: await teamOwnerLabel(p.owner_id) });
+        }
+        const max = ownSub && ownSub.plan in TEAM_SEATS ? TEAM_SEATS[ownSub.plan] : 0;
+        return J(200, { own: { hasPlan: !!(ownSub && ownSub.active), plan: ownSub ? ownSub.plan : null, seats: { used: rows.filter(r => r.status !== 'suspended').length, max } }, memberships, pending });
+      }
+
+      // Accepter une invitation (par lien, ou par identifiant si l'email Google correspond)
+      if (req.method === 'POST' && route === '/team/accept') {
+        let q;
+        if (b.token) q = `token_hash=eq.${teamHash(b.token)}`;
+        else if (b.id) q = `id=eq.${encodeURIComponent(b.id)}`;
+        else return J(400, { error: 'token_ou_id_requis' });
+        const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?${q}&select=*&limit=1`, { headers: teamSbHeaders() });
+        const rows = await r.json();
+        const inv = Array.isArray(rows) ? rows[0] : null;
+        if (!inv || inv.status === 'removed') return J(200, { error: 'invitation_invalide' });
+        if (inv.status === 'active' && inv.member_id === me.id) return J(200, { ok: true, ownerId: inv.owner_id, deja: true });
+        if (inv.status !== 'invited') return J(200, { error: 'invitation_invalide' });
+        if (inv.token_expires_at && new Date(inv.token_expires_at) < new Date()) return J(200, { error: 'invitation_expiree' });
+        if (String(inv.email).toLowerCase() !== me.email) return J(200, { error: 'email_different', attendu: String(inv.email).replace(/^(.).*(@.*)$/, '$1***$2') });
+        if (inv.owner_id === me.id) return J(200, { error: 'invitation_invalide' });
+        await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?id=eq.${inv.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ member_id: me.id, status: 'active', accepted_at: new Date().toISOString(), token_hash: null }) });
+        writeInAppNotification(inv.owner_id, `${me.email} a rejoint votre équipe sur AdBoard.`, 'info').catch(() => {});
+        return J(200, { ok: true, ownerId: inv.owner_id });
+      }
+
+      // ── Routes réservées au propriétaire de l'espace ──
+      const sub = await teamLatestSub(me.id);
+      if (!sub || !sub.active || !(sub.plan in TEAM_SEATS) || sub.type === 'pack') return J(200, { error: 'abonnement_requis' });
+      const max = TEAM_SEATS[sub.plan];
+
+      if (req.method === 'GET' && route === '/team/members') {
+        const rows = await teamEnforce(me.id, sub);
+        return J(200, { seats: { used: rows.filter(r => r.status !== 'suspended').length, max }, plan: sub.plan, members: rows.map(teamPublicRow) });
+      }
+
+      if (req.method === 'POST' && route === '/team/invite') {
+        const email = String(b.email || '').trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return J(200, { error: 'email_invalide' });
+        if (email === me.email) return J(200, { error: 'email_invalide' });
+        const preset = TEAM_PRESETS[b.preset] ? b.preset : 'media_buyer';
+        const rows = await teamEnforce(me.id, sub);
+        if (rows.filter(r => r.status !== 'suspended').length >= max) return J(200, { error: 'places_epuisees', max });
+        if (rows.some(r => String(r.email).toLowerCase() === email)) return J(200, { error: 'deja_invite' });
+        const token = crypto.randomBytes(24).toString('hex');
+        const ins = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members`, {
+          method: 'POST', headers: { ...teamSbHeaders(), Prefer: 'return=representation' },
+          body: JSON.stringify({ owner_id: me.id, email, role_preset: preset, permissions: teamCleanPerms(b.permissions, preset), status: 'invited', token_hash: teamHash(token), token_expires_at: new Date(Date.now() + 7 * 864e5).toISOString() })
+        });
+        if (!ins.ok) { console.error('[Team] insert', ins.status, await ins.text().catch(() => '')); return J(500, { error: 'creation_impossible' }); }
+        const created = (await ins.json())[0];
+        const mail = await teamSendInvite(email, me.name || (me.email.split('@')[0]), token, preset);
+        return J(200, { ok: true, member: teamPublicRow(created), emailEnvoye: mail.sent, lien: mail.lien });
+      }
+
+      if (req.method === 'POST' && route === '/team/update') {
+        const rows = await teamRows(me.id);
+        const m = rows.find(r => r.id === b.id);
+        if (!m) return J(200, { error: 'introuvable' });
+        const preset = TEAM_PRESETS[b.preset] ? b.preset : m.role_preset;
+        await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?id=eq.${m.id}&owner_id=eq.${me.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ role_preset: preset, permissions: teamCleanPerms(b.permissions, preset) }) });
+        return J(200, { ok: true });
+      }
+
+      if (req.method === 'POST' && route === '/team/remove') {
+        const rows = await teamRows(me.id);
+        const m = rows.find(r => r.id === b.id);
+        if (!m) return J(200, { error: 'introuvable' });
+        await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?id=eq.${m.id}&owner_id=eq.${me.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ status: 'removed', token_hash: null }) });
+        return J(200, { ok: true });
+      }
+
+      if (req.method === 'POST' && route === '/team/resend') {
+        const rows = await teamRows(me.id);
+        const m = rows.find(r => r.id === b.id && r.status === 'invited');
+        if (!m) return J(200, { error: 'introuvable' });
+        const token = crypto.randomBytes(24).toString('hex');
+        await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?id=eq.${m.id}&owner_id=eq.${me.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ token_hash: teamHash(token), token_expires_at: new Date(Date.now() + 7 * 864e5).toISOString() }) });
+        const mail = await teamSendInvite(m.email, me.name || (me.email.split('@')[0]), token, m.role_preset);
+        return J(200, { ok: true, emailEnvoye: mail.sent, lien: mail.lien });
+      }
+
+      return J(404, { error: 'route_inconnue' });
+    } catch (e) {
+      console.error('[Team] erreur :', e.message);
+      return J(500, { error: 'erreur_serveur' });
+    }
+  });
+  return;
+}
+
 if (req.method === 'POST' && req.url === '/briefs/create') {
   let body = '';
   req.on('data', c => body += c);
   req.on('end', async () => {
     try {
-      const { userId, productId, quantity } = JSON.parse(body);
-      if (!userId || !productId || !quantity) { res.writeHead(400); res.end(JSON.stringify({error:'userId, productId et quantity requis'})); return; }
+      const parsedBody = JSON.parse(body);
+      const { productId, quantity } = parsedBody;
+      const requesterId = parsedBody.userId;
+      if (!requesterId || !productId || !quantity) { res.writeHead(400); res.end(JSON.stringify({error:'userId, productId et quantity requis'})); return; }
+      // Espace d'équipe : un membre demande pour le compte du propriétaire (connexion vérifiée + autorisation requise).
+      // userId devient l'identifiant du propriétaire pour tout le reste (abonnement, crédits, création du brief).
+      let userId = requesterId;
+      let requestedBy = requesterId;
+      if (parsedBody.ownerId && parsedBody.ownerId !== requesterId) {
+        const meTeam = await teamAuthUser(req);
+        if (!meTeam || meTeam.id !== requesterId) { res.writeHead(401, {'Content-Type':'application/json'}); res.end(JSON.stringify({ error: 'connexion_requise' })); return; }
+        if (!(await teamMemberCan(parsedBody.ownerId, requesterId, 'request_production'))) { res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ error: 'non_autorise' })); return; }
+        userId = parsedBody.ownerId;
+      }
+      // Le produit doit appartenir à l'espace concerné (ancienne faille : aucun contrôle).
+      try {
+        const pr = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${encodeURIComponent(productId)}&user_id=eq.${userId}&select=id&limit=1`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } });
+        const prRows = await pr.json();
+        if (!Array.isArray(prRows) || !prRows.length) { res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ error: 'produit_introuvable' })); return; }
+      } catch (eProd) {
+        console.warn('[Briefs] vérification produit impossible :', eProd.message);
+        if (userId !== requesterId) { res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ error: 'produit_introuvable' })); return; }
+      }
       // Volumes de production : 6 à 24 visuels, par multiples de 3 (3 visuels par angle, 2 à 8 angles).
       // Les anciens clients AdBoard encore ouverts peuvent envoyer 9 ou 18 : toujours valides. Au-delà de 24 : refusé.
       if (!Number.isInteger(quantity) || quantity < 6 || quantity > 24 || quantity % 3 !== 0) {
@@ -5858,10 +6101,20 @@ if (req.method === 'POST' && req.url === '/briefs/create') {
       const insertRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs`, {
         method: 'POST',
         headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-        body: JSON.stringify({ user_id: userId, product_id: productId, quantity, status: 'pending', credits_used: quantity })
+        body: JSON.stringify({ user_id: userId, product_id: productId, quantity, status: 'pending', credits_used: quantity, requested_by: requestedBy })
       });
-      if (!insertRes.ok) { res.writeHead(500); res.end(JSON.stringify({ error: 'Échec de la création' })); return; }
-      const rows = await insertRes.json();
+      let insertFinal = insertRes;
+      if (!insertRes.ok) {
+        // Colonne requested_by absente (SQL équipe pas encore lancé) : on réessaie sans elle — jamais bloquer une demande pour ça.
+        insertFinal = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs`, {
+          method: 'POST',
+          headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+          body: JSON.stringify({ user_id: userId, product_id: productId, quantity, status: 'pending', credits_used: quantity })
+        });
+      }
+      if (!insertFinal.ok) { res.writeHead(500); res.end(JSON.stringify({ error: 'Échec de la création' })); return; }
+      const rows = await insertFinal.json();
+      if (requestedBy !== userId) writeInAppNotification(userId, `Un membre de votre équipe a demandé un lot de ${quantity} créatives.`, 'info').catch(() => {});
 
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true, brief: rows[0] }));
