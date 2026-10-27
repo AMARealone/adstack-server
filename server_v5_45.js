@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -32,8 +32,8 @@ const LOCATION = 'us-central1';
 // dans le code obligeait à un redéploiement à chaque changement.
 const MODELES = {
   analyste:     process.env.MODELE_ANALYSTE     || 'gemini-3.1-pro',     // hypothèse de marché (rédaction)
-  creative:     process.env.MODELE_CREATIVE     || 'gemini-2.5-pro',     // prompt de créative image
-  copywriter:   process.env.MODELE_COPYWRITER   || 'gemini-2.5-pro',     // ad copies
+  creative:     process.env.MODELE_CREATIVE     || 'gemini-3.1-pro',     // prompt de créative image (choix des aspects, structure du CT)
+  copywriter:   process.env.MODELE_COPYWRITER   || 'gemini-3.1-pro',     // ad copies
   raisonnement: process.env.MODELE_RAISONNEMENT || 'gemini-2.5-pro',     // défaut des tâches de raisonnement
   scraping:     process.env.MODELE_SCRAPING     || 'gemini-3.1-pro',     // recherche Google Search de l'analyste (données brutes)
   tendances:    process.env.MODELE_TENDANCES    || 'gemini-3-flash',     // analyste : classement de la catégorie pour Google Trends
@@ -588,23 +588,34 @@ async function vertexRequest(token, model, body, timeoutMs = 90000, typeAppel = 
 
 // Sonde au démarrage : vérifie en une fois quels modèles répondent réellement sur ce projet
 // et l'écrit dans le journal. Appels minuscules (quelques tokens) ; ne bloque jamais le démarrage.
+const _SONDE = {};   // modèle -> 'OK' | 'INDISPONIBLE (...)' | 'non vérifié (...)'
 async function sonderModeles() {
   try {
     const token = await getToken();
     const candidats = new Set();
-    for (const cle of ['analyste', 'scraping', 'tendances', 'documents']) for (const m of chaineModeles(MODELES[cle])) candidats.add(m);
+    for (const cle of Object.keys(MODELES)) for (const m of chaineModeles(MODELES[cle])) candidats.add(m);
     const lignes = [];
     for (const m of candidats) {
       try {
         await appelUnModele(token, m, { contents: [{ role: 'user', parts: [{ text: 'ok' }] }], generationConfig: { maxOutputTokens: 16 } }, 30000, 'sonde_modele');
-        lignes.push(m + ' : OK');
+        _SONDE[m] = 'OK'; lignes.push(m + ' : OK');
       } catch (e) {
-        if (_modeleIndispo(e)) { _MODELES_INDISPO.set(m, String(e.message).slice(0, 140)); lignes.push(m + ' : INDISPONIBLE (' + String(e.message).slice(0, 80) + ')'); }
-        else lignes.push(m + ' : non vérifié (' + String(e.message).slice(0, 60) + ')');
+        if (_modeleIndispo(e)) { _MODELES_INDISPO.set(m, String(e.message).slice(0, 140)); _SONDE[m] = 'INDISPONIBLE (' + String(e.message).slice(0, 80) + ')'; lignes.push(m + ' : ' + _SONDE[m]); }
+        else { _SONDE[m] = 'non vérifié (' + String(e.message).slice(0, 80) + ')'; lignes.push(m + ' : ' + _SONDE[m]); }
       }
     }
     console.log('[modeles] sonde : ' + lignes.join(' | '));
   } catch (e) { console.log('[modeles] sonde impossible : ' + e.message); }
+}
+// Pour chaque tâche : le modèle demandé, la chaîne de repli, et celui qui servira réellement d'après la sonde.
+function etatModeles() {
+  const taches = {};
+  for (const cle of Object.keys(MODELES)) {
+    const chaine = chaineModeles(MODELES[cle]);
+    const reel = chaine.find(m => !_MODELES_INDISPO.has(m)) || null;
+    taches[cle] = { demande: MODELES[cle], sert_reellement: reel, repli_actif: !!reel && reel !== MODELES[cle], etat: chaine.map(m => m + ' : ' + (_SONDE[m] || 'pas encore sondé')) };
+  }
+  return { sonde_terminee: Object.keys(_SONDE).length > 0, taches };
 }
 
 // Réessaie automatiquement en cas d'échec — le générateur démo doit TOUJOURS terminer sa
@@ -1385,6 +1396,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   // GET /health — Usine server status
+  if (req.method === 'GET' && req.url === '/modeles') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify(etatModeles(), null, 1));
+    return;
+  }
   if (req.method === 'GET' && req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true }));
