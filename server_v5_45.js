@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.68-equipe (comptes équipe : invitations, autorisations, places selon l'offre ; /briefs/create vérifie le propriétaire du produit et les droits des membres) | v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.70-offres (pack sans date de fin ; nouvelles offres : garantie 60 jours, PERF+ livré en 48h, ad copies et données marché pour GROWTH et SCALE, file prioritaire SCALE, pack One Shot reconnu, rappel de livraison selon l offre) | v5.68-equipe (comptes équipe : invitations, autorisations, places selon l'offre ; /briefs/create vérifie le propriétaire du produit et les droits des membres) | v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -110,9 +110,9 @@ async function getVenteCopyLive() {
 // recopié à la main. Si les prix changent un jour dans Platform.jsx, il faut répercuter ici aussi
 // (pas encore automatisé d'un seul côté — Platform.jsx reste la source visuelle, celle-ci la
 // source texte pour les chatbots) : à garder en tête, pas de mécanisme de sync auto pour l'instant.
-// MAJ pricing (oct. 2026, grille 180 000 / 330 000 / 600 000 FCFA par mois, abonnement MENSUEL uniquement, garantie 45 jours) :
+// MAJ pricing (oct. 2026, grille 180 000 / 330 000 / 600 000 FCFA par mois, abonnement MENSUEL uniquement, garantie 60 jours ; PERF+ livré en 48h, GROWTH et SCALE en 24h, SCALE en file prioritaire) :
 // tarifs en FCFA, volumes 24 / 48 / 96 créatives par MOIS (= 6 / 12 / 24 par semaine : 1 / 2 / 4 lots de 2 vidéos + 4 images),
-// production en 24h max. Les identifiants internes (starter / pro / scale) restent ceux de la base et des webhooks ; seuls les noms
+// production en 48h max pour PERF+, 24h max pour GROWTH et SCALE. Les identifiants internes (starter / pro / scale) restent ceux de la base et des webhooks ; seuls les noms
 // affichés changent (PERF+ / GROWTH / SCALE). L'offre trimestrielle n'est plus vendue (ses produits restent reconnus dans PLAN_MAP pour
 // les abonnés existants). Pack de 6 publicités à 50 000 FCFA pour ceux qui ne sont pas prêts pour un abonnement.
 // Chariow gère la devise réelle au moment du checkout.
@@ -122,22 +122,25 @@ const OFFERS = {
     id: 'starter', name: 'PERF+',
     tagline: 'Automatiser la production de vos créatives, tout en améliorant vos performances publicitaires.',
     imagesPerWeek: 6, batchesPerWeek: 1, creativesPerMonth: 24, videosPerMonth: 8, imagesPerMonth: 16, produitsPerWeek: '1',
-    garantie: 'Performance en 45 jours',
+    garantie: 'Performance en 60 jours',
+    equipe: '2', adCopies: false, donneesMarche: false, priorite: false,
     // prixImg = prix moyen par créative (vidéos + images), arrondi
-    monthly: { price: 180000, prixImg: 7500, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
+    monthly: { price: 180000, prixImg: 7500, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
   },
   pro: {
     id: 'pro', name: 'GROWTH', best: true,
     tagline: 'Accélérer la production et la croissance de votre marque, sans la prise de tête de gérer une équipe.',
     imagesPerWeek: 12, batchesPerWeek: 2, creativesPerMonth: 48, videosPerMonth: 16, imagesPerMonth: 32, produitsPerWeek: "jusqu'à 2",
-    garantie: 'Croissance en 45 jours',
+    garantie: 'Croissance en 60 jours',
+    equipe: '5', adCopies: true, donneesMarche: true, priorite: false,
     monthly: { price: 330000, prixImg: 6875, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
   },
   scale: {
     id: 'scale', name: 'SCALE',
     tagline: 'Exploiter plusieurs marchés avec des langues et cultures différentes, sans exploser vos coûts ni augmenter la complexité.',
     imagesPerWeek: 24, batchesPerWeek: 4, creativesPerMonth: 96, videosPerMonth: 32, imagesPerMonth: 64, produitsPerWeek: "jusqu'à 4",
-    garantie: 'Scaling en 45 jours',
+    garantie: 'Scaling en 60 jours',
+    equipe: '+10', adCopies: true, donneesMarche: true, priorite: true,
     monthly: { price: 600000, prixImg: 6250, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
   },
 };
@@ -149,7 +152,7 @@ const OFFERS = {
 function formatOffresPourPrompt(currency, currencyRate) {
   const fmt = (fcfa) => fcfa.toLocaleString('fr-FR') + ' FCFA';
   const { starter, pro, scale } = OFFERS;
-  const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (abonnement mensuel, résiliable à tout moment) · ${o.creativesPerMonth} créatives/mois (${o.videosPerMonth} vidéos + ${o.imagesPerMonth} images, ${o.batchesPerWeek} ${o.batchesPerWeek > 1 ? 'lots' : 'lot'}/semaine) · ${o.produitsPerWeek} produit${o.produitsPerWeek === '1' ? '' : 's'} couvert${o.produitsPerWeek === '1' ? '' : 's'}/semaine · stratégie marketing (recherche marché, concurrents, cible), ad copies, apprentissage continu et accès à AdBoard inclus · production en ${o.monthly.delivery} max après demande · garantie ${o.garantie}`;
+  const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (abonnement mensuel, résiliable à tout moment) · ${o.creativesPerMonth} créatives/mois (${o.videosPerMonth} vidéos + ${o.imagesPerMonth} images, ${o.batchesPerWeek} ${o.batchesPerWeek > 1 ? 'lots' : 'lot'}/semaine) · ${o.produitsPerWeek} produit${o.produitsPerWeek === '1' ? '' : 's'} couvert${o.produitsPerWeek === '1' ? '' : 's'}/semaine · stratégie marketing (recherche marché, concurrents, cible), apprentissage continu, AdBoard (gestion des créatives, données et produits)${o.adCopies ? ', ad copies et données marché détaillées (recommandations, opportunités)' : ' — SANS ad copies ni données marché détaillées (réservés à GROWTH et SCALE)'} · compte employé : ${o.equipe} membres ajoutables dans AdBoard · production en ${o.monthly.delivery} max après demande${o.priorite ? ' avec file prioritaire' : ''} · garantie ${o.garantie}`;
   // Offre de départ sans abonnement (affichée sous les 3 offres sur la page de vente) — ne jamais l'appeler « One Shot ».
   const depart = `Pack de 6 publicités (pour ceux qui ne sont pas prêts pour un abonnement) : ${fmt(PACK_PRIX_FCFA)}, une seule fois — 2 vidéos + 4 images optimisées conversion, reçues dans AdBoard. Si la personne s'abonne dans les 30 jours, ${fmt(PACK_PRIX_FCFA)} sont déduits de son 1er mois.`;
   return [ligne(starter), ligne(pro), ligne(scale), depart].join('\n');
@@ -860,13 +863,19 @@ const PLAN_MAP = {
   'prd_ljowq8':   { plan: 'starter', cycle: 'monthly',   credits_per_week: 6,  price_fcfa: 180000, prix_img: 7500 },
   'prd_wdya3v9h': { plan: 'starter', cycle: 'quarterly', credits_per_week: 6,  price_fcfa: 120000, prix_img: 5000 },
   'prd_34w031':   { plan: 'pro',     cycle: 'monthly',   credits_per_week: 12, price_fcfa: 330000, prix_img: 6875 },
-  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'quarterly', credits_per_week: 12, price_fcfa: 205000, prix_img: 4271 },
   'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly',   credits_per_week: 24, price_fcfa: 600000, prix_img: 6250 },
-  'prd_dn4fb72l': { plan: 'scale',   cycle: 'quarterly', credits_per_week: 24, price_fcfa: 345000, prix_img: 3594 },
+  // Offres « après One Shot » : même offre mensuelle, −50 000 FCFA sur le 1er mois (une fois dans la vie du client).
+  // Ces trois produits Chariow ont remplacé les anciens produits trimestriels (prd_lnp4ax0b, prd_dn4fb72l) ; les
+  // abonnements trimestriels déjà actifs ne sont pas touchés, ils restent en base tels quels.
+  'prd_yslvdsuz': { plan: 'starter', cycle: 'monthly', credits_per_week: 6,  price_fcfa: 130000, prix_img: 5417, promo_pack: true },
+  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'monthly', credits_per_week: 12, price_fcfa: 280000, prix_img: 5833, promo_pack: true },
+  'prd_dn4fb72l': { plan: 'scale',   cycle: 'monthly', credits_per_week: 24, price_fcfa: 550000, prix_img: 5729, promo_pack: true },
+  // Pack One Shot : 6 publicités (2 vidéos + 4 images) pour 50 000 FCFA, une seule fois, sans date de fin (la seule limite dans le temps est l'offre de 50 000 FCFA sur le 1er mois d'abonnement, 30 jours après l'achat, gérée par AdBoard).
+  'prd_rvd1qu12': { plan: 'discovery', cycle: 'one_shot', type: 'pack', total_credits: 6, credits_per_week: 0, price_fcfa: 50000, prix_img: 8333 },
 };
 
 // 'discovery' : libellé conservé uniquement pour d'anciens comptes déjà abonnés (offre retirée de la vente).
-const PLAN_LABELS = { discovery: 'Discovery', starter: 'PERF+', pro: 'GROWTH', scale: 'SCALE' };
+const PLAN_LABELS = { discovery: 'One Shot', starter: 'PERF+', pro: 'GROWTH', scale: 'SCALE' };
 
 // ── Séquence email de conversion J1/J5/J12/J21 ─────────────────────────────
 const SEQUENCE_PRICES = { starter: { price: OFFERS.starter.monthly.price, prixImg: OFFERS.starter.monthly.prixImg } }; // PERF+ (id interne starter) mensuel en FCFA, référence pour les prix cités dans les emails
@@ -1322,7 +1331,7 @@ async function activateSubscription(userId, planInfo, email, name, phone) {
   const now = new Date();
   // Durée : mensuel = 30 jours, trimestriel = 91 jours (le cycle long est passé d'annuel à trimestriel,
   // même logique de remise). Plus de pack ni de passerelle First Payment → Starter.
-  const dureeJours = cycle === 'quarterly' ? 91 : 30;
+  const dureeJours = isPack ? 3650 : (cycle === 'quarterly' ? 91 : 30);
   const expiresAt = new Date(now.getTime() + dureeJours * 24 * 60 * 60 * 1000);
   const totalCredits = totalCreditsAchat;
 
@@ -1338,12 +1347,18 @@ async function activateSubscription(userId, planInfo, email, name, phone) {
   if (isPack) {
     payload.type = 'pack';
     payload.total_credits = totalCredits;
+    // Réduction « après One Shot » : une seule fois dans la vie du client. Si cette personne a déjà payé un
+    // abonnement, ce pack ne lui ouvre pas la réduction (AdBoard lit ce drapeau).
+    try {
+      const rPrev = await fetch(`${SUPABASE_URL_INT}/rest/v1/transactions?user_id=eq.${userId}&plan=in.(starter,pro,scale)&select=plan&limit=1`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } });
+      if (rPrev.ok) { const prev = await rPrev.json(); if (Array.isArray(prev) && prev.length) payload.promo_pack_used = true; }
+    } catch (e) { console.warn('[Pack] vérification abonnement antérieur impossible:', e.message); }
     payload.credits_per_week = 0; // jamais utilisé en mode pack, mais gardé à 0 par sécurité si du code ancien le lit encore
   } else {
     payload.type = 'subscription';
     payload.credits_per_week = creditsPerWeek;
   }
-  const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?on_conflict=user_id`, {
+  const upsertSub = (body) => fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?on_conflict=user_id`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -1351,8 +1366,15 @@ async function activateSubscription(userId, planInfo, email, name, phone) {
       'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
       'Prefer': 'resolution=merge-duplicates,return=representation',
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(body)
   });
+  let r = await upsertSub(payload);
+  // Colonne promo_pack_used pas encore créée dans Supabase : on réessaie sans elle plutôt que de perdre l'activation.
+  if (!r.ok && 'promo_pack_used' in payload) {
+    console.warn('[Pack] colonne promo_pack_used absente — activation sans ce drapeau (exécuter le SQL supabase_promo_pack.sql)');
+    const { promo_pack_used, ...sansFlag } = payload;
+    r = await upsertSub(sansFlag);
+  }
   // Cause profonde corrigée (achat confirmé par notification mais jamais reflété dans l'app) :
   // le code affichait "✅ Pack activé" inconditionnellement, sans jamais vérifier que Supabase
   // avait réellement accepté la requête. Si l'upsert échouait (ex : contrainte unique manquante
@@ -4072,7 +4094,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         if (brief.client.user_id) {
           sendPushToUser(brief.client.user_id, {
             title: '📦 Demande reçue',
-            body: `Tes ${brief.quantity} visuels pour ${brief.product.nom} sont en cours — livraison sous 24h.`,
+            body: `Tes ${brief.quantity} visuels pour ${brief.product.nom} sont en cours — livraison sous ${brief.client.plan === 'starter' ? '48h' : '24h'}.`,
             url: '/adboard/tracking'
           }).catch(()=>{});
         }
@@ -4357,16 +4379,16 @@ if (req.method === 'GET' && req.url.startsWith('/cron/check-pending')) {
       await saveBriefs([b]);
     }
 
-    // ── Rappel 18h — livraison prévue à 24h, marge de 6h pour ne jamais oublier d'envoyer ──
-    const seuil18h = Date.now() - 18 * 60 * 60 * 1000;
+    // ── Rappel — livraison prévue à 24h (48h pour PERF+), marge de 6h pour ne jamais oublier d'envoyer ──
+    const heuresRappel = (b) => (b.client?.plan === 'starter' ? 42 : 18);
     const aRappeler = briefs.filter(b =>
       b.status !== 'done' && b.status !== 'cancelled' && b.status !== 'probleme_agence' &&
-      !b.delivery_reminder_sent && new Date(b.created_at).getTime() <= seuil18h
+      !b.delivery_reminder_sent && new Date(b.created_at).getTime() <= Date.now() - heuresRappel(b) * 60 * 60 * 1000
     );
     for (const b of aRappeler) {
       await notifierAdmin(
-        `📬 18h écoulées — envoie les livrables pour ${b.product?.nom || 'produit'}`,
-        `<p><strong>${b.product?.nom || 'Produit'}</strong> — 18h se sont écoulées depuis la demande. Encore 6h avant l'échéance des 24h — envoie les livrables au client.</p>
+        `📬 ${heuresRappel(b)}h écoulées — envoie les livrables pour ${b.product?.nom || 'produit'}`,
+        `<p><strong>${b.product?.nom || 'Produit'}</strong> — ${heuresRappel(b)}h se sont écoulées depuis la demande. Encore 6h avant l'échéance des ${heuresRappel(b) + 6}h — envoie les livrables au client.</p>
          <p>Client : ${b.client?.email || 'email non renseigné'} — ${b.quantity} images</p>
          <p><a href="https://www.adstackofficial.com/factory.html" style="color:#5B8DEF;">Ouvrir Factory pour envoyer les livrables →</a></p>
          <p style="color:#888;font-size:12px">Reçue le ${new Date(b.created_at).toLocaleString('fr-FR')} — id ${b.id}</p>`
@@ -4934,7 +4956,7 @@ ${formatOffresPourPrompt(currency, currencyRate)}
 Plan actif : ${hasSubscription ? planActive.toUpperCase() + ' — NE JAMAIS le reproposer' : 'AUCUN'}
 
 FORMATS : on produit des VIDÉOS et des IMAGES (pas seulement des images). Chaque lot hebdomadaire = 2 vidéos + 4 images
-(6 créatives), livré en 24h max. Quand on parle de ce qu'on livre, dis « créatives » (vidéos et images), jamais
+(6 créatives), livré en 24h max (48h max pour PERF+). Quand on parle de ce qu'on livre, dis « créatives » (vidéos et images), jamais
 « visuels » ni « images » tout court. Une vidéo ou une image, les deux sont pensées pour vendre sur Meta Ads.
 
 CHOISIR L'OFFRE : UN SEUL CRITÈRE = L'OBJECTIF DE LA PERSONNE (performance, croissance ou expansion)
@@ -4942,20 +4964,20 @@ Ne demande PLUS le chiffre d'affaires visé ni le budget pub — ces critères n
 Pose UNE seule question : « Ton objectif, c'est plutôt performer, grandir ou t'étendre ? » (reformule simplement).
 - PERFORMANCE → PERF+. Elle veut un compte pub qui performe et de meilleurs résultats. PERF+ lui donne tout
   ce qu'il faut : 24 créatives/mois (vidéos + images), 1 produit par semaine, un lot qui s'améliore chaque semaine
-  grâce à ce qui a marché. Garantie Performance en 45 jours.
+  grâce à ce qui a marché. Garantie Performance en 60 jours.
 - CROISSANCE → GROWTH. Elle veut aller plus vite, tester plus, trouver ses gagnants, sans gérer une équipe.
-  GROWTH = 48 créatives/mois, jusqu'à 2 produits par semaine. Garantie Croissance en 45 jours.
+  GROWTH = 48 créatives/mois, jusqu'à 2 produits par semaine. Garantie Croissance en 60 jours.
 - EXPANSION → SCALE. Elle est déjà sur un gros marché, OU elle veut attaquer plusieurs marchés en même temps
   (langues, cultures différentes) sans exploser ses coûts. SCALE = 96 créatives/mois, jusqu'à 4 produits par semaine.
-  Garantie Scaling en 45 jours.
+  Garantie Scaling en 60 jours.
 Si l'objectif n'est pas clair, pose la question de l'objectif avant de recommander. Si la personne le dit déjà,
 recommande directement UNE offre (jamais les trois en vrac) et explique en une phrase pourquoi elle lui correspond.
 Si elle hésite entre deux offres, tranche pour elle : « Pour ton objectif, je te conseille X. »
 (Ces critères servent uniquement si la personne n'a pas d'abonnement actif, ou veut changer de plan.)
 
-GARANTIE — « RÉSULTATS EN 45 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, elle porte un nom selon l'offre : Performance pour PERF+, Croissance pour GROWTH, Scaling pour SCALE, ne parle plus de « livraison 24h ou remboursé »
+GARANTIE — « RÉSULTATS EN 60 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, elle porte un nom selon l'offre : Performance pour PERF+, Croissance pour GROWTH, Scaling pour SCALE, ne parle plus de « livraison 24h ou remboursé »
 ni de « satisfait ou remboursé »). Fonctionnement : le client publie les créatives livrées et investit en publicité avec
-elles pendant 45 jours. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
+elles pendant 60 jours. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
 de son compte publicitaire Meta (dépenses du mois + résultats : ROAS, coût par achat…). On vérifie, puis on le rembourse
 l'intégralité de son paiement. Présente-la simplement, en 2 phrases, comme ce qui retire le risque.
 
@@ -5025,7 +5047,7 @@ Juste avant ou juste après avoir proposé le bouton checkout à une personne ch
 courtes ce qui se passe concrètement après le paiement — ça rassure, une personne qui va payer veut savoir à
 quoi s'attendre. Exemple de ton (adapte au contexte de la conversation, ne récite jamais mot pour mot) :
 "Une fois le paiement fait, tu es redirigé directement sur la plateforme — tu te connectes, tu ajoutes ton
-produit, tu demandes tes créatives, et notre équipe te livre du contenu qui performe sous 24h max."
+produit, tu demandes tes créatives, et notre équipe te livre du contenu qui performe sous 24h max (48h max pour PERF+)."
 Une touche d'enthousiasme sincère est bienvenue, avant ou après le paiement — pas dans chaque message, juste
 au bon moment (ex: quand elle vient de choisir une offre, ou juste avant le bouton) : une phrase courte du
 genre "hâte de voir tes ventes décoller" ou "on est chauds de bosser sur ton produit" — jamais forcé, jamais
@@ -5146,13 +5168,13 @@ sortir de la saturation et grandir durablement. Concrètement, ça veut dire : s
 amélioration continue, chaque semaine, portées par une vraie équipe derrière lui.
 Ne détaille jamais ça comme une liste de features ("analyse de marché + personas + angles + créatives") — c'est
 un mécanisme qu'il découvre une fois client, pas un argument de vente. Ce qui vend, c'est le résultat : passer
-un cap, se démarquer, ne plus deviner ce qui marche. Garantie : résultats en 45 jours
+un cap, se démarquer, ne plus deviner ce qui marche. Garantie : résultats en 60 jours
 ou remboursé.
 Reste volontairement vague sur qui on cible précisément (ne dis jamais "COD", "paiement à la livraison", ou
 "Afrique francophone" comme si c'était notre positionnement officiel) — "on aide des e-commerçants à grandir"
 suffit.
 FORMATS : on produit des VIDÉOS et des IMAGES (pas seulement des images). Chaque lot hebdomadaire = 2 vidéos + 4 images
-(6 créatives), livré en 24h max. Quand on parle de ce qu'on livre, dis « créatives » (vidéos et images), jamais
+(6 créatives), livré en 24h max (48h max pour PERF+). Quand on parle de ce qu'on livre, dis « créatives » (vidéos et images), jamais
 « visuels » ni « images » tout court. Une vidéo ou une image, les deux sont pensées pour vendre sur Meta Ads.
 
 Ne dis jamais qu'on utilise de l'IA, un modèle, ou toute formulation technique — c'est toujours "notre équipe"
@@ -5183,12 +5205,12 @@ Ne demande PLUS le chiffre d'affaires visé ni le budget pub — ces critères n
 Pose UNE seule question : « Ton objectif, c'est plutôt performer, grandir ou t'étendre ? » (reformule simplement).
 - PERFORMANCE → PERF+. Elle veut un compte pub qui performe et de meilleurs résultats. PERF+ lui donne tout
   ce qu'il faut : 24 créatives/mois (vidéos + images), 1 produit par semaine, un lot qui s'améliore chaque semaine
-  grâce à ce qui a marché. Garantie Performance en 45 jours.
+  grâce à ce qui a marché. Garantie Performance en 60 jours.
 - CROISSANCE → GROWTH. Elle veut aller plus vite, tester plus, trouver ses gagnants, sans gérer une équipe.
-  GROWTH = 48 créatives/mois, jusqu'à 2 produits par semaine. Garantie Croissance en 45 jours.
+  GROWTH = 48 créatives/mois, jusqu'à 2 produits par semaine. Garantie Croissance en 60 jours.
 - EXPANSION → SCALE. Elle est déjà sur un gros marché, OU elle veut attaquer plusieurs marchés en même temps
   (langues, cultures différentes) sans exploser ses coûts. SCALE = 96 créatives/mois, jusqu'à 4 produits par semaine.
-  Garantie Scaling en 45 jours.
+  Garantie Scaling en 60 jours.
 Si l'objectif n'est pas clair, pose la question de l'objectif avant de recommander. Si la personne le dit déjà,
 recommande directement UNE offre (jamais les trois en vrac) et explique en une phrase pourquoi elle lui correspond.
 Si elle hésite entre deux offres, tranche pour elle : « Pour ton objectif, je te conseille X. »
@@ -5196,19 +5218,19 @@ Si elle hésite entre deux offres, tranche pour elle : « Pour ton objectif, je 
 PAIEMENT ET GARANTIE
 Wave, Orange Money, Moov Money, MTN MoMo, Djamo — paiement sécurisé via Chariow. Abonnement mensuel résiliable
 à tout moment (pas d'engagement, abonnement mensuel uniquement). Garantie :
-résultats en 45 jours ou remboursé.
+résultats en 60 jours ou remboursé.
 
-GARANTIE — « RÉSULTATS EN 45 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, elle porte un nom selon l'offre : Performance pour PERF+, Croissance pour GROWTH, Scaling pour SCALE, ne parle plus de « livraison 24h ou remboursé »
+GARANTIE — « RÉSULTATS EN 60 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, elle porte un nom selon l'offre : Performance pour PERF+, Croissance pour GROWTH, Scaling pour SCALE, ne parle plus de « livraison 24h ou remboursé »
 ni de « satisfait ou remboursé »). Fonctionnement : le client publie les créatives livrées et investit en publicité avec
-elles pendant 45 jours. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
+elles pendant 60 jours. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
 de son compte publicitaire Meta (dépenses du mois + résultats : ROAS, coût par achat…). On vérifie, puis on le rembourse
 l'intégralité de son paiement. Présente-la simplement, en 2 phrases, comme ce qui retire le risque.
 
 PROCESS DE LIVRAISON (à jour — ne JAMAIS mentionner WhatsApp, Google Drive, ou un "formulaire de brief" à
 remplir, ce n'est plus le fonctionnement réel)
 Abonnement en ligne → connexion Google sur AdBoard → import du produit dans le catalogue, demande de créatives en
-2 clics → production → livraison directement dans AdBoard (Galerie Créatives, Ad Copies, Données Marché) sous
-24h, avec suivi de production en temps réel → cycle hebdomadaire.
+2 clics → production → livraison directement dans AdBoard (Galerie Créatives ; Ad Copies et Données Marché pour GROWTH et SCALE) sous
+24h (48h pour PERF+), avec suivi de production en temps réel → cycle hebdomadaire.
 
 DÉMO — CONTRAIREMENT À UNE ANCIENNE CONSIGNE, NE JAMAIS NIER OU ÉVITER LE SUJET
 Beaucoup de prospects arrivant sur cette page ont déjà reçu une démo personnalisée avant d'être relancés — si la
@@ -5916,6 +5938,33 @@ if (req.method === 'POST' && req.url === '/reconcile-account') {
 // (Platform.jsx) — DOIT rester identique, sinon le chiffre affiché au client contredirait ce
 // que le serveur autorise réellement.
 // ═════ ROUTES COMPTES ÉQUIPE (v5.68) ═════
+// ── Annulation d'une demande : le propriétaire, ou le membre qui a lui-même fait cette demande (jamais celle d'un autre) ──
+if (req.method === 'POST' && req.url.split('?')[0] === '/briefs/cancel') {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', async () => {
+    const J = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
+    try {
+      const me = await teamAuthUser(req);
+      if (!me) return J(401, { error: 'connexion_requise' });
+      let b = {}; try { b = JSON.parse(body); } catch (_) {}
+      if (!b.briefId) return J(400, { error: 'briefId_requis' });
+      const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${encodeURIComponent(b.briefId)}&select=id,user_id,status,requested_by&limit=1`, { headers: teamSbHeaders() });
+      const rows = await r.json();
+      const brief = Array.isArray(rows) ? rows[0] : null;
+      if (!brief) return J(200, { error: 'introuvable' });
+      const permis = brief.user_id === me.id || (brief.requested_by === me.id && await teamMemberCan(brief.user_id, me.id, 'request_production'));
+      if (!permis) return J(200, { error: 'non_autorise' });
+      if (brief.status !== 'pending') return J(200, { error: 'non_annulable' });
+      const u = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${brief.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ status: 'cancelled', cancelled_at: new Date().toISOString() }) });
+      if (!u.ok) return J(500, { error: 'annulation_impossible' });
+      if (brief.user_id !== me.id) writeInAppNotification(brief.user_id, `${me.email} a annulé une demande de production.`, 'info').catch(() => {});
+      return J(200, { ok: true });
+    } catch (e) { console.error('[Briefs/cancel]', e.message); return J(500, { error: 'reseau' }); }
+  });
+  return;
+}
+
 // ── Historique de facturation du propriétaire (jamais la commission interne) ──
 if (req.method === 'GET' && req.url.split('?')[0] === '/billing/history') {
   (async () => {
