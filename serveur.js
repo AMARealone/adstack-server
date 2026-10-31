@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.71-4offres (4 offres TEST / PERF+ / GROWTH / SCALE, créatives accordées au mois, fin du One Shot) | v5.70-offres (pack sans date de fin ; nouvelles offres : garantie 60 jours, PERF+ livré en 48h, ad copies et données marché pour GROWTH et SCALE, file prioritaire SCALE, pack One Shot reconnu, rappel de livraison selon l offre) | v5.68-equipe (comptes équipe : invitations, autorisations, places selon l'offre ; /briefs/create vérifie le propriétaire du produit et les droits des membres) | v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -110,61 +110,37 @@ async function getVenteCopyLive() {
 // recopié à la main. Si les prix changent un jour dans Platform.jsx, il faut répercuter ici aussi
 // (pas encore automatisé d'un seul côté — Platform.jsx reste la source visuelle, celle-ci la
 // source texte pour les chatbots) : à garder en tête, pas de mécanisme de sync auto pour l'instant.
-// MAJ pricing (29 oct. 2026) : 4 offres MENSUELLES — TEST 75 000 / PERF+ 140 000 / GROWTH 260 000 / SCALE 480 000 FCFA par mois.
-// Volumes par MOIS : 12 / 24 / 48 / 96 créatives (un lot = 6 créatives = 2 vidéos + 4 images), TOUTES disponibles dès le paiement :
-// le client les demande lot après lot, quand il veut, dans la limite de 6 lots (36 créatives) par 24 h. Plus de logique hebdomadaire, plus de One Shot.
-// Production en 48h pour TEST et PERF+, 24h pour GROWTH et SCALE (SCALE en file prioritaire). Ad Copies et Données Marché à partir de PERF+.
-// Garantie 60 jours à partir de PERF+ (pas pour TEST). Les identifiants internes (test / starter / pro / scale) restent ceux de la base et des webhooks ;
-// seuls les noms affichés changent. L'offre trimestrielle n'est plus vendue (ses produits restent reconnus dans PLAN_MAP pour les abonnés existants).
+// MAJ pricing (oct. 2026, grille 180 000 / 330 000 / 600 000 FCFA par mois, abonnement MENSUEL uniquement, garantie 45 jours) :
+// tarifs en FCFA, volumes 24 / 48 / 96 créatives par MOIS (= 6 / 12 / 24 par semaine : 1 / 2 / 4 lots de 2 vidéos + 4 images),
+// production en 24h max. Les identifiants internes (starter / pro / scale) restent ceux de la base et des webhooks ; seuls les noms
+// affichés changent (PERF+ / GROWTH / SCALE). L'offre trimestrielle n'est plus vendue (ses produits restent reconnus dans PLAN_MAP pour
+// les abonnés existants). Pack de 6 publicités à 50 000 FCFA pour ceux qui ne sont pas prêts pour un abonnement.
 // Chariow gère la devise réelle au moment du checkout.
+const PACK_PRIX_FCFA = 50000;
 const OFFERS = {
-  test: {
-    id: 'test', name: 'TEST',
-    tagline: 'Tester et trouver vos premières créatives gagnantes sur votre produit.',
-    lotsPerMonth: 2, creativesPerMonth: 12, videosPerMonth: 4, imagesPerMonth: 8, produits: 2,
-    garantie: null,
-    equipe: '0', adCopies: false, donneesMarche: false, priorite: false,
-    monthly: { price: 75000, prixImg: 6250, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_yslvdsuz/checkout' },
-  },
   starter: {
     id: 'starter', name: 'PERF+',
     tagline: 'Automatiser la production de vos créatives, tout en améliorant vos performances publicitaires.',
-    lotsPerMonth: 4, creativesPerMonth: 24, videosPerMonth: 8, imagesPerMonth: 16, produits: 4,
-    garantie: 'Performance en 60 jours',
-    equipe: '2', adCopies: true, donneesMarche: true, priorite: false,
+    imagesPerWeek: 6, batchesPerWeek: 1, creativesPerMonth: 24, videosPerMonth: 8, imagesPerMonth: 16, produitsPerWeek: '1',
+    garantie: 'Performance en 45 jours',
     // prixImg = prix moyen par créative (vidéos + images), arrondi
-    monthly: { price: 140000, prixImg: 5833, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
+    monthly: { price: 180000, prixImg: 7500, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
   },
   pro: {
     id: 'pro', name: 'GROWTH', best: true,
-    tagline: 'Accélérer la production créative et la croissance de votre marque, sans la prise de tête de gérer une équipe.',
-    lotsPerMonth: 8, creativesPerMonth: 48, videosPerMonth: 16, imagesPerMonth: 32, produits: 8,
-    garantie: 'Croissance en 60 jours',
-    equipe: '5', adCopies: true, donneesMarche: true, priorite: false,
-    monthly: { price: 260000, prixImg: 5417, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
+    tagline: 'Accélérer la production et la croissance de votre marque, sans la prise de tête de gérer une équipe.',
+    imagesPerWeek: 12, batchesPerWeek: 2, creativesPerMonth: 48, videosPerMonth: 16, imagesPerMonth: 32, produitsPerWeek: "jusqu'à 2",
+    garantie: 'Croissance en 45 jours',
+    monthly: { price: 330000, prixImg: 6875, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
   },
   scale: {
     id: 'scale', name: 'SCALE',
     tagline: 'Exploiter plusieurs marchés avec des langues et cultures différentes, sans exploser vos coûts ni augmenter la complexité.',
-    lotsPerMonth: 16, creativesPerMonth: 96, videosPerMonth: 32, imagesPerMonth: 64, produits: 16,
-    garantie: 'Scaling en 60 jours',
-    equipe: '+10', adCopies: true, donneesMarche: true, priorite: true,
-    monthly: { price: 480000, prixImg: 5000, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
+    imagesPerWeek: 24, batchesPerWeek: 4, creativesPerMonth: 96, videosPerMonth: 32, imagesPerMonth: 64, produitsPerWeek: "jusqu'à 4",
+    garantie: 'Scaling en 45 jours',
+    monthly: { price: 600000, prixImg: 6250, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
   },
 };
-
-// Créatives accordées par période d'abonnement : source unique pour toutes les jauges côté serveur.
-const CREDITS_MOIS = { test: 12, starter: 24, pro: 48, scale: 96 };
-function creditsDuForfait(sub) {
-  const base = CREDITS_MOIS[sub && sub.plan] ?? (((sub && sub.credits_per_week) || 0) * 4);
-  return (sub && sub.cycle === 'quarterly') ? base * 3 : base;
-}
-// Créatives utilisées sur la période en cours : seules les demandes faites depuis le dernier paiement comptent.
-function creditsUtiliseesPeriode(sub, briefs, compte) {
-  const debut = sub && sub.started_at ? new Date(sub.started_at).getTime() : 0;
-  return briefs.filter(b => compte(b) && (!debut || new Date(b.created_at || 0).getTime() >= debut - 60000))
-               .reduce((sum, b) => sum + (b.credits_used || 9), 0);
-}
 
 // Formatte le bloc offres pour un prompt système (utilisé par Ava ET le chatbot page de vente).
 // Plus de conversion de devise ici : tarifs fixes en FCFA pour tout le monde, quelle que
@@ -172,9 +148,11 @@ function creditsUtiliseesPeriode(sub, briefs, compte) {
 // paramètres pour ne pas casser les appelants existants le temps de les nettoyer).
 function formatOffresPourPrompt(currency, currencyRate) {
   const fmt = (fcfa) => fcfa.toLocaleString('fr-FR') + ' FCFA';
-  const { test, starter, pro, scale } = OFFERS;
-  const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (abonnement mensuel, résiliable à tout moment) · ${o.creativesPerMonth} créatives/mois, toutes disponibles dès le paiement (${o.lotsPerMonth} lots de 2 vidéos + 4 images, à demander quand le client veut, jusqu'à 6 lots par jour) · jusqu'à ${o.produits} produits couverts · stratégie marketing${o.adCopies ? ', Ad Copies et Données Marché' : ' (sans Ad Copies ni Données Marché)'} · AdBoard${o.equipe !== '0' ? ` · ${o.equipe} membre(s) d'équipe` : ' (sans compte employé)'} · production en ${o.monthly.delivery}${o.priorite ? ' avec file prioritaire' : ''} · ${o.garantie ? 'garantie ' + o.garantie : 'pas de garantie de résultats'}`;
-  return [ligne(test), ligne(starter), ligne(pro), ligne(scale)].join('\n');
+  const { starter, pro, scale } = OFFERS;
+  const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (abonnement mensuel, résiliable à tout moment) · ${o.creativesPerMonth} créatives/mois (${o.videosPerMonth} vidéos + ${o.imagesPerMonth} images, ${o.batchesPerWeek} ${o.batchesPerWeek > 1 ? 'lots' : 'lot'}/semaine) · ${o.produitsPerWeek} produit${o.produitsPerWeek === '1' ? '' : 's'} couvert${o.produitsPerWeek === '1' ? '' : 's'}/semaine · stratégie marketing (recherche marché, concurrents, cible), ad copies, apprentissage continu et accès à AdBoard inclus · production en ${o.monthly.delivery} max après demande · garantie ${o.garantie}`;
+  // Offre de départ sans abonnement (affichée sous les 3 offres sur la page de vente) — ne jamais l'appeler « One Shot ».
+  const depart = `Pack de 6 publicités (pour ceux qui ne sont pas prêts pour un abonnement) : ${fmt(PACK_PRIX_FCFA)}, une seule fois — 2 vidéos + 4 images optimisées conversion, reçues dans AdBoard. Si la personne s'abonne dans les 30 jours, ${fmt(PACK_PRIX_FCFA)} sont déduits de son 1er mois.`;
+  return [ligne(starter), ligne(pro), ligne(scale), depart].join('\n');
 }
 
 // Domaines suggérés à Gemini grounding pour la recherche ciblée (V4 — 6 sources enrichies)
@@ -741,161 +719,22 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 // finaliser un magiclink (auth/v1/verify) se font avec la clé anon, jamais la service key.
 const SUPABASE_ANON_KEY_INT = process.env.SUPABASE_ANON_KEY || '';
 
-// ═════════════════════════════════════════════════════════════════════════════
-// COMPTES ÉQUIPE (v5.68) — le propriétaire (celui qui a payé) invite des membres ; chaque membre a ses
-// autorisations. Toutes les écritures passent par le serveur (clé de service) ; la base (RLS) protège la lecture.
-// ═════════════════════════════════════════════════════════════════════════════
-const TEAM_SEATS = { starter: 2, pro: 5, scale: 15 };   // PERF+ / GROWTH / SCALE
-// Pas de droit « supprimer » : un membre ne supprime ni n'annule jamais rien, quoi qu'il arrive.
-const TEAM_PERM_KEYS = ['view', 'download', 'edit_products', 'request_production'];
-const TEAM_PRESETS = {
-  media_buyer: { view: true, download: true, edit_products: false, request_production: true },
-  assistant:   { view: true, download: true, edit_products: true,  request_production: true },
-  lecture:     { view: true, download: true, edit_products: false, request_production: false },
-  personnalise:{ view: true, download: true, edit_products: false, request_production: false },
-};
-const teamSbHeaders = () => ({ apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' });
-const teamHash = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
-
-async function teamAuthUser(req) {
-  const tok = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
-  if (!tok || !SUPABASE_ANON_KEY_INT) return null;
-  try {
-    const r = await fetch(`${SUPABASE_URL_INT}/auth/v1/user`, { headers: { apikey: SUPABASE_ANON_KEY_INT, Authorization: `Bearer ${tok}` } });
-    if (!r.ok) return null;
-    const u = await r.json();
-    return u && u.id ? { id: u.id, email: String(u.email || '').toLowerCase(), name: (u.user_metadata && (u.user_metadata.full_name || u.user_metadata.name)) || '' } : null;
-  } catch (e) { return null; }
-}
-function teamCleanPerms(perms, preset) {
-  const base = TEAM_PRESETS[preset] || TEAM_PRESETS.personnalise;
-  const out = {};
-  TEAM_PERM_KEYS.forEach(k => { out[k] = (perms && Object.prototype.hasOwnProperty.call(perms, k)) ? !!perms[k] : !!base[k]; });
-  out.view = true;                                   // sans lecture, un membre ne servirait à rien
-  if (out.edit_products || out.request_production || out.delete) out.download = out.download !== false;
-  return out;
-}
-async function teamLatestSub(ownerId) {
-  try {
-    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?user_id=eq.${ownerId}&select=*&order=started_at.desc&limit=1`, { headers: teamSbHeaders() });
-    const rows = await r.json();
-    const s = Array.isArray(rows) ? rows[0] : null;
-    if (!s) return null;
-    const expired = s.expires_at && new Date(s.expires_at) < new Date();
-    return { plan: s.plan, type: s.type, active: !!s.active && !expired };
-  } catch (e) { return null; }
-}
-async function teamOwnerLabel(ownerId) {
-  try {
-    const r = await fetch(`${SUPABASE_URL_INT}/auth/v1/admin/users/${ownerId}`, { headers: teamSbHeaders() });
-    const u = await r.json();
-    const meta = u.user_metadata || {};
-    return meta.full_name || meta.name || (u.email ? u.email.split('@')[0] : 'Propriétaire');
-  } catch (e) { return 'Propriétaire'; }
-}
-async function teamRows(ownerId) {
-  const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?owner_id=eq.${ownerId}&status=neq.removed&select=*&order=created_at.asc`, { headers: teamSbHeaders() });
-  const rows = await r.json();
-  return Array.isArray(rows) ? rows : [];
-}
-// Applique la limite de places selon l'offre : les derniers ajoutés sont suspendus (jamais supprimés) si l'offre baisse ; réactivés si la place revient.
-async function teamEnforce(ownerId, sub) {
-  let rows = await teamRows(ownerId);
-  if (!sub || !sub.plan || !(sub.plan in TEAM_SEATS)) return rows;
-  const max = TEAM_SEATS[sub.plan];
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    const devraitEtreSuspendu = i >= max;
-    let nouveau = null;
-    if (devraitEtreSuspendu && (row.status === 'active' || row.status === 'invited')) nouveau = 'suspended';
-    if (!devraitEtreSuspendu && row.status === 'suspended') nouveau = row.member_id ? 'active' : 'invited';
-    if (nouveau) {
-      await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?id=eq.${row.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ status: nouveau }) });
-      row.status = nouveau;
-    }
-  }
-  return rows;
-}
-const teamNoDelete = (p) => { const o = { ...(p || {}) }; delete o.delete; return o; };
-const teamPublicRow = (m) => ({ id: m.id, email: m.email, role_preset: m.role_preset, permissions: teamNoDelete(m.permissions), status: m.status, invited_at: m.invited_at, accepted_at: m.accepted_at });
-async function teamSendInvite(email, ownerLabel, token, preset) {
-  const RESEND_KEY = process.env.RESEND_API_KEY;
-  const lien = `https://adstackofficial.com/adboard?invite=${token}`;
-  if (!RESEND_KEY) return { sent: false, lien };
-  const roleTxt = { media_buyer: 'Media buyer', assistant: 'Assistant', lecture: 'Lecture seule', personnalise: 'Accès personnalisé' }[preset] || 'Membre';
-  const html = `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:24px;color:#111">
-    <h2 style="margin:0 0 12px">${ownerLabel} vous invite sur AdBoard</h2>
-    <p style="line-height:1.5">${ownerLabel} vous donne accès à son espace AdBoard (${roleTxt}) pour suivre et gérer les créatives publicitaires de sa marque.</p>
-    <p style="margin:24px 0"><a href="${lien}" style="background:#2D7FF9;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:bold">Accepter l'invitation</a></p>
-    <p style="line-height:1.5;color:#555;font-size:13px">Connectez-vous avec l'adresse Google ${email}. Ce lien est valable 7 jours.</p></div>`;
-  try {
-    const r = await fetch('https://api.resend.com/emails', {
-      method: 'POST', headers: { Authorization: `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'AdStack <contact@adstackofficial.com>', to: [email], subject: `${ownerLabel} vous invite sur AdBoard`, html })
-    });
-    return { sent: r.ok, lien };
-  } catch (e) { return { sent: false, lien }; }
-}
-// Un membre peut-il faire cette action pour ce propriétaire ? (utilisé par /briefs/create)
-async function teamMemberCan(ownerId, memberId, perm) {
-  if (!TEAM_PERM_KEYS.includes(perm)) return false; // jamais de suppression pour un membre
-  try {
-    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?owner_id=eq.${ownerId}&member_id=eq.${memberId}&status=eq.active&select=permissions&limit=1`, { headers: teamSbHeaders() });
-    const rows = await r.json();
-    return !!(Array.isArray(rows) && rows[0] && rows[0].permissions && rows[0].permissions[perm]);
-  } catch (e) { return false; }
-}
-
-// Livraison : prévient par notification ET par email les membres d'équipe qui travaillent sur les créatives
-// (media buyer, assistant, personnalisé avec demande/édition). Les membres en lecture seule ne sont pas dérangés.
-async function teamNotifyDelivery(ownerId, produit) {
-  try {
-    const rows = await teamRows(ownerId);
-    const dests = rows.filter(r => r.status === 'active' && r.member_id && r.email && r.permissions && (r.permissions.request_production || r.permissions.edit_products));
-    if (!dests.length) return;
-    const ownerLabel = await teamOwnerLabel(ownerId);
-    const RESEND_KEY = process.env.RESEND_API_KEY;
-    const lien = 'https://adstackofficial.com/adboard/gallery';
-    for (const m of dests) {
-      notifyUserBoth(m.member_id, { title: '🎉 Créatives prêtes', body: `Les créatives pour ${produit} sont livrées dans l'espace de ${ownerLabel}.`, url: '/adboard/gallery', type: 'brief' }).catch(() => {});
-      if (!RESEND_KEY) continue;
-      const html = `<div style="font-family:-apple-system,Arial,sans-serif;max-width:520px;margin:0 auto;color:#222;font-size:15px;line-height:1.65;">
-        <p>Bonjour,</p>
-        <p>Les créatives pour <b>${produit}</b> viennent d'être livrées dans l'espace AdBoard de <b>${ownerLabel}</b>.</p>
-        <p style="margin:24px 0"><a href="${lien}" style="background:#2D7FF9;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:bold">Voir les créatives</a></p>
-        <p style="color:#777;font-size:13px">Connectez-vous avec l'adresse ${m.email}.</p></div>`;
-      try {
-        const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from: 'AdStack <contact@adstackofficial.com>', to: [m.email], subject: `Créatives prêtes : ${produit}`, html }) });
-        if (!r.ok) console.error('[Team] email livraison', r.status, (await r.text().catch(() => '')).slice(0, 150));
-      } catch (e) { console.error('[Team] email livraison :', e.message); }
-    }
-  } catch (e) { console.error('[Team] notification livraison :', e.message); }
-}
-
 // MAJ pricing (oct. 2026, nouvelle grille : voir OFFERS) : tarifs en FCFA (price_fcfa = prix MENSUEL du forfait, y compris pour le
 // cycle trimestriel — c'est ce que Chariow facture chaque mois de la période, comme avant), volumes
 // 6 / 12 / 24 créatives par semaine. L'ancien paiement d'essai (First Payment prd_ywk7ik14 + Completion
 // prd_c0ga3snp) est retiré : ces deux produits ne sont plus reconnus par le webhook.
 // Factures PDF / emails de confirmation / colonne montant_fcfa : les valeurs sont maintenant bien en FCFA.
 const PLAN_MAP = {
-  // Les 4 offres vendues (29 oct. 2026). credits_per_week n'est plus utilisé pour calculer les créatives (voir CREDITS_MOIS) :
-  // gardé par compatibilité avec la base (colonne existante) — valeur = créatives du mois ÷ 4.
-  'prd_yslvdsuz': { plan: 'test',    cycle: 'monthly',   credits_per_week: 3,  price_fcfa: 75000,  prix_img: 6250 },
-  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly',   credits_per_week: 6,  price_fcfa: 140000, prix_img: 5833 },
-  'prd_34w031':   { plan: 'pro',     cycle: 'monthly',   credits_per_week: 12, price_fcfa: 260000, prix_img: 5417 },
-  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly',   credits_per_week: 24, price_fcfa: 480000, prix_img: 5000 },
-  // Anciens produits Chariow : NON vendus, reconnus seulement pour ne perdre aucun paiement d'un ancien lien encore ouvert.
-  // À archiver dans Chariow. (prd_yslvdsuz était l'ancien produit « PERF+ après One Shot » : il est désormais TEST.)
+  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly',   credits_per_week: 6,  price_fcfa: 180000, prix_img: 7500 },
   'prd_wdya3v9h': { plan: 'starter', cycle: 'quarterly', credits_per_week: 6,  price_fcfa: 120000, prix_img: 5000 },
-  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'monthly',   credits_per_week: 12, price_fcfa: 280000, prix_img: 5833 },
-  'prd_dn4fb72l': { plan: 'scale',   cycle: 'monthly',   credits_per_week: 24, price_fcfa: 550000, prix_img: 5729 },
-  // Ancien pack One Shot (6 publicités, 50 000 FCFA) : retiré de la vente, reconnu pour les anciens clients et d'éventuels liens encore ouverts.
-  'prd_rvd1qu12': { plan: 'discovery', cycle: 'one_shot', type: 'pack', total_credits: 6, credits_per_week: 0, price_fcfa: 50000, prix_img: 8333 },
+  'prd_34w031':   { plan: 'pro',     cycle: 'monthly',   credits_per_week: 12, price_fcfa: 330000, prix_img: 6875 },
+  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'quarterly', credits_per_week: 12, price_fcfa: 205000, prix_img: 4271 },
+  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly',   credits_per_week: 24, price_fcfa: 600000, prix_img: 6250 },
+  'prd_dn4fb72l': { plan: 'scale',   cycle: 'quarterly', credits_per_week: 24, price_fcfa: 345000, prix_img: 3594 },
 };
 
 // 'discovery' : libellé conservé uniquement pour d'anciens comptes déjà abonnés (offre retirée de la vente).
-const PLAN_LABELS = { discovery: 'Pack (ancienne offre)', test: 'TEST', starter: 'PERF+', pro: 'GROWTH', scale: 'SCALE' };
+const PLAN_LABELS = { discovery: 'Discovery', starter: 'PERF+', pro: 'GROWTH', scale: 'SCALE' };
 
 // ── Séquence email de conversion J1/J5/J12/J21 ─────────────────────────────
 const SEQUENCE_PRICES = { starter: { price: OFFERS.starter.monthly.price, prixImg: OFFERS.starter.monthly.prixImg } }; // PERF+ (id interne starter) mensuel en FCFA, référence pour les prix cités dans les emails
@@ -1102,7 +941,8 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
       doc.on('error', reject);
 
       const cycleLabel = isPack ? 'Achat unique' : (cycle === 'quarterly' ? 'Abonnement trimestriel' : 'Abonnement mensuel');
-      const totalImages = isPack ? (totalCredits || 0) : creditsDuForfait({ plan, cycle, credits_per_week: creditsPerWeek });
+      const weeksInPeriod = Math.round((expiresAt.getTime() - paymentDate.getTime()) / (7*24*60*60*1000));
+      const totalImages = isPack ? (totalCredits || 0) : weeksInPeriod * (creditsPerWeek || 0);
 
       // Header
       doc.fontSize(22).fillColor('#5B8DEF').font('Helvetica-Bold').text('AdStack', 50, 50);
@@ -1130,7 +970,7 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
       // Table row
       const rowY = tableTop + 32;
       doc.fontSize(11).fillColor('#111111').font('Helvetica-Bold').text(PLAN_LABELS[plan] || plan, 50, rowY);
-      doc.fontSize(9).fillColor('#888888').font('Helvetica').text(isPack ? `${cycleLabel} — sans engagement` : `${cycleLabel} — créatives disponibles dès le paiement`, 50, rowY + 15);
+      doc.fontSize(9).fillColor('#888888').font('Helvetica').text(isPack ? `${cycleLabel} — sans engagement` : `${cycleLabel} — livraisons hebdomadaires`, 50, rowY + 15);
       doc.fontSize(10).fillColor('#333333').text(
         `${paymentDate.toLocaleDateString('fr-FR')} → ${expiresAt.toLocaleDateString('fr-FR')}`, 320, rowY
       );
@@ -1148,9 +988,10 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
         prixImg ? `Prix moyen par créative : ${formatFCFA(prixImg)} FCFA` : null,
         'Analyse de marché (cibles, concurrents, tendances)',
       ].filter(Boolean) : [
-        `${totalImages} créatives (vidéos et images) incluses sur cette période, à demander lot après lot quand vous voulez`,
+        `${creditsPerWeek || 0} images publicitaires livrées chaque semaine`,
+        `Soit environ ${weeksInPeriod} semaine${weeksInPeriod>1?'s':''} sur cette période — ${totalImages} images au total`,
         prixImg ? `Prix moyen par créative : ${formatFCFA(prixImg)} FCFA` : null,
-        (plan === 'test' ? 'Stratégie marketing : recherche sur le marché, les concurrents et la cible' : 'Ad Copies et Données Marché (cibles, concurrents, tendances)'),
+        'Données marché hebdomadaires (cibles, concurrents, tendances)',
       ].filter(Boolean);
       doc.fontSize(9).fillColor('#444444').font('Helvetica');
       detailLines.forEach((line, i) => {
@@ -1195,7 +1036,7 @@ async function sendPaymentConfirmationEmail({ email, name, plan, cycle, creditsP
   const cycleLabel = isPack ? 'achat unique' : (cycle === 'quarterly' ? 'trimestriel' : 'mensuel');
   const ligneImages = isPack
     ? `<p style="margin:4px 0;"><strong>Images incluses :</strong> ${totalCredits || 0} au total (utilisables librement jusqu'à expiration)</p>`
-    : `<p style="margin:4px 0;"><strong>Créatives incluses :</strong> ${creditsDuForfait({ plan, cycle, credits_per_week: creditsPerWeek })} sur cette période, disponibles dès maintenant</p>`;
+    : `<p style="margin:4px 0;"><strong>Images livrées :</strong> ${creditsPerWeek || 0} / semaine</p>`;
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;">
       <h2 style="color:#5B8DEF;">Paiement confirmé ✅</h2>
@@ -1349,7 +1190,7 @@ async function activateSubscription(userId, planInfo, email, name, phone) {
   const now = new Date();
   // Durée : mensuel = 30 jours, trimestriel = 91 jours (le cycle long est passé d'annuel à trimestriel,
   // même logique de remise). Plus de pack ni de passerelle First Payment → Starter.
-  const dureeJours = isPack ? 3650 : (cycle === 'quarterly' ? 91 : 30);
+  const dureeJours = cycle === 'quarterly' ? 91 : 30;
   const expiresAt = new Date(now.getTime() + dureeJours * 24 * 60 * 60 * 1000);
   const totalCredits = totalCreditsAchat;
 
@@ -1370,7 +1211,7 @@ async function activateSubscription(userId, planInfo, email, name, phone) {
     payload.type = 'subscription';
     payload.credits_per_week = creditsPerWeek;
   }
-  const upsertSub = (body) => fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?on_conflict=user_id`, {
+  const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?on_conflict=user_id`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -1378,9 +1219,8 @@ async function activateSubscription(userId, planInfo, email, name, phone) {
       'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
       'Prefer': 'resolution=merge-duplicates,return=representation',
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(payload)
   });
-  const r = await upsertSub(payload);
   // Cause profonde corrigée (achat confirmé par notification mais jamais reflété dans l'app) :
   // le code affichait "✅ Pack activé" inconditionnellement, sans jamais vérifier que Supabase
   // avait réellement accepté la requête. Si l'upsert échouait (ex : contrainte unique manquante
@@ -1424,7 +1264,6 @@ async function activateSubscription(userId, planInfo, email, name, phone) {
         console.error('[Transactions] ❌ ÉCHEC écriture:', rTx.status, errTx.slice(0, 500));
       } else {
         console.log(`[Transactions] ✅ Loguée : ${plan} (${cycle}) — ${priceFcfa} FCFA`);
-        writeInAppNotification(userId, `Paiement reçu : forfait ${({test:'TEST',starter:'PERF+',pro:'GROWTH',scale:'SCALE'})[plan] || plan} — ${Math.round(priceFcfa).toLocaleString('fr-FR')} FCFA. Retrouvez-le dans Facturation.`, 'info').catch(() => {});
       }
     } catch(e) { console.error('[Transactions] Erreur log:', e.message); }
   }
@@ -1505,6 +1344,21 @@ async function traiterAttributionCRM(userId) {
   } catch(e) {
     console.error('[Attribution CRM] Erreur:', e.message);
   }
+}
+
+// ── Accès administrateur au CRM : soit la clé du prospecteur (scripts du PC), soit la session Supabase de l'administrateur.
+// La session est vérifiée auprès de Supabase à chaque appel (jamais décodée à la main) et doit appartenir à l'email admin.
+const CRM_ADMIN_EMAIL = (process.env.CRM_ADMIN_EMAIL || 'thefirstquality01@gmail.com').toLowerCase();
+async function crmAdminOk(req) {
+  if (req.headers['x-api-key'] === 'adstack2024xProspectionKey99') return true;
+  const tok = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
+  if (!tok) return false;
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/auth/v1/user`, { headers: { apikey: SUPABASE_ANON_KEY_INT, Authorization: `Bearer ${tok}` } });
+    if (!r.ok) return false;
+    const me = await r.json();
+    return (me.email || '').toLowerCase() === CRM_ADMIN_EMAIL;
+  } catch (_) { return false; }
 }
 
 async function findUserByEmail(email) {
@@ -1929,6 +1783,9 @@ const server = http.createServer(async (req, res) => {
     r.end();
   }
 
+  if (req.url.startsWith('/prospector/') && ['/prospector/start','/prospector/stop','/prospector/status'].some(r => req.url.startsWith(r)) && !(await crmAdminOk(req))) {
+    res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'unauthorized' })); return;
+  }
   if (req.method === 'POST' && req.url.startsWith('/prospector/start')) {
     relayToProspector(req.url, 'POST', res);
     return;
@@ -2399,6 +2256,50 @@ ${pageText}`;
   // que l'Usine faisait auparavant depuis le navigateur.
   // ═══════════════════════════════════════════════════════════════════
 
+  // ── Réservation d'appel depuis le formulaire du site ──
+  // Avant : la page de vente lisait et modifiait la table des prospects avec la clé publique, ce qui obligeait à laisser
+  // cette table ouverte à tout le monde. Maintenant tout passe par ici (clé service) : la page n'a plus aucun accès direct.
+  // Les champs de la fiche sont construits ICI à partir de valeurs validées — jamais copiés tels quels depuis la page.
+  if (req.method === 'POST' && req.url === '/reserver-appel') {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 20000) req.destroy(); });
+    req.on('end', async () => {
+      const rep = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
+      try {
+        const d = JSON.parse(body || '{}');
+        const txt = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, max);
+        const digits = String(d.digits || '').replace(/\D/g, '');
+        const slot = Number(d.slot);
+        if (digits.length < 9 || digits.length > 15) return rep(400, { ok: false, error: 'numéro invalide' });
+        if (!Number.isFinite(slot) || slot < Date.now() - 60000 || slot > Date.now() + 14 * 86400000) return rep(400, { ok: false, error: 'créneau invalide' });
+        const nom = txt(d.nom, 120), marque = txt(d.marque, 120), marche = txt(d.marche, 60), lien = txt(d.lien, 300);
+        if (nom.length < 2 || !marche || lien.length < 4) return rep(400, { ok: false, error: 'champs manquants' });
+        const now = new Date().toISOString();
+        const infos = { appel_reserve: true, appel_reserve_at: now, appel_programme_at: new Date(slot).toISOString(), source: 'formulaire_site', form_nom: nom, form_marche: marche, form_ca_objectif: txt(d.ca, 80), form_budget_pub: txt(d.bud, 80), appel_meet_ok: true, form_boutique: lien };
+        const H = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' };
+        const lu = await fetch(`${SUPABASE_URL_INT}/rest/v1/prospects?lien_wa=ilike.*${digits}*&select=id,statut,notes&limit=1`, { headers: H });
+        if (!lu.ok) return rep(502, { ok: false, error: 'lecture ' + lu.status });
+        const ex = (await lu.json())[0];
+        if (ex) {
+          let n = {}; try { n = JSON.parse(ex.notes || '{}') || {}; } catch (_) { n = { texte_ancien: ex.notes || '' }; }
+          ['appel_fait', 'appel_fait_at', 'appel_via', 'pas_interesse', 'pas_interesse_at', 'closing_etat', 'closing_at'].forEach(k => { delete n[k]; });
+          Object.assign(n, infos);
+          const upd = { notes: JSON.stringify(n) };
+          if (ex.statut === 'a_contacter' || ex.statut === 'archive') upd.statut = 'en_suivi';
+          const pr = await fetch(`${SUPABASE_URL_INT}/rest/v1/prospects?id=eq.${ex.id}`, { method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify(upd) });
+          if (!pr.ok) return rep(502, { ok: false, error: 'maj ' + pr.status });
+        } else {
+          const ins = await fetch(`${SUPABASE_URL_INT}/rest/v1/prospects`, { method: 'POST', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify({ nom_marque: marque || nom, produit: '', pays: marche, lien_wa: 'https://wa.me/' + digits, page_produit: lien, statut: 'en_suivi', score: 0, date_collecte: now.slice(0, 10), notes: JSON.stringify(infos) }) });
+          if (!ins.ok) return rep(502, { ok: false, error: 'insertion ' + ins.status });
+        }
+        const chk = await fetch(`${SUPABASE_URL_INT}/rest/v1/prospects?lien_wa=ilike.*${digits}*&select=id&limit=1`, { headers: H });
+        const ok = chk.ok && (await chk.json()).length > 0;
+        return rep(ok ? 200 : 502, { ok });
+      } catch (e) { console.error('/reserver-appel:', e.message); return rep(500, { ok: false, error: 'erreur' }); }
+    });
+    return;
+  }
+
   // ── Insertion prospect depuis le prospecteur (contournement temporaire) ──
   // Le rôle anon est bloqué par un bug apparent côté PostgREST (policy/GRANT corrects,
   // confirmés par test SQL direct, mais l'API rejette quand même en 42501 — signalé à
@@ -2430,31 +2331,6 @@ ${pageText}`;
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true }));
       } catch(e) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, error: e.message }));
-      }
-    });
-    return;
-  }
-
-  // ── Archivage en lot de prospects 'a_contacter' non qualifiés (script verifier_a_contacter) ──
-  // Ne touche QUE les prospects encore au statut a_contacter : jamais un suivi, un lead ou un client.
-  if (req.method === 'POST' && req.url === '/prospector/archive-leads') {
-    let body = '';
-    req.on('data', c => body += c);
-    req.on('end', async () => {
-      try {
-        const ids = (JSON.parse(body).ids || []).map(Number).filter(n => Number.isInteger(n) && n > 0).slice(0, 2000);
-        if (!ids.length) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true, archives: 0 })); return; }
-        const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/prospects?id=in.(${ids.join(',')})&statut=eq.a_contacter`, {
-          method: 'PATCH',
-          headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
-          body: JSON.stringify({ statut: 'archive' })
-        });
-        const rows = r.ok ? await r.json() : [];
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: r.ok, archives: Array.isArray(rows) ? rows.length : 0, status: r.status }));
-      } catch (e) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: e.message }));
       }
@@ -4125,7 +4001,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         if (brief.client.user_id) {
           sendPushToUser(brief.client.user_id, {
             title: '📦 Demande reçue',
-            body: `Tes ${brief.quantity} visuels pour ${brief.product.nom} sont en cours — livraison sous ${['starter','test'].includes(brief.client.plan) ? '48h' : '24h'}.`,
+            body: `Tes ${brief.quantity} visuels pour ${brief.product.nom} sont en cours — livraison sous 24h.`,
             url: '/adboard/tracking'
           }).catch(()=>{});
         }
@@ -4297,7 +4173,7 @@ if (req.method === 'POST' && req.url === '/create-checkout') {
       } else if (data?.data?.step === 'completed') {
         // Produit déjà acheté ou gratuit → activer directement
         if (user_id && plan) {
-          const planInfo = PLAN_MAP[product_id] || { plan, cycle: 'monthly', credits_per_week: ({ test: 3, starter: 6, pro: 12, scale: 24 })[plan] || 3, price_fcfa: 0, prix_img: 0 };
+          const planInfo = PLAN_MAP[product_id] || { plan, cycle: 'monthly', credits_per_week: ({ starter: 6, pro: 12, scale: 24 })[plan] || 6, price_fcfa: 0, prix_img: 0 };
           await activateSubscription(user_id, planInfo, email);
         }
         res.writeHead(200, {'Content-Type':'application/json'});
@@ -4410,16 +4286,16 @@ if (req.method === 'GET' && req.url.startsWith('/cron/check-pending')) {
       await saveBriefs([b]);
     }
 
-    // ── Rappel — livraison prévue à 24h (48h pour TEST et PERF+), marge de 6h pour ne jamais oublier d'envoyer ──
-    const heuresRappel = (b) => (['starter','test'].includes(b.client?.plan) ? 42 : 18);
+    // ── Rappel 18h — livraison prévue à 24h, marge de 6h pour ne jamais oublier d'envoyer ──
+    const seuil18h = Date.now() - 18 * 60 * 60 * 1000;
     const aRappeler = briefs.filter(b =>
       b.status !== 'done' && b.status !== 'cancelled' && b.status !== 'probleme_agence' &&
-      !b.delivery_reminder_sent && new Date(b.created_at).getTime() <= Date.now() - heuresRappel(b) * 60 * 60 * 1000
+      !b.delivery_reminder_sent && new Date(b.created_at).getTime() <= seuil18h
     );
     for (const b of aRappeler) {
       await notifierAdmin(
-        `📬 ${heuresRappel(b)}h écoulées — envoie les livrables pour ${b.product?.nom || 'produit'}`,
-        `<p><strong>${b.product?.nom || 'Produit'}</strong> — ${heuresRappel(b)}h se sont écoulées depuis la demande. Encore 6h avant l'échéance des ${heuresRappel(b) + 6}h — envoie les livrables au client.</p>
+        `📬 18h écoulées — envoie les livrables pour ${b.product?.nom || 'produit'}`,
+        `<p><strong>${b.product?.nom || 'Produit'}</strong> — 18h se sont écoulées depuis la demande. Encore 6h avant l'échéance des 24h — envoie les livrables au client.</p>
          <p>Client : ${b.client?.email || 'email non renseigné'} — ${b.quantity} images</p>
          <p><a href="https://www.adstackofficial.com/factory.html" style="color:#5B8DEF;">Ouvrir Factory pour envoyer les livrables →</a></p>
          <p style="color:#888;font-size:12px">Reçue le ${new Date(b.created_at).toLocaleString('fr-FR')} — id ${b.id}</p>`
@@ -4889,7 +4765,7 @@ if (req.method === 'POST' && req.url === '/chat') {
       const userName = user?.name?.split(' ')[0] || '';
       const planLabel = subscription?.plan ? `${subscription.plan.charAt(0).toUpperCase()+subscription.plan.slice(1)}` : 'aucun';
       const prodList = products.map(p => `- ${p.nom} (${p.pays}, ${p.pricing})`).join('\n') || 'Aucun produit créé';
-      const creditsInfo = subscription?.active ? `${credits.available||0} créatives disponibles ce mois-ci` : 'pas encore abonné';
+      const creditsInfo = subscription?.active ? `${credits.available||0} créatives disponibles cette semaine` : 'pas encore abonné';
 
       const msgCount = history.length;
       const hasSubscription = subscription?.active;
@@ -4909,18 +4785,17 @@ if (req.method === 'POST' && req.url === '/chat') {
       if (!isConnected) {
         situationAction = "Pas encore connecté → priorité : proposer de se connecter avec Google (bouton login).";
       } else if (!hasSubscription && !everTransacted) {
-        situationAction = "Jamais transigé, aucune offre active → proposer le plan adapté à son besoin (TEST pour tester un produit, PERF+ / GROWTH / SCALE pour produire en volume), avec le bouton checkout correspondant.";
+        situationAction = "Jamais transigé, aucune offre active → proposer le plan adapté à son besoin (PERF+ / GROWTH / SCALE), avec le bouton checkout correspondant.";
       } else if (!hasSubscription && everTransacted) {
-        situationAction = "Déjà transigé au moins une fois (abonnement actuel expiré/inactif) → proposer un plan (TEST/PERF+/GROWTH/SCALE selon son besoin) pour reprendre, avec le bouton checkout correspondant.";
+        situationAction = "Déjà transigé au moins une fois (abonnement actuel expiré/inactif) → proposer un plan (PERF+/GROWTH/SCALE selon son besoin) pour reprendre, avec le bouton checkout correspondant.";
       } else if (products.length === 0) {
         situationAction = `${isPackClient ? 'Ancien pack' : 'Abonné actif'} mais AUCUN produit créé → dire d'aller créer un produit (bouton openProductForm). C'est la seule étape qui manque avant de pouvoir demander des créatives. Ne JAMAIS proposer un plan, il en a déjà un actif.`;
       } else if ((credits.available||0) >= 6) {
-        situationAction = `${isPackClient ? 'Ancien pack' : 'Abonné actif'}, ${products.length} produit(s) créé(s), ${credits.available} créatives DISPONIBLES MAINTENANT → dire d'aller sur "Mes Produits" et cliquer "Demander une production" sur le produit concerné, livraison sous 24h (48h pour TEST et PERF+). NE JAMAIS proposer un plan ni un renouvellement, il en a déjà des images disponibles.`;
+        situationAction = `${isPackClient ? 'Ancien pack' : 'Abonné actif'}, ${products.length} produit(s) créé(s), ${credits.available} créatives DISPONIBLES MAINTENANT → dire d'aller sur "Mes Produits" et cliquer "Demander une production" sur le produit concerné, livraison sous 24h. NE JAMAIS proposer un plan ni un renouvellement, il en a déjà des images disponibles.`;
       } else if (isPackClient) {
-        situationAction = `Ancien pack ponctuel (offre retirée de la vente) dont toutes les créatives sont utilisées (0 disponible) → ce pack n'inclut JAMAIS de nouvelles créatives automatiquement. Proposer un abonnement (TEST en priorité, bouton checkout:test) pour continuer à recevoir des créatives chaque mois. NE JAMAIS dire d'attendre un renouvellement automatique — ça n'existe pas pour ce pack.`;
+        situationAction = `Ancien pack ponctuel (offre retirée de la vente) dont toutes les créatives sont utilisées (0 disponible) → ce pack n'inclut JAMAIS de nouvelles créatives automatiquement. Proposer un abonnement (Starter en priorité, bouton checkout:starter) pour continuer à recevoir des créatives chaque semaine. NE JAMAIS dire d'attendre un renouvellement automatique — ça n'existe pas pour ce pack.`;
       } else {
-        const _ordre = ['test','starter','pro','scale']; const _suiv = _ordre[_ordre.indexOf(subscription?.plan) + 1];
-        situationAction = `Abonné actif, ${products.length} produit(s) créé(s), mais toutes les créatives du mois sont utilisées (0 disponible) → l'abonnement reste actif, les créatives reviennent au renouvellement mensuel${credits.nextCreditDate ? ' (' + new Date(credits.nextCreditDate).toLocaleDateString('fr-FR',{day:'numeric',month:'long'}) + ')' : ''}. Si le client a terminé ses créatives plus vite que prévu, son offre est trop petite pour son rythme : proposer calmement de passer à l'offre du dessus${_suiv ? ' (bouton checkout:' + _suiv + ')' : ' (il est déjà sur l\'offre maximale : proposer d\'en parler à l\'équipe sur WhatsApp)'}. NE JAMAIS parler de "renouveler" comme si l'abonnement avait expiré.`;
+        situationAction = `Abonné actif, ${products.length} produit(s) créé(s), mais créatives de la semaine épuisées (0 disponible) → c'est normal et temporaire (l'abonnement lui-même reste actif, ce n'est qu'une pause hebdomadaire). Dire que les prochaines créatives arrivent à la prochaine livraison hebdomadaire${credits.nextCreditDate ? ' (' + new Date(credits.nextCreditDate).toLocaleDateString('fr-FR',{day:'numeric',month:'long'}) + ')' : ''}. NE JAMAIS proposer de reprendre un plan ou de "renouveler" — l'abonnement n'a pas expiré, c'est juste le cycle hebdomadaire normal.`;
       }
 
       const { currency='XOF', currencyRate=1 } = context;
@@ -4987,34 +4862,29 @@ OFFRES (source unique OFFERS, toujours dans la devise de l'utilisateur)
 ${formatOffresPourPrompt(currency, currencyRate)}
 Plan actif : ${hasSubscription ? planActive.toUpperCase() + ' — NE JAMAIS le reproposer' : 'AUCUN'}
 
-FORMATS : on produit des VIDÉOS et des IMAGES (pas seulement des images). Chaque lot = 2 vidéos + 4 images
-(6 créatives), livré en 24h max pour GROWTH et SCALE (48h max pour TEST et PERF+). Les créatives du mois sont toutes disponibles
-dès le paiement : le client les demande lot après lot, quand il veut (jusqu'à 6 lots par jour). Quand on parle de ce qu'on livre, dis « créatives » (vidéos et images), jamais
+FORMATS : on produit des VIDÉOS et des IMAGES (pas seulement des images). Chaque lot hebdomadaire = 2 vidéos + 4 images
+(6 créatives), livré en 24h max. Quand on parle de ce qu'on livre, dis « créatives » (vidéos et images), jamais
 « visuels » ni « images » tout court. Une vidéo ou une image, les deux sont pensées pour vendre sur Meta Ads.
 
-CHOISIR L'OFFRE : UN SEUL CRITÈRE = L'OBJECTIF DE LA PERSONNE (tester, performance, croissance ou expansion)
+CHOISIR L'OFFRE : UN SEUL CRITÈRE = L'OBJECTIF DE LA PERSONNE (performance, croissance ou expansion)
 Ne demande PLUS le chiffre d'affaires visé ni le budget pub — ces critères n'existent plus.
-Pose UNE seule question : « Ton objectif, c'est plutôt tester, performer, grandir ou t'étendre ? » (reformule simplement).
-- TESTER → TEST. Elle veut d'abord tester un produit et trouver ses premières créatives gagnantes, avec un petit budget.
-  TEST = 12 créatives/mois (2 lots de 2 vidéos + 4 images), jusqu'à 2 produits, stratégie marketing, AdBoard.
-  Pas de garantie de résultats, pas d'Ad Copies ni de Données Marché. Si elle termine ses créatives vite, c'est que TEST est trop
-  petit pour son rythme : propose PERF+.
-- PERFORMANCE → PERF+. Elle veut un compte pub qui performe et de meilleurs résultats. PERF+ = 24 créatives/mois
-  (vidéos + images), jusqu'à 4 produits, Ad Copies et Données Marché, des lots qui s'améliorent grâce à ce qui a marché.
-  Garantie Performance en 60 jours.
+Pose UNE seule question : « Ton objectif, c'est plutôt performer, grandir ou t'étendre ? » (reformule simplement).
+- PERFORMANCE → PERF+. Elle veut un compte pub qui performe et de meilleurs résultats. PERF+ lui donne tout
+  ce qu'il faut : 24 créatives/mois (vidéos + images), 1 produit par semaine, un lot qui s'améliore chaque semaine
+  grâce à ce qui a marché. Garantie Performance en 45 jours.
 - CROISSANCE → GROWTH. Elle veut aller plus vite, tester plus, trouver ses gagnants, sans gérer une équipe.
-  GROWTH = 48 créatives/mois, jusqu'à 8 produits, production en 24h. Garantie Croissance en 60 jours.
+  GROWTH = 48 créatives/mois, jusqu'à 2 produits par semaine. Garantie Croissance en 45 jours.
 - EXPANSION → SCALE. Elle est déjà sur un gros marché, OU elle veut attaquer plusieurs marchés en même temps
-  (langues, cultures différentes) sans exploser ses coûts. SCALE = 96 créatives/mois, jusqu'à 16 produits, file prioritaire.
-  Garantie Scaling en 60 jours.
+  (langues, cultures différentes) sans exploser ses coûts. SCALE = 96 créatives/mois, jusqu'à 4 produits par semaine.
+  Garantie Scaling en 45 jours.
 Si l'objectif n'est pas clair, pose la question de l'objectif avant de recommander. Si la personne le dit déjà,
 recommande directement UNE offre (jamais les trois en vrac) et explique en une phrase pourquoi elle lui correspond.
 Si elle hésite entre deux offres, tranche pour elle : « Pour ton objectif, je te conseille X. »
 (Ces critères servent uniquement si la personne n'a pas d'abonnement actif, ou veut changer de plan.)
 
-GARANTIE — « RÉSULTATS EN 60 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, elle porte un nom selon l'offre : Performance pour PERF+, Croissance pour GROWTH, Scaling pour SCALE ; l'offre TEST n'a pas de garantie de résultats, ne parle plus de « livraison 24h ou remboursé »
+GARANTIE — « RÉSULTATS EN 45 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, elle porte un nom selon l'offre : Performance pour PERF+, Croissance pour GROWTH, Scaling pour SCALE, ne parle plus de « livraison 24h ou remboursé »
 ni de « satisfait ou remboursé »). Fonctionnement : le client publie les créatives livrées et investit en publicité avec
-elles pendant 60 jours. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
+elles pendant 45 jours. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
 de son compte publicitaire Meta (dépenses du mois + résultats : ROAS, coût par achat…). On vérifie, puis on le rembourse
 l'intégralité de son paiement. Présente-la simplement, en 2 phrases, comme ce qui retire le risque.
 
@@ -5048,7 +4918,7 @@ RÈGLE 4 — BÉNÉFICES PAS FEATURES (dans le discours, jamais dans les faits �
 On est là pour la croissance de la personne, pas pour lui vendre des fichiers. Ne mets jamais en avant "analyse de
 marché" ou "personas" comme argument de vente. Ce qui la convainc : performer, grandir ou s'étendre selon son
 objectif. Le volume (ex : « 48 créatives par mois, vidéos et images ») se cite en une courte phrase, comme preuve.
-❌ "36 images, avec analyse de marché et personas" → ✅ "On teste ce qui marche pour toi, lot après lot,
+❌ "36 images/semaine, avec analyse de marché et personas" → ✅ "On teste ce qui marche pour toi, chaque semaine,
 et on garde ce qui convertit — c'est ça qui te fait grandir."
 Désir profond : plus de ventes, moins de galère, liberté financière.
 
@@ -5060,7 +4930,7 @@ ne pas bousculer un visiteur encore hésitant qui découvre l'offre — jamais �
 demande explicitement. En dehors de ce cas : 1 seul bouton par message, jamais 2 de suite.
 Prospect chaud → bouton checkout DIRECT au message suivant.
 [BTN:login] [BTN:openProductForm]
-[BTN:checkout:test] [BTN:checkout:starter] [BTN:checkout:pro] [BTN:checkout:scale]
+[BTN:checkout:starter] [BTN:checkout:pro] [BTN:checkout:scale]
 [BTN:navigate:suivi] [BTN:navigate:galerie]
 [BTN:whatsapp]
 INTERDIT ABSOLU : n'écris JAMAIS un lien markdown ([texte](url)) ni une URL brute (chariow, mychariow, ou
@@ -5084,7 +4954,7 @@ Juste avant ou juste après avoir proposé le bouton checkout à une personne ch
 courtes ce qui se passe concrètement après le paiement — ça rassure, une personne qui va payer veut savoir à
 quoi s'attendre. Exemple de ton (adapte au contexte de la conversation, ne récite jamais mot pour mot) :
 "Une fois le paiement fait, tu es redirigé directement sur la plateforme — tu te connectes, tu ajoutes ton
-produit, tu demandes tes créatives, et notre équipe te livre du contenu qui performe sous 24h max (48h max pour PERF+)."
+produit, tu demandes tes créatives, et notre équipe te livre du contenu qui performe sous 24h max."
 Une touche d'enthousiasme sincère est bienvenue, avant ou après le paiement — pas dans chaque message, juste
 au bon moment (ex: quand elle vient de choisir une offre, ou juste avant le bouton) : une phrase courte du
 genre "hâte de voir tes ventes décoller" ou "on est chauds de bosser sur ton produit" — jamais forcé, jamais
@@ -5205,14 +5075,13 @@ sortir de la saturation et grandir durablement. Concrètement, ça veut dire : s
 amélioration continue, chaque semaine, portées par une vraie équipe derrière lui.
 Ne détaille jamais ça comme une liste de features ("analyse de marché + personas + angles + créatives") — c'est
 un mécanisme qu'il découvre une fois client, pas un argument de vente. Ce qui vend, c'est le résultat : passer
-un cap, se démarquer, ne plus deviner ce qui marche. Garantie : résultats en 60 jours
+un cap, se démarquer, ne plus deviner ce qui marche. Garantie : résultats en 45 jours
 ou remboursé.
 Reste volontairement vague sur qui on cible précisément (ne dis jamais "COD", "paiement à la livraison", ou
 "Afrique francophone" comme si c'était notre positionnement officiel) — "on aide des e-commerçants à grandir"
 suffit.
-FORMATS : on produit des VIDÉOS et des IMAGES (pas seulement des images). Chaque lot = 2 vidéos + 4 images
-(6 créatives), livré en 24h max pour GROWTH et SCALE (48h max pour TEST et PERF+). Les créatives du mois sont toutes disponibles
-dès le paiement : le client les demande lot après lot, quand il veut (jusqu'à 6 lots par jour). Quand on parle de ce qu'on livre, dis « créatives » (vidéos et images), jamais
+FORMATS : on produit des VIDÉOS et des IMAGES (pas seulement des images). Chaque lot hebdomadaire = 2 vidéos + 4 images
+(6 créatives), livré en 24h max. Quand on parle de ce qu'on livre, dis « créatives » (vidéos et images), jamais
 « visuels » ni « images » tout court. Une vidéo ou une image, les deux sont pensées pour vendre sur Meta Ads.
 
 Ne dis jamais qu'on utilise de l'IA, un modèle, ou toute formulation technique — c'est toujours "notre équipe"
@@ -5238,21 +5107,17 @@ OFFRES (source unique OFFERS, toujours dans la devise du prospect) — CHACUNE P
 ne les présente jamais comme interchangeables :
 ${formatOffresPourPrompt(currency, currencyRate)}
 
-CHOISIR L'OFFRE : UN SEUL CRITÈRE = L'OBJECTIF DE LA PERSONNE (tester, performance, croissance ou expansion)
+CHOISIR L'OFFRE : UN SEUL CRITÈRE = L'OBJECTIF DE LA PERSONNE (performance, croissance ou expansion)
 Ne demande PLUS le chiffre d'affaires visé ni le budget pub — ces critères n'existent plus.
-Pose UNE seule question : « Ton objectif, c'est plutôt tester, performer, grandir ou t'étendre ? » (reformule simplement).
-- TESTER → TEST. Elle veut d'abord tester un produit et trouver ses premières créatives gagnantes, avec un petit budget.
-  TEST = 12 créatives/mois (2 lots de 2 vidéos + 4 images), jusqu'à 2 produits, stratégie marketing, AdBoard.
-  Pas de garantie de résultats, pas d'Ad Copies ni de Données Marché. Si elle termine ses créatives vite, c'est que TEST est trop
-  petit pour son rythme : propose PERF+.
-- PERFORMANCE → PERF+. Elle veut un compte pub qui performe et de meilleurs résultats. PERF+ = 24 créatives/mois
-  (vidéos + images), jusqu'à 4 produits, Ad Copies et Données Marché, des lots qui s'améliorent grâce à ce qui a marché.
-  Garantie Performance en 60 jours.
+Pose UNE seule question : « Ton objectif, c'est plutôt performer, grandir ou t'étendre ? » (reformule simplement).
+- PERFORMANCE → PERF+. Elle veut un compte pub qui performe et de meilleurs résultats. PERF+ lui donne tout
+  ce qu'il faut : 24 créatives/mois (vidéos + images), 1 produit par semaine, un lot qui s'améliore chaque semaine
+  grâce à ce qui a marché. Garantie Performance en 45 jours.
 - CROISSANCE → GROWTH. Elle veut aller plus vite, tester plus, trouver ses gagnants, sans gérer une équipe.
-  GROWTH = 48 créatives/mois, jusqu'à 8 produits, production en 24h. Garantie Croissance en 60 jours.
+  GROWTH = 48 créatives/mois, jusqu'à 2 produits par semaine. Garantie Croissance en 45 jours.
 - EXPANSION → SCALE. Elle est déjà sur un gros marché, OU elle veut attaquer plusieurs marchés en même temps
-  (langues, cultures différentes) sans exploser ses coûts. SCALE = 96 créatives/mois, jusqu'à 16 produits, file prioritaire.
-  Garantie Scaling en 60 jours.
+  (langues, cultures différentes) sans exploser ses coûts. SCALE = 96 créatives/mois, jusqu'à 4 produits par semaine.
+  Garantie Scaling en 45 jours.
 Si l'objectif n'est pas clair, pose la question de l'objectif avant de recommander. Si la personne le dit déjà,
 recommande directement UNE offre (jamais les trois en vrac) et explique en une phrase pourquoi elle lui correspond.
 Si elle hésite entre deux offres, tranche pour elle : « Pour ton objectif, je te conseille X. »
@@ -5260,19 +5125,19 @@ Si elle hésite entre deux offres, tranche pour elle : « Pour ton objectif, je 
 PAIEMENT ET GARANTIE
 Wave, Orange Money, Moov Money, MTN MoMo, Djamo — paiement sécurisé via Chariow. Abonnement mensuel résiliable
 à tout moment (pas d'engagement, abonnement mensuel uniquement). Garantie :
-résultats en 60 jours ou remboursé.
+résultats en 45 jours ou remboursé.
 
-GARANTIE — « RÉSULTATS EN 60 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, elle porte un nom selon l'offre : Performance pour PERF+, Croissance pour GROWTH, Scaling pour SCALE ; l'offre TEST n'a pas de garantie de résultats, ne parle plus de « livraison 24h ou remboursé »
+GARANTIE — « RÉSULTATS EN 45 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, elle porte un nom selon l'offre : Performance pour PERF+, Croissance pour GROWTH, Scaling pour SCALE, ne parle plus de « livraison 24h ou remboursé »
 ni de « satisfait ou remboursé »). Fonctionnement : le client publie les créatives livrées et investit en publicité avec
-elles pendant 60 jours. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
+elles pendant 45 jours. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
 de son compte publicitaire Meta (dépenses du mois + résultats : ROAS, coût par achat…). On vérifie, puis on le rembourse
 l'intégralité de son paiement. Présente-la simplement, en 2 phrases, comme ce qui retire le risque.
 
 PROCESS DE LIVRAISON (à jour — ne JAMAIS mentionner WhatsApp, Google Drive, ou un "formulaire de brief" à
 remplir, ce n'est plus le fonctionnement réel)
 Abonnement en ligne → connexion Google sur AdBoard → import du produit dans le catalogue, demande de créatives en
-2 clics → production → livraison directement dans AdBoard (Galerie Créatives ; Ad Copies et Données Marché à partir de PERF+) sous
-24h (48h pour TEST et PERF+), avec suivi de production en temps réel. Les créatives du mois sont disponibles dès le paiement.
+2 clics → production → livraison directement dans AdBoard (Galerie Créatives, Ad Copies, Données Marché) sous
+24h, avec suivi de production en temps réel → cycle hebdomadaire.
 
 DÉMO — CONTRAIREMENT À UNE ANCIENNE CONSIGNE, NE JAMAIS NIER OU ÉVITER LE SUJET
 Beaucoup de prospects arrivant sur cette page ont déjà reçu une démo personnalisée avant d'être relancés — si la
@@ -5308,12 +5173,12 @@ On est là pour la croissance du prospect, pas pour lui vendre des fichiers. N'a
 marché" ou "personas". Ce qui convainc : performer, grandir, s'étendre selon SON objectif. Le volume
 (ex : « 24 créatives par mois, vidéos et images ») se cite en UNE courte phrase, comme preuve de l'offre
 recommandée, jamais comme argument principal.
-❌ "Tu reçois 16 images/mois avec analyse de marché" → ✅ "Chaque mois, on te livre des vidéos et des images
+❌ "Tu reçois 16 images/mois avec analyse de marché" → ✅ "Chaque semaine, on te livre des vidéos et des images
 testées, et on garde ce qui convertit. Ton compte pub performe mieux."
 
 RÈGLE 3 — CTA
 0 bouton avant le 3ème échange, SAUF si la personne demande clairement comment commander. 1 seul par message. Jamais 2 de suite.
-[BTN:offres:Voir les offres] [BTN:checkout:test:Démarrer avec TEST →] [BTN:checkout:starter:Démarrer avec PERF+ →] [BTN:checkout:pro:Démarrer avec GROWTH →]
+[BTN:offres:Voir les offres] [BTN:checkout:starter:Démarrer avec PERF+ →] [BTN:checkout:pro:Démarrer avec GROWTH →]
 [BTN:checkout:scale:Démarrer avec SCALE →]
 INTERDIT ABSOLU : n'écris JAMAIS un lien markdown ([texte](url)) ni une URL brute (chariow, mychariow, ou
 autre) pour proposer un paiement ou une offre — même si tu la retrouves via la recherche Google ou ailleurs
@@ -5770,11 +5635,12 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/reorder-top-perf
 // avec la clé service pour tout voir peu importe le compte. Inclut TOUT abonné, qu'il ait ou
 // non été prospect/lead dans le CRM au préalable.
 if (req.method === 'GET' && req.url === '/crm/clients') {
+  if (!(await crmAdminOk(req))) { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'unauthorized' })); return; }
   try {
     const [subsRes, usersRes, briefsRes, txRes] = await Promise.all([
       fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?select=*`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }),
       fetch(`${SUPABASE_URL_INT}/auth/v1/admin/users?per_page=1000`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }),
-      fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?select=user_id,status,credits_used,created_at`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }),
+      fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?select=user_id,status,credits_used`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }),
       fetch(`${SUPABASE_URL_INT}/rest/v1/transactions?select=user_id,montant_fcfa,created_at&order=created_at.asc`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }),
     ]);
     const subs = await subsRes.json();
@@ -5792,13 +5658,17 @@ if (req.method === 'GET' && req.url === '/crm/clients') {
     const clients = subs.map(sub => {
       const u = usersById[sub.user_id] || {};
       const mesBriefs = briefs.filter(b => b.user_id === sub.user_id);
-      let used, total;
+      const used = mesBriefs.filter(briefCompteCredits).reduce((s, b) => s + (b.credits_used || 9), 0);
+      let total;
       if (sub.type === 'pack') {
-        used = mesBriefs.filter(briefCompteCredits).reduce((s, b) => s + (b.credits_used || 9), 0);
         total = sub.total_credits || 0;
       } else {
-        used = creditsUtiliseesPeriode(sub, mesBriefs, briefCompteCredits);
-        total = creditsDuForfait(sub);
+        const started = new Date(sub.started_at);
+        const now = new Date();
+        const startedMidnight = new Date(started.getFullYear(), started.getMonth(), started.getDate());
+        const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const weeksActive = Math.floor((nowMidnight - startedMidnight) / (7 * 86400000)) + 1;
+        total = weeksActive * (sub.credits_per_week || 0);
       }
       const mesTx = transactions.filter(t => t.user_id === sub.user_id);
       const totalDepense = mesTx.reduce((s, t) => s + (t.montant_fcfa || 0), 0);
@@ -5975,201 +5845,13 @@ if (req.method === 'POST' && req.url === '/reconcile-account') {
 // Même logique de calcul que computeCredits()/verifierPlafondProduction() côté client
 // (Platform.jsx) — DOIT rester identique, sinon le chiffre affiché au client contredirait ce
 // que le serveur autorise réellement.
-// ═════ ROUTES COMPTES ÉQUIPE (v5.68) ═════
-// ── Annulation d'une demande : le propriétaire, ou le membre qui a lui-même fait cette demande (jamais celle d'un autre) ──
-if (req.method === 'POST' && req.url.split('?')[0] === '/briefs/cancel') {
-  let body = '';
-  req.on('data', c => body += c);
-  req.on('end', async () => {
-    const J = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
-    try {
-      const me = await teamAuthUser(req);
-      if (!me) return J(401, { error: 'connexion_requise' });
-      let b = {}; try { b = JSON.parse(body); } catch (_) {}
-      if (!b.briefId) return J(400, { error: 'briefId_requis' });
-      const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${encodeURIComponent(b.briefId)}&select=id,user_id,status,requested_by&limit=1`, { headers: teamSbHeaders() });
-      const rows = await r.json();
-      const brief = Array.isArray(rows) ? rows[0] : null;
-      if (!brief) return J(200, { error: 'introuvable' });
-      const permis = brief.user_id === me.id || (brief.requested_by === me.id && await teamMemberCan(brief.user_id, me.id, 'request_production'));
-      if (!permis) return J(200, { error: 'non_autorise' });
-      if (brief.status !== 'pending') return J(200, { error: 'non_annulable' });
-      const u = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${brief.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ status: 'cancelled', cancelled_at: new Date().toISOString() }) });
-      if (!u.ok) return J(500, { error: 'annulation_impossible' });
-      if (brief.user_id !== me.id) writeInAppNotification(brief.user_id, `${me.email} a annulé une demande de production.`, 'info').catch(() => {});
-      return J(200, { ok: true });
-    } catch (e) { console.error('[Briefs/cancel]', e.message); return J(500, { error: 'reseau' }); }
-  });
-  return;
-}
-
-// ── Historique de facturation du propriétaire (jamais la commission interne) ──
-if (req.method === 'GET' && req.url.split('?')[0] === '/billing/history') {
-  (async () => {
-    const J = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
-    try {
-      const me = await teamAuthUser(req);
-      if (!me) return J(401, { error: 'connexion_requise' });
-      let tr = await fetch(`${SUPABASE_URL_INT}/rest/v1/transactions?user_id=eq.${me.id}&select=*&order=created_at.desc&limit=200`, { headers: teamSbHeaders() });
-      if (!tr.ok) tr = await fetch(`${SUPABASE_URL_INT}/rest/v1/transactions?user_id=eq.${me.id}&select=*&limit=200`, { headers: teamSbHeaders() });
-      const rows = tr.ok ? await tr.json() : [];
-      const transactions = (Array.isArray(rows) ? rows : []).map(t => ({ date: t.created_at || t.date || t.paid_at || null, plan: t.plan || null, cycle: t.cycle || null, montant_fcfa: t.montant_fcfa || 0 }))
-        .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-      const sub = await teamLatestSub(me.id);
-      const subscription = sub ? { plan: sub.plan, active: !!sub.active && !(sub.expires_at && new Date(sub.expires_at) < new Date()), started_at: sub.started_at, expires_at: sub.expires_at || null, type: sub.type || null } : null;
-      return J(200, { subscription, transactions });
-    } catch (e) { console.error('[Billing]', e.message); return J(500, { error: 'reseau' }); }
-  })();
-  return;
-}
-
-if (req.url.split('?')[0].startsWith('/team/')) {
-  let body = '';
-  req.on('data', c => body += c);
-  req.on('end', async () => {
-    const J = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
-    try {
-      const route = req.url.split('?')[0];
-      const me = await teamAuthUser(req);
-      if (!me) return J(401, { error: 'connexion_requise' });
-      let b = {}; try { b = body ? JSON.parse(body) : {}; } catch (_) {}
-
-      // Mes espaces : le mien + ceux où je suis membre + invitations en attente pour mon adresse
-      if (req.method === 'GET' && route === '/team/workspaces') {
-        const ownSub = await teamLatestSub(me.id);
-        const rows = await teamRows(me.id);
-        const mr = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?member_id=eq.${me.id}&status=eq.active&select=owner_id,role_preset,permissions`, { headers: teamSbHeaders() });
-        const mem = await mr.json();
-        const memberships = [];
-        for (const m of (Array.isArray(mem) ? mem : [])) {
-          const osub = await teamLatestSub(m.owner_id);
-          if (!osub || !osub.active) continue;
-          memberships.push({ ownerId: m.owner_id, ownerLabel: await teamOwnerLabel(m.owner_id), preset: m.role_preset, permissions: teamNoDelete(m.permissions) });
-        }
-        const pr = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?email=eq.${encodeURIComponent(me.email)}&status=eq.invited&select=id,owner_id,token_expires_at`, { headers: teamSbHeaders() });
-        const pend = await pr.json();
-        const pending = [];
-        for (const p of (Array.isArray(pend) ? pend : [])) {
-          if (p.token_expires_at && new Date(p.token_expires_at) < new Date()) continue;
-          pending.push({ id: p.id, ownerLabel: await teamOwnerLabel(p.owner_id) });
-        }
-        const max = ownSub && ownSub.plan in TEAM_SEATS ? TEAM_SEATS[ownSub.plan] : 0;
-        return J(200, { own: { hasPlan: !!(ownSub && ownSub.active), plan: ownSub ? ownSub.plan : null, seats: { used: rows.filter(r => r.status !== 'suspended').length, max } }, memberships, pending });
-      }
-
-      // Accepter une invitation (par lien, ou par identifiant si l'email Google correspond)
-      if (req.method === 'POST' && route === '/team/accept') {
-        let q;
-        if (b.token) q = `token_hash=eq.${teamHash(b.token)}`;
-        else if (b.id) q = `id=eq.${encodeURIComponent(b.id)}`;
-        else return J(400, { error: 'token_ou_id_requis' });
-        const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?${q}&select=*&limit=1`, { headers: teamSbHeaders() });
-        const rows = await r.json();
-        const inv = Array.isArray(rows) ? rows[0] : null;
-        if (!inv || inv.status === 'removed') return J(200, { error: 'invitation_invalide' });
-        if (inv.status === 'active' && inv.member_id === me.id) return J(200, { ok: true, ownerId: inv.owner_id, deja: true });
-        if (inv.status !== 'invited') return J(200, { error: 'invitation_invalide' });
-        if (inv.token_expires_at && new Date(inv.token_expires_at) < new Date()) return J(200, { error: 'invitation_expiree' });
-        if (String(inv.email).toLowerCase() !== me.email) return J(200, { error: 'email_different', attendu: String(inv.email).replace(/^(.).*(@.*)$/, '$1***$2') });
-        if (inv.owner_id === me.id) return J(200, { error: 'invitation_invalide' });
-        await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?id=eq.${inv.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ member_id: me.id, status: 'active', accepted_at: new Date().toISOString(), token_hash: null }) });
-        writeInAppNotification(inv.owner_id, `${me.email} a rejoint votre équipe sur AdBoard.`, 'info').catch(() => {});
-        return J(200, { ok: true, ownerId: inv.owner_id });
-      }
-
-      // ── Routes réservées au propriétaire de l'espace ──
-      const sub = await teamLatestSub(me.id);
-      if (!sub || !sub.active || !(sub.plan in TEAM_SEATS) || sub.type === 'pack') return J(200, { error: 'abonnement_requis' });
-      const max = TEAM_SEATS[sub.plan];
-
-      if (req.method === 'GET' && route === '/team/members') {
-        const rows = await teamEnforce(me.id, sub);
-        return J(200, { seats: { used: rows.filter(r => r.status !== 'suspended').length, max }, plan: sub.plan, members: rows.map(teamPublicRow) });
-      }
-
-      if (req.method === 'POST' && route === '/team/invite') {
-        const email = String(b.email || '').trim().toLowerCase();
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return J(200, { error: 'email_invalide' });
-        if (email === me.email) return J(200, { error: 'email_invalide' });
-        const preset = TEAM_PRESETS[b.preset] ? b.preset : 'media_buyer';
-        const rows = await teamEnforce(me.id, sub);
-        if (rows.filter(r => r.status !== 'suspended').length >= max) return J(200, { error: 'places_epuisees', max });
-        if (rows.some(r => String(r.email).toLowerCase() === email)) return J(200, { error: 'deja_invite' });
-        const token = crypto.randomBytes(24).toString('hex');
-        const ins = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members`, {
-          method: 'POST', headers: { ...teamSbHeaders(), Prefer: 'return=representation' },
-          body: JSON.stringify({ owner_id: me.id, email, role_preset: preset, permissions: teamCleanPerms(b.permissions, preset), status: 'invited', token_hash: teamHash(token), token_expires_at: new Date(Date.now() + 7 * 864e5).toISOString() })
-        });
-        if (!ins.ok) { console.error('[Team] insert', ins.status, await ins.text().catch(() => '')); return J(500, { error: 'creation_impossible' }); }
-        const created = (await ins.json())[0];
-        const mail = await teamSendInvite(email, me.name || (me.email.split('@')[0]), token, preset);
-        return J(200, { ok: true, member: teamPublicRow(created), emailEnvoye: mail.sent, lien: mail.lien });
-      }
-
-      if (req.method === 'POST' && route === '/team/update') {
-        const rows = await teamRows(me.id);
-        const m = rows.find(r => r.id === b.id);
-        if (!m) return J(200, { error: 'introuvable' });
-        const preset = TEAM_PRESETS[b.preset] ? b.preset : m.role_preset;
-        await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?id=eq.${m.id}&owner_id=eq.${me.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ role_preset: preset, permissions: teamCleanPerms(b.permissions, preset) }) });
-        return J(200, { ok: true });
-      }
-
-      if (req.method === 'POST' && route === '/team/remove') {
-        const rows = await teamRows(me.id);
-        const m = rows.find(r => r.id === b.id);
-        if (!m) return J(200, { error: 'introuvable' });
-        await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?id=eq.${m.id}&owner_id=eq.${me.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ status: 'removed', token_hash: null }) });
-        return J(200, { ok: true });
-      }
-
-      if (req.method === 'POST' && route === '/team/resend') {
-        const rows = await teamRows(me.id);
-        const m = rows.find(r => r.id === b.id && r.status === 'invited');
-        if (!m) return J(200, { error: 'introuvable' });
-        const token = crypto.randomBytes(24).toString('hex');
-        await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?id=eq.${m.id}&owner_id=eq.${me.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ token_hash: teamHash(token), token_expires_at: new Date(Date.now() + 7 * 864e5).toISOString() }) });
-        const mail = await teamSendInvite(m.email, me.name || (me.email.split('@')[0]), token, m.role_preset);
-        return J(200, { ok: true, emailEnvoye: mail.sent, lien: mail.lien });
-      }
-
-      return J(404, { error: 'route_inconnue' });
-    } catch (e) {
-      console.error('[Team] erreur :', e.message);
-      return J(500, { error: 'erreur_serveur' });
-    }
-  });
-  return;
-}
-
 if (req.method === 'POST' && req.url === '/briefs/create') {
   let body = '';
   req.on('data', c => body += c);
   req.on('end', async () => {
     try {
-      const parsedBody = JSON.parse(body);
-      const { productId, quantity } = parsedBody;
-      const requesterId = parsedBody.userId;
-      if (!requesterId || !productId || !quantity) { res.writeHead(400); res.end(JSON.stringify({error:'userId, productId et quantity requis'})); return; }
-      // Espace d'équipe : un membre demande pour le compte du propriétaire (connexion vérifiée + autorisation requise).
-      // userId devient l'identifiant du propriétaire pour tout le reste (abonnement, crédits, création du brief).
-      let userId = requesterId;
-      let requestedBy = requesterId;
-      if (parsedBody.ownerId && parsedBody.ownerId !== requesterId) {
-        const meTeam = await teamAuthUser(req);
-        if (!meTeam || meTeam.id !== requesterId) { res.writeHead(401, {'Content-Type':'application/json'}); res.end(JSON.stringify({ error: 'connexion_requise' })); return; }
-        if (!(await teamMemberCan(parsedBody.ownerId, requesterId, 'request_production'))) { res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ error: 'non_autorise' })); return; }
-        userId = parsedBody.ownerId;
-      }
-      // Le produit doit appartenir à l'espace concerné (ancienne faille : aucun contrôle).
-      try {
-        const pr = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${encodeURIComponent(productId)}&user_id=eq.${userId}&select=id&limit=1`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } });
-        const prRows = await pr.json();
-        if (!Array.isArray(prRows) || !prRows.length) { res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ error: 'produit_introuvable' })); return; }
-      } catch (eProd) {
-        console.warn('[Briefs] vérification produit impossible :', eProd.message);
-        if (userId !== requesterId) { res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ error: 'produit_introuvable' })); return; }
-      }
+      const { userId, productId, quantity } = JSON.parse(body);
+      if (!userId || !productId || !quantity) { res.writeHead(400); res.end(JSON.stringify({error:'userId, productId et quantity requis'})); return; }
       // Volumes de production : 6 à 24 visuels, par multiples de 3 (3 visuels par angle, 2 à 8 angles).
       // Les anciens clients AdBoard encore ouverts peuvent envoyer 9 ou 18 : toujours valides. Au-delà de 24 : refusé.
       if (!Number.isInteger(quantity) || quantity < 6 || quantity > 24 || quantity % 3 !== 0) {
@@ -6201,14 +5883,19 @@ if (req.method === 'POST' && req.url === '/briefs/create') {
       // ── computeCredits() — copie exacte de la logique Platform.jsx ──
       const briefEstActif = (b) => !!b && (b.status === 'pending' || b.status === 'in_production');
       const briefCompteCredits = (b) => briefEstActif(b) || b.status === 'done';
-      let used, total;
+      const used = allBriefs.filter(briefCompteCredits).reduce((sum, b) => sum + (b.credits_used || 9), 0);
+      let total;
       if (sub.type === 'pack') {
-        used = allBriefs.filter(briefCompteCredits).reduce((sum, b) => sum + (b.credits_used || 9), 0);
         total = sub.total_credits || 0;
       } else {
-        // Créatives du mois disponibles dès le paiement ; seules les demandes faites depuis ce paiement comptent.
-        used = creditsUtiliseesPeriode(sub, allBriefs, briefCompteCredits);
-        total = creditsDuForfait(sub);
+        const started = new Date(sub.started_at);
+        const now = new Date();
+        const startedMidnight = new Date(started.getFullYear(), started.getMonth(), started.getDate());
+        const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const msPerDay = 24 * 60 * 60 * 1000;
+        const daysElapsed = Math.floor((nowMidnight - startedMidnight) / msPerDay);
+        const weeksActive = Math.floor(daysElapsed / 7) + 1;
+        total = weeksActive * sub.credits_per_week;
       }
       const available = Math.max(0, total - used);
 
@@ -6234,20 +5921,10 @@ if (req.method === 'POST' && req.url === '/briefs/create') {
       const insertRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs`, {
         method: 'POST',
         headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-        body: JSON.stringify({ user_id: userId, product_id: productId, quantity, status: 'pending', credits_used: quantity, requested_by: requestedBy })
+        body: JSON.stringify({ user_id: userId, product_id: productId, quantity, status: 'pending', credits_used: quantity })
       });
-      let insertFinal = insertRes;
-      if (!insertRes.ok) {
-        // Colonne requested_by absente (SQL équipe pas encore lancé) : on réessaie sans elle — jamais bloquer une demande pour ça.
-        insertFinal = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs`, {
-          method: 'POST',
-          headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-          body: JSON.stringify({ user_id: userId, product_id: productId, quantity, status: 'pending', credits_used: quantity })
-        });
-      }
-      if (!insertFinal.ok) { res.writeHead(500); res.end(JSON.stringify({ error: 'Échec de la création' })); return; }
-      const rows = await insertFinal.json();
-      if (requestedBy !== userId) writeInAppNotification(userId, `Un membre de votre équipe a demandé un lot de ${quantity} créatives.`, 'info').catch(() => {});
+      if (!insertRes.ok) { res.writeHead(500); res.end(JSON.stringify({ error: 'Échec de la création' })); return; }
+      const rows = await insertRes.json();
 
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true, brief: rows[0] }));
@@ -6475,7 +6152,7 @@ if (req.method === 'POST' && req.url === '/send-prospect-sms') {
 // (qui n'a que la clé anonyme), pour ne pas donner un accès total à la base à qui ouvre
 // les outils de développement du navigateur.
 if (req.method === 'GET' && req.url === '/crm/utilisateurs') {
-  if (req.headers['x-api-key'] !== 'adstack2024xProspectionKey99') {
+  if (!(await crmAdminOk(req))) {
     res.writeHead(401); res.end(JSON.stringify({ error: 'unauthorized' })); return;
   }
   try {
@@ -7174,7 +6851,6 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
       }
       // Email en complément du push (au cas où le push ne soit pas activé/vu) — texte à
       // valider, voir sendDeliverablesReadyEmail ci-dessous pour le contenu exact.
-      if (userId) teamNotifyDelivery(userId, briefs[idx].product?.nom || 'votre produit').catch(()=>{});
       if (briefs[idx].client?.email) {
         sendDeliverablesReadyEmail({
           email: briefs[idx].client.email,
