@@ -2,9 +2,9 @@
   "name": "adstack-server",
   "version": "5.45.0",
   "description": "AdStack Factory Server — Production engine for Meta Ads creatives",
-  "main": "server_v5_45.js",
+  "main": "serveur.js",
   "scripts": {
-    "start": "node server_v5_45.js"
+    "start": "node serveur.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1133.0",
