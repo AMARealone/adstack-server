@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.68-balayage-probleme (analyste : recherche qui part du problème, ScrapeCreators Reddit/TikTok/pubs Meta, hypothèse stockée réutilisée 30 jours tant qu'il reste des angles en réserve) | v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -2522,14 +2522,33 @@ ${pageText}`;
         const reqBody = JSON.parse(body);
         const { system, parts, maxOutputTokens, brief, isTest } = reqBody;
         const { marque = '', produit = '', pays = '', lien_page_produit = '' } = brief || {};
+        const { productId = null, nbAngles = 0, forcerBalayage = false } = reqBody;
+        let _dec = { reutiliser: false, raison: 'décision indisponible' };
+        try { _dec = await decideBalayage({ productId, isTest, nbAngles, brief, forcer: forcerBalayage }); }
+        catch (e) { console.log('   ⚠ décision de balayage impossible, nouveau balayage par prudence :', e.message); }
+        const _reutiliser = !!_dec.reutiliser;
+        const _statsBalayage = { reutilise: _reutiliser, raison: _dec.raison };
 
         console.log('\n' + '═'.repeat(60));
         console.log(`🔍 ANALYSTE DE MARCHÉ — ${marque} / ${produit} (${pays})`);
         console.log('═'.repeat(60));
 
+        let donneesBrutes = '';
+        let _planBalayage = null, _scPromise = null;
+        const _compteurSC = { n: 0, credits: 0 };
+        console.log(`\n   → Balayage : ${_reutiliser ? 'RÉUTILISATION de l\'hypothèse stockée — ' : 'NOUVEAU BALAYAGE — '}${_dec.raison}`);
+        if (_reutiliser) {
+          donneesBrutes += `### BALAYAGE DE MARCHÉ NON REFAIT (hypothèse stockée réutilisée)\nLe marché a déjà été balayé en profondeur pour ce produit (${_dec.raison}). Aucune nouvelle donnée de marché n'a été collectée pour cette commande : travaille à partir de l'HYPOTHÈSE EXISTANTE fournie plus haut (stock d'angles en réserve inclus). Seules les variables du brief actuel (prix, offre, garantie, livraison) et la page produit ci-dessous sont à jour.\n\n`;
+        } else {
+        console.log('\n[0/4] Plan de balayage (point de départ : le problème, pas la marque)...');
+        _planBalayage = await planBalayage(brief, produit, marque, pays);
+        console.log(`   → problème : ${_planBalayage.probleme}`);
+        console.log(`   → alternatives : ${_planBalayage.alternatives.join(' | ') || 'n/a'} · concurrents : ${_planBalayage.concurrents.join(' | ') || 'n/a'}`);
+        if (!SC_KEY) console.log('   ⚠ SOCIAL_MEDIA_SCRAPING_API absente : ScrapeCreators ignoré');
+        else _scPromise = balayageScrapeCreators(_planBalayage, pays, _compteurSC).catch(e => ({ texte: '', stats: { erreurs: [e.message] } }));
+
         // ── SOURCE 1/5 — Gemini 2.5 Flash + Google Search grounding ──
         console.log('\n[1/4] Gemini Search grounding (recherche multi-source enrichie)...');
-        let donneesBrutes = '';
         try {
           const token = await getToken();
           const _marchesBrief = Array.isArray(brief && brief.marches) ? brief.marches.filter(Boolean) : [];
@@ -2538,7 +2557,7 @@ ${pageText}`;
             : '';
       const researchPrompt = `Tu es un analyste de marché senior. Tu mènes une recherche APPROFONDIE et MULTI-SOURCE sur le produit "${produit}" de la marque "${marque}" vendu en ${pays}.${_blocMulti}
 
-OBJECTIF : ramener un MAXIMUM de DATA RÉELLE et de VERBATIMS clients authentiques — pas de paraphrase, pas de généralités. Cite les sources URL précises trouvées et les extraits textuels exacts (entre guillemets quand c\'est un verbatim).
+${blocProblemePourRecherche(_planBalayage)}OBJECTIF : ramener un MAXIMUM de DATA RÉELLE et de VERBATIMS clients authentiques — pas de paraphrase, pas de généralités. Cite les sources URL précises trouvées et les extraits textuels exacts (entre guillemets quand c\'est un verbatim).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DOMAINES À EXPLORER EN PRIORITÉ (utilise site: dans tes recherches Google)
@@ -2733,6 +2752,21 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
         // Son intention (recherche sur sites ciblés) est repliée dans le prompt de la Source 1 (TARGET_DOMAINS_HINT).
         console.log('\n[Note] Google Custom Search et Jumia (scraping HTTP direct) retirés — repliés dans la Source 1 (Gemini Search).');
 
+        // ── SOURCE 5 — ScrapeCreators (Reddit, TikTok, pubs Meta) lancé en parallèle plus haut ──
+        if (_scPromise) {
+          console.log('\n[ScrapeCreators] Reddit · TikTok · Bibliothèque de pubs...');
+          try {
+            const sc = await _scPromise;
+            const st = sc.stats || {};
+            console.log(`   → Reddit ${st.reddit || 0} · TikTok ${st.tiktok_videos || 0} vidéo(s) / ${st.tiktok_commentaires || 0} commentaire(s) · pubs ${st.pubs || 0} · ${_compteurSC.n} requête(s), ${_compteurSC.credits} crédit(s)`);
+            (st.erreurs || []).slice(0, 6).forEach(er => console.log('   ✗ ' + er));
+            if (sc.texte) { donneesBrutes += sc.texte; console.log(`   ✓ ${sc.texte.length} chars de voix du marché ajoutés`); }
+            else console.log('   ✗ aucune donnée ScrapeCreators');
+            _statsBalayage.scrapecreators = { requetes: _compteurSC.n, credits: _compteurSC.credits, reddit: st.reddit || 0, tiktok_videos: st.tiktok_videos || 0, tiktok_commentaires: st.tiktok_commentaires || 0, pubs: st.pubs || 0, erreurs: (st.erreurs || []).length };
+          } catch (e) { console.log('   ✗ erreur ScrapeCreators :', e.message); }
+        }
+        } // fin du balayage complet (non exécuté quand l'hypothèse stockée est réutilisée)
+
         // ── SOURCE 6 — Page produit client (lien_page_produit du brief) ──
         if (lien_page_produit && lien_page_produit.startsWith('http')) {
           console.log('\n[4/4] Page produit client...');
@@ -2872,9 +2906,10 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
 
         console.log(`✓ Synthèse reçue — ${text.length} chars`);
         console.log('═'.repeat(60) + '\n');
+        if (!_reutiliser && productId && !isTest) await enregistrerBalayage(productId, { requetes: _compteurSC.n, credits: _compteurSC.credits, plan: _planBalayage });
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ text }));
+        res.end(JSON.stringify({ text, balayage: _statsBalayage }));
       } catch (e) {
         console.error('✗ analyste-synthese error:', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -7206,6 +7241,257 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
 
   res.writeHead(404); res.end('Not found');
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v5.68 — BALAYAGE PAR LE PROBLÈME + SCRAPECREATORS + HYPOTHÈSE STOCKÉE
+//   • planBalayage : part du PROBLÈME du client (pas de la marque), liste concurrents directs et alternatives
+//   • balayageScrapeCreators : Reddit, TikTok (vidéos + commentaires), Bibliothèque de pubs Meta — plafonné
+//   • decideBalayage : réutilise l'hypothèse stockée tant qu'il reste assez d'angles en réserve et que le
+//     dernier balayage a moins de 30 jours ; sinon nouveau balayage
+//   • enregistrerBalayage : date du dernier balayage par produit (table Supabase balayages_marche)
+// ═══════════════════════════════════════════════════════════════════════════
+const SC_KEY = process.env.SOCIAL_MEDIA_SCRAPING_API || '';
+const SC_BASE = 'https://api.scrapecreators.com';
+const SC_MAX_REQUETES = parseInt(process.env.SC_MAX_REQUETES || '16', 10);
+const BALAYAGE_VALIDITE_JOURS = parseInt(process.env.BALAYAGE_VALIDITE_JOURS || '30', 10);
+
+async function scGet(chemin, params, compteur, timeoutMs = 25000) {
+  if (!SC_KEY) throw new Error('clé SOCIAL_MEDIA_SCRAPING_API absente sur Render');
+  if (compteur.n >= SC_MAX_REQUETES) throw new Error('plafond de ' + SC_MAX_REQUETES + ' requêtes atteint');
+  compteur.n++;
+  const qs = new URLSearchParams();
+  Object.entries(params || {}).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') qs.set(k, String(v)); });
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const r = await fetch(SC_BASE + chemin + '?' + qs.toString(), { headers: { 'x-api-key': SC_KEY }, signal: ctl.signal });
+    const txt = await r.text();
+    let j = null; try { j = JSON.parse(txt); } catch (e) { /* réponse non JSON */ }
+    if (!r.ok) throw new Error('HTTP ' + r.status + (j && (j.message || j.error) ? ' ' + (j.message || j.error) : ''));
+    compteur.credits += (j && typeof j.credits_charged === 'number') ? j.credits_charged : 1;
+    return j || {};
+  } finally { clearTimeout(t); }
+}
+
+function _coupe(s, n) { s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n) + '…' : s; }
+
+// Plan de balayage : tout part du PROBLÈME que le produit résout, jamais du nom de la marque.
+async function planBalayage(brief, produit, marque, pays) {
+  const repli = { probleme: produit, formulations: [produit], categorie: produit, alternatives: [], concurrents: [],
+                  reddit: [produit], tiktok: [produit], ads: [produit], source: 'repli' };
+  try {
+    const token = await getToken();
+    const briefTxt = JSON.stringify(brief || {}).slice(0, 3000);
+    const prompt = `Tu prépares la recherche de marché pour un produit vendu en ${pays || 'Afrique francophone'}.
+Produit : "${produit}"${marque ? ` (marque du client : ${marque}, probablement inconnue du marché)` : ''}.
+Brief (extrait) : ${briefTxt}
+
+Règle de fond : la recherche PART DU PROBLÈME que la cible veut résoudre, pas de la marque. Les gens ne parlent pas de la marque du client : ils parlent de leur problème et des solutions qu'ils connaissent.
+
+Réponds UNIQUEMENT par un objet JSON, sans texte autour, avec ces clés :
+{
+ "probleme": "le problème principal vécu par la cible, en une phrase courte et concrète",
+ "formulations": ["3 façons dont les gens en parlent vraiment, dans leurs mots, dans la langue du marché"],
+ "categorie": "catégorie du produit en 2-4 mots",
+ "alternatives": ["jusqu'à 5 solutions ALTERNATIVES que la cible utilise ou envisage pour le même problème (produits d'autres catégories compris)"],
+ "concurrents": ["jusqu'à 3 produits directement concurrents (même catégorie)"],
+ "reddit": ["3 requêtes courtes centrées sur le problème, en français ou en anglais selon où la cible en parle"],
+ "tiktok": ["2 requêtes courtes centrées sur le problème, dans la langue de la cible"],
+ "ads": ["3 mots-clés pour la bibliothèque de pubs : le problème, une alternative, un concurrent direct"]
+}`;
+    const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                   generationConfig: { temperature: 0.2, maxOutputTokens: 1800, ...reflexion(MODELES.tendances, 0) } };
+    const d = await vertexRequest(token, MODELES.tendances, body, 40000, 'analyste_plan_balayage');
+    const raw = (d.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).filter(Boolean).join('');
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error('réponse sans JSON');
+    const j = JSON.parse(m[0]);
+    const arr = (x, n) => (Array.isArray(x) ? x : []).map(v => _coupe(v, 90)).filter(Boolean).slice(0, n);
+    const plan = {
+      probleme: _coupe(j.probleme || produit, 200),
+      formulations: arr(j.formulations, 3),
+      categorie: _coupe(j.categorie || produit, 60),
+      alternatives: arr(j.alternatives, 5),
+      concurrents: arr(j.concurrents, 3),
+      reddit: arr(j.reddit, 3),
+      tiktok: arr(j.tiktok, 2),
+      ads: arr(j.ads, 3),
+      source: 'gemini'
+    };
+    if (!plan.reddit.length) plan.reddit = [plan.probleme];
+    if (!plan.tiktok.length) plan.tiktok = [plan.probleme];
+    if (!plan.ads.length) plan.ads = [plan.categorie];
+    return plan;
+  } catch (e) {
+    console.log('   ✗ plan de balayage échoué, repli sur le nom du produit :', e.message);
+    return repli;
+  }
+}
+
+// Texte injecté en tête du prompt de recherche Google : force le point de départ « problème ».
+function blocProblemePourRecherche(plan) {
+  if (!plan) return '';
+  return `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POINT DE DÉPART DE LA RECHERCHE : LE PROBLÈME, PAS LA MARQUE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Problème de la cible : ${plan.probleme}
+Façons dont les gens en parlent : ${plan.formulations.join(' | ') || 'n/a'}
+Catégorie : ${plan.categorie}
+Alternatives que la cible connaît déjà : ${plan.alternatives.join(', ') || 'n/a'}
+Concurrents directs : ${plan.concurrents.join(', ') || 'n/a'}
+→ Cherche d'abord ce que les gens disent de CE PROBLÈME et de ces ALTERNATIVES (avis, échecs, scepticisme, ce qu'ils ont déjà essayé). La marque du client est probablement inconnue : ne gaspille pas tes requêtes dessus.
+→ Les discussions qui parlent d'un produit précis restent acceptables quand elles décrivent le problème.
+
+`;
+}
+
+// Balayage ScrapeCreators : voix du marché au niveau du PROBLÈME + pubs natives des alternatives/concurrents.
+async function balayageScrapeCreators(plan, pays, compteur) {
+  const stats = { reddit: 0, tiktok_videos: 0, tiktok_commentaires: 0, pubs: 0, erreurs: [] };
+  const sections = { reddit: '', tiktok: '', pubs: '' };
+  const geo = PAYS_TO_GEO[pays] || '';
+
+  const tacheReddit = async () => {
+    const lignes = [];
+    for (const q of plan.reddit.slice(0, 3)) {
+      try {
+        const j = await scGet('/v1/reddit/search', { query: q, filter: 'posts', sort: 'relevance', timeframe: 'all', trim: 'true' }, compteur);
+        const posts = (j.posts || []).slice(0, 5);
+        posts.forEach(p => {
+          stats.reddit++;
+          lignes.push(`- [${p.subreddit_name_prefixed || ('r/' + (p.subreddit || '?'))}] "${_coupe(p.title, 160)}"${p.selftext ? ' — ' + _coupe(p.selftext, 380) : ''} (score ${p.score ?? '?'}, ${p.num_comments ?? '?'} commentaires) ${p.url || ''}`);
+        });
+      } catch (e) { stats.erreurs.push('reddit « ' + q + ' » : ' + e.message); }
+    }
+    try {
+      const qC = plan.formulations[0] || plan.probleme;
+      const j = await scGet('/v1/reddit/search', { query: qC, filter: 'comments', sort: 'top', trim: 'true' }, compteur);
+      const liste = (j.comments || j.posts || []).slice(0, 8);
+      liste.forEach(c => {
+        const t = c.body || c.selftext || c.text || c.comment || '';
+        if (String(t).length < 25) return;
+        stats.reddit++;
+        lignes.push(`- [commentaire ${c.subreddit_name_prefixed || ''}] "${_coupe(t, 380)}" (score ${c.score ?? '?'}) ${c.url || c.permalink || ''}`);
+      });
+    } catch (e) { stats.erreurs.push('reddit commentaires : ' + e.message); }
+    if (lignes.length) sections.reddit = `### SOURCE — SCRAPECREATORS · REDDIT (discussions sur le PROBLÈME : « ${plan.probleme} »)\n` + lignes.join('\n') + '\n\n';
+  };
+
+  const tacheTikTok = async () => {
+    const videos = [];
+    for (const q of plan.tiktok.slice(0, 2)) {
+      try {
+        const j = await scGet('/v1/tiktok/search/keyword', { query: q }, compteur);
+        const items = (j.search_item_list || []).map(x => x.aweme_info).filter(Boolean);
+        items.sort((a, b) => ((b.statistics?.comment_count) || 0) - ((a.statistics?.comment_count) || 0));
+        items.slice(0, 2).forEach(a => videos.push({ q, a }));
+      } catch (e) { stats.erreurs.push('tiktok « ' + q + ' » : ' + e.message); }
+    }
+    const lignes = [];
+    let nbCom = 0;
+    for (const { a } of videos.slice(0, 4)) {
+      stats.tiktok_videos++;
+      const pseudo = a.author?.unique_id || '';
+      const url = a.share_url || (pseudo && a.aweme_id ? `https://www.tiktok.com/@${pseudo}/video/${a.aweme_id}` : '');
+      lignes.push(`- VIDÉO « ${_coupe(a.desc, 220)} » (${a.statistics?.play_count ?? '?'} vues, ${a.statistics?.comment_count ?? '?'} commentaires) ${url}`);
+      if (!url) continue;
+      try {
+        const j = await scGet('/v1/tiktok/video/comments', { url, trim: 'true' }, compteur);
+        const coms = (j.comments || []).filter(c => String(c.text || '').length >= 15)
+          .sort((x, y) => (y.digg_count || 0) - (x.digg_count || 0)).slice(0, 8);
+        coms.forEach(c => { nbCom++; lignes.push(`    · commentaire : "${_coupe(c.text, 300)}" (${c.digg_count ?? 0} likes)`); });
+      } catch (e) { stats.erreurs.push('tiktok commentaires : ' + e.message); }
+    }
+    stats.tiktok_commentaires = nbCom;
+    if (lignes.length) sections.tiktok = `### SOURCE — SCRAPECREATORS · TIKTOK (vidéos et commentaires sur le problème)\n` + lignes.join('\n') + '\n\n';
+  };
+
+  const tachePubs = async () => {
+    const lignes = [];
+    const vus = new Set();
+    for (const q of plan.ads.slice(0, 3)) {
+      try {
+        let j = await scGet('/v1/facebook/adLibrary/search/ads', { query: q, country: geo || 'ALL', status: 'ACTIVE', sort_by: 'total_impressions', media_type: 'ALL' }, compteur);
+        let res = j.searchResults || [];
+        if (!res.length && geo) {
+          j = await scGet('/v1/facebook/adLibrary/search/ads', { query: q, country: 'ALL', language: 'FR', status: 'ACTIVE', sort_by: 'total_impressions', media_type: 'ALL' }, compteur);
+          res = j.searchResults || [];
+        }
+        res.slice(0, 6).forEach(ad => {
+          const cle = ad.collation_id || ad.ad_archive_id;
+          if (cle && vus.has(cle)) return;
+          if (cle) vus.add(cle);
+          const s = ad.snapshot || {};
+          const corps = (s.body && (s.body.text || s.body)) || s.link_description || '';
+          if (!corps && !s.title) return;
+          const jours = ad.start_date ? Math.max(0, Math.round((Date.now() / 1000 - ad.start_date) / 86400)) : null;
+          stats.pubs++;
+          lignes.push(`- [${ad.page_name || '?'}] (recherche « ${q} »${jours !== null ? ', diffusée depuis ' + jours + ' j' : ''}${ad.collation_count > 1 ? ', ' + ad.collation_count + ' variantes' : ''}) ${s.title ? 'TITRE « ' + _coupe(s.title, 120) + ' » — ' : ''}« ${_coupe(typeof corps === 'string' ? corps : JSON.stringify(corps), 420)} »${s.cta_text ? ' [CTA : ' + s.cta_text + ']' : ''}`);
+        });
+      } catch (e) { stats.erreurs.push('pubs « ' + q + ' » : ' + e.message); }
+    }
+    if (lignes.length) sections.pubs = `### SOURCE — SCRAPECREATORS · BIBLIOTHÈQUE DE PUBS META (pubs actives des alternatives et concurrents, classées par impressions — les plus longtemps diffusées sont les plus rentables)\n` + lignes.join('\n') + '\n\n';
+  };
+
+  await Promise.all([tacheReddit(), tacheTikTok(), tachePubs()]);
+  const texte = [sections.reddit, sections.tiktok, sections.pubs].map(s => s.slice(0, 7000)).join('');
+  return { texte, stats };
+}
+
+// ── Hypothèse stockée : faut-il refaire un balayage ? ──
+function _nbAnglesReserve(syntheseTxt) {
+  const m = String(syntheseTxt || '').match(/STOCK\s*:\s*(\d+)\s+angles?\s+construits?\s+au\s+total\s*,\s*(\d+)\s+partis?\s+dans\s+ce\s+lot\s*,\s*(\d+)\s+restants?\s+en\s+r[ée]serve/i);
+  return m ? parseInt(m[3], 10) : null;
+}
+
+async function _memeCible(cibleBrief, cibleStockee) {
+  try {
+    const token = await getToken();
+    const body = { contents: [{ role: 'user', parts: [{ text: `Deux descriptions de cible marketing. Désignent-elles la même cible (même type de personne, même âge approximatif, même situation), même reformulée autrement ?\nA : ${cibleBrief}\nB : ${cibleStockee}\nRéponds uniquement : {"meme": true} ou {"meme": false}` }] }],
+                   generationConfig: { temperature: 0, maxOutputTokens: 40, ...reflexion(MODELES.tendances, 0) } };
+    const d = await vertexRequest(token, MODELES.tendances, body, 20000, 'analyste_meme_cible');
+    const raw = (d.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).join('');
+    return /"meme"\s*:\s*true/i.test(raw);
+  } catch (e) { return false; }
+}
+
+async function decideBalayage({ productId, isTest, nbAngles, brief, forcer }) {
+  if (forcer) return { reutiliser: false, raison: 'balayage forcé' };
+  if (isTest) return { reutiliser: false, raison: 'interface de test : balayage toujours refait' };
+  if (!productId) return { reutiliser: false, raison: 'produit sans identifiant' };
+  const H = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` };
+  const rp = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${encodeURIComponent(productId)}&select=derniere_synthese,marche,deliveries`, { headers: H });
+  const prod = (await rp.json())?.[0];
+  if (!prod || !prod.derniere_synthese) return { reutiliser: false, raison: 'première commande sur ce produit' };
+  const rb = await fetch(`${SUPABASE_URL_INT}/rest/v1/balayages_marche?product_id=eq.${encodeURIComponent(productId)}&select=balayage_at`, { headers: H });
+  const lig = rb.ok ? (await rb.json())?.[0] : null;
+  if (!lig || !lig.balayage_at) return { reutiliser: false, raison: 'date du dernier balayage inconnue (une seule fois, elle sera enregistrée)' };
+  const age = (Date.now() - new Date(lig.balayage_at).getTime()) / 86400000;
+  if (age > BALAYAGE_VALIDITE_JOURS) return { reutiliser: false, raison: `dernier balayage il y a ${Math.round(age)} jours (limite ${BALAYAGE_VALIDITE_JOURS})` };
+  const reserve = _nbAnglesReserve(prod.derniere_synthese);
+  if (reserve === null) return { reutiliser: false, raison: 'ligne « STOCK » illisible dans l\'hypothèse stockée' };
+  if (reserve < (nbAngles || 1)) return { reutiliser: false, raison: `${reserve} angle(s) en réserve pour ${nbAngles || 1} demandé(s)` };
+  const cibleBrief = String((brief && brief.cible) || '').trim();
+  if (cibleBrief) {
+    const p = prod.marche && prod.marche.persona;
+    const derniere = (prod.deliveries || []).slice(-1)[0];
+    const stockee = p ? [p.nom, p.role, p.age ? p.age + ' ans' : null, p.ville].filter(Boolean).join(', ') : (derniere && derniere.cible) || '';
+    if (!stockee || !(await _memeCible(cibleBrief, stockee))) return { reutiliser: false, raison: 'le client impose une cible différente de celle de l\'hypothèse stockée' };
+  }
+  return { reutiliser: true, raison: `balayage du ${String(lig.balayage_at).slice(0, 10)} (${Math.round(age)} j), ${reserve} angle(s) en réserve`, reserve, age: Math.round(age) };
+}
+
+async function enregistrerBalayage(productId, infos) {
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/balayages_marche?on_conflict=product_id`, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ product_id: productId, balayage_at: new Date().toISOString(), requetes_sc: infos.requetes || 0, credits_sc: infos.credits || 0, plan: infos.plan || null })
+    });
+    if (!r.ok) console.log('   ⚠ date du balayage non enregistrée (HTTP ' + r.status + ') — table balayages_marche créée ?');
+    else console.log('   ✓ date du balayage enregistrée pour ce produit');
+  } catch (e) { console.log('   ⚠ date du balayage non enregistrée :', e.message); }
+}
 
 // ── HTTPS GET → JSON ────────────────────────────
 function httpsGetJson(targetUrl) {
