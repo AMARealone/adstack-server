@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.70-offres (pack sans date de fin ; nouvelles offres : garantie 60 jours, PERF+ livré en 48h, ad copies et données marché pour GROWTH et SCALE, file prioritaire SCALE, pack One Shot reconnu, rappel de livraison selon l offre) | v5.68-equipe (comptes équipe : invitations, autorisations, places selon l'offre ; /briefs/create vérifie le propriétaire du produit et les droits des membres) | v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.70-top-performer-chiffres (Top Performer sans délai de 7 jours, chiffres facultatifs, classement automatique par produit et cible) | v5.69-ct-niveau-conscience (choix de CT : niveau de conscience imposé, seuls les CT balisés à ce niveau sont candidats) | v5.68-balayage-probleme (analyste : recherche qui part du problème, ScrapeCreators Reddit/TikTok/pubs Meta, hypothèse stockée réutilisée 30 jours tant qu'il reste des angles en réserve) | v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -110,9 +110,9 @@ async function getVenteCopyLive() {
 // recopié à la main. Si les prix changent un jour dans Platform.jsx, il faut répercuter ici aussi
 // (pas encore automatisé d'un seul côté — Platform.jsx reste la source visuelle, celle-ci la
 // source texte pour les chatbots) : à garder en tête, pas de mécanisme de sync auto pour l'instant.
-// MAJ pricing (oct. 2026, grille 180 000 / 330 000 / 600 000 FCFA par mois, abonnement MENSUEL uniquement, garantie 60 jours ; PERF+ livré en 48h, GROWTH et SCALE en 24h, SCALE en file prioritaire) :
+// MAJ pricing (oct. 2026, grille 180 000 / 330 000 / 600 000 FCFA par mois, abonnement MENSUEL uniquement, garantie 45 jours) :
 // tarifs en FCFA, volumes 24 / 48 / 96 créatives par MOIS (= 6 / 12 / 24 par semaine : 1 / 2 / 4 lots de 2 vidéos + 4 images),
-// production en 48h max pour PERF+, 24h max pour GROWTH et SCALE. Les identifiants internes (starter / pro / scale) restent ceux de la base et des webhooks ; seuls les noms
+// production en 24h max. Les identifiants internes (starter / pro / scale) restent ceux de la base et des webhooks ; seuls les noms
 // affichés changent (PERF+ / GROWTH / SCALE). L'offre trimestrielle n'est plus vendue (ses produits restent reconnus dans PLAN_MAP pour
 // les abonnés existants). Pack de 6 publicités à 50 000 FCFA pour ceux qui ne sont pas prêts pour un abonnement.
 // Chariow gère la devise réelle au moment du checkout.
@@ -122,25 +122,22 @@ const OFFERS = {
     id: 'starter', name: 'PERF+',
     tagline: 'Automatiser la production de vos créatives, tout en améliorant vos performances publicitaires.',
     imagesPerWeek: 6, batchesPerWeek: 1, creativesPerMonth: 24, videosPerMonth: 8, imagesPerMonth: 16, produitsPerWeek: '1',
-    garantie: 'Performance en 60 jours',
-    equipe: '2', adCopies: false, donneesMarche: false, priorite: false,
+    garantie: 'Performance en 45 jours',
     // prixImg = prix moyen par créative (vidéos + images), arrondi
-    monthly: { price: 180000, prixImg: 7500, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
+    monthly: { price: 180000, prixImg: 7500, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
   },
   pro: {
     id: 'pro', name: 'GROWTH', best: true,
     tagline: 'Accélérer la production et la croissance de votre marque, sans la prise de tête de gérer une équipe.',
     imagesPerWeek: 12, batchesPerWeek: 2, creativesPerMonth: 48, videosPerMonth: 16, imagesPerMonth: 32, produitsPerWeek: "jusqu'à 2",
-    garantie: 'Croissance en 60 jours',
-    equipe: '5', adCopies: true, donneesMarche: true, priorite: false,
+    garantie: 'Croissance en 45 jours',
     monthly: { price: 330000, prixImg: 6875, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
   },
   scale: {
     id: 'scale', name: 'SCALE',
     tagline: 'Exploiter plusieurs marchés avec des langues et cultures différentes, sans exploser vos coûts ni augmenter la complexité.',
     imagesPerWeek: 24, batchesPerWeek: 4, creativesPerMonth: 96, videosPerMonth: 32, imagesPerMonth: 64, produitsPerWeek: "jusqu'à 4",
-    garantie: 'Scaling en 60 jours',
-    equipe: '+10', adCopies: true, donneesMarche: true, priorite: true,
+    garantie: 'Scaling en 45 jours',
     monthly: { price: 600000, prixImg: 6250, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
   },
 };
@@ -152,7 +149,7 @@ const OFFERS = {
 function formatOffresPourPrompt(currency, currencyRate) {
   const fmt = (fcfa) => fcfa.toLocaleString('fr-FR') + ' FCFA';
   const { starter, pro, scale } = OFFERS;
-  const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (abonnement mensuel, résiliable à tout moment) · ${o.creativesPerMonth} créatives/mois (${o.videosPerMonth} vidéos + ${o.imagesPerMonth} images, ${o.batchesPerWeek} ${o.batchesPerWeek > 1 ? 'lots' : 'lot'}/semaine) · ${o.produitsPerWeek} produit${o.produitsPerWeek === '1' ? '' : 's'} couvert${o.produitsPerWeek === '1' ? '' : 's'}/semaine · stratégie marketing (recherche marché, concurrents, cible), apprentissage continu, AdBoard (gestion des créatives, données et produits)${o.adCopies ? ', ad copies et données marché détaillées (recommandations, opportunités)' : ' — SANS ad copies ni données marché détaillées (réservés à GROWTH et SCALE)'} · compte employé : ${o.equipe} membres ajoutables dans AdBoard · production en ${o.monthly.delivery} max après demande${o.priorite ? ' avec file prioritaire' : ''} · garantie ${o.garantie}`;
+  const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (abonnement mensuel, résiliable à tout moment) · ${o.creativesPerMonth} créatives/mois (${o.videosPerMonth} vidéos + ${o.imagesPerMonth} images, ${o.batchesPerWeek} ${o.batchesPerWeek > 1 ? 'lots' : 'lot'}/semaine) · ${o.produitsPerWeek} produit${o.produitsPerWeek === '1' ? '' : 's'} couvert${o.produitsPerWeek === '1' ? '' : 's'}/semaine · stratégie marketing (recherche marché, concurrents, cible), ad copies, apprentissage continu et accès à AdBoard inclus · production en ${o.monthly.delivery} max après demande · garantie ${o.garantie}`;
   // Offre de départ sans abonnement (affichée sous les 3 offres sur la page de vente) — ne jamais l'appeler « One Shot ».
   const depart = `Pack de 6 publicités (pour ceux qui ne sont pas prêts pour un abonnement) : ${fmt(PACK_PRIX_FCFA)}, une seule fois — 2 vidéos + 4 images optimisées conversion, reçues dans AdBoard. Si la personne s'abonne dans les 30 jours, ${fmt(PACK_PRIX_FCFA)} sont déduits de son 1er mois.`;
   return [ligne(starter), ligne(pro), ligne(scale), depart].join('\n');
@@ -722,138 +719,6 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 // finaliser un magiclink (auth/v1/verify) se font avec la clé anon, jamais la service key.
 const SUPABASE_ANON_KEY_INT = process.env.SUPABASE_ANON_KEY || '';
 
-// ═════════════════════════════════════════════════════════════════════════════
-// COMPTES ÉQUIPE (v5.68) — le propriétaire (celui qui a payé) invite des membres ; chaque membre a ses
-// autorisations. Toutes les écritures passent par le serveur (clé de service) ; la base (RLS) protège la lecture.
-// ═════════════════════════════════════════════════════════════════════════════
-const TEAM_SEATS = { starter: 2, pro: 5, scale: 15 };   // PERF+ / GROWTH / SCALE
-// Pas de droit « supprimer » : un membre ne supprime ni n'annule jamais rien, quoi qu'il arrive.
-const TEAM_PERM_KEYS = ['view', 'download', 'edit_products', 'request_production'];
-const TEAM_PRESETS = {
-  media_buyer: { view: true, download: true, edit_products: false, request_production: true },
-  assistant:   { view: true, download: true, edit_products: true,  request_production: true },
-  lecture:     { view: true, download: true, edit_products: false, request_production: false },
-  personnalise:{ view: true, download: true, edit_products: false, request_production: false },
-};
-const teamSbHeaders = () => ({ apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' });
-const teamHash = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
-
-async function teamAuthUser(req) {
-  const tok = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
-  if (!tok || !SUPABASE_ANON_KEY_INT) return null;
-  try {
-    const r = await fetch(`${SUPABASE_URL_INT}/auth/v1/user`, { headers: { apikey: SUPABASE_ANON_KEY_INT, Authorization: `Bearer ${tok}` } });
-    if (!r.ok) return null;
-    const u = await r.json();
-    return u && u.id ? { id: u.id, email: String(u.email || '').toLowerCase(), name: (u.user_metadata && (u.user_metadata.full_name || u.user_metadata.name)) || '' } : null;
-  } catch (e) { return null; }
-}
-function teamCleanPerms(perms, preset) {
-  const base = TEAM_PRESETS[preset] || TEAM_PRESETS.personnalise;
-  const out = {};
-  TEAM_PERM_KEYS.forEach(k => { out[k] = (perms && Object.prototype.hasOwnProperty.call(perms, k)) ? !!perms[k] : !!base[k]; });
-  out.view = true;                                   // sans lecture, un membre ne servirait à rien
-  if (out.edit_products || out.request_production || out.delete) out.download = out.download !== false;
-  return out;
-}
-async function teamLatestSub(ownerId) {
-  try {
-    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?user_id=eq.${ownerId}&select=*&order=started_at.desc&limit=1`, { headers: teamSbHeaders() });
-    const rows = await r.json();
-    const s = Array.isArray(rows) ? rows[0] : null;
-    if (!s) return null;
-    const expired = s.expires_at && new Date(s.expires_at) < new Date();
-    return { plan: s.plan, type: s.type, active: !!s.active && !expired };
-  } catch (e) { return null; }
-}
-async function teamOwnerLabel(ownerId) {
-  try {
-    const r = await fetch(`${SUPABASE_URL_INT}/auth/v1/admin/users/${ownerId}`, { headers: teamSbHeaders() });
-    const u = await r.json();
-    const meta = u.user_metadata || {};
-    return meta.full_name || meta.name || (u.email ? u.email.split('@')[0] : 'Propriétaire');
-  } catch (e) { return 'Propriétaire'; }
-}
-async function teamRows(ownerId) {
-  const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?owner_id=eq.${ownerId}&status=neq.removed&select=*&order=created_at.asc`, { headers: teamSbHeaders() });
-  const rows = await r.json();
-  return Array.isArray(rows) ? rows : [];
-}
-// Applique la limite de places selon l'offre : les derniers ajoutés sont suspendus (jamais supprimés) si l'offre baisse ; réactivés si la place revient.
-async function teamEnforce(ownerId, sub) {
-  let rows = await teamRows(ownerId);
-  if (!sub || !sub.plan || !(sub.plan in TEAM_SEATS)) return rows;
-  const max = TEAM_SEATS[sub.plan];
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    const devraitEtreSuspendu = i >= max;
-    let nouveau = null;
-    if (devraitEtreSuspendu && (row.status === 'active' || row.status === 'invited')) nouveau = 'suspended';
-    if (!devraitEtreSuspendu && row.status === 'suspended') nouveau = row.member_id ? 'active' : 'invited';
-    if (nouveau) {
-      await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?id=eq.${row.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ status: nouveau }) });
-      row.status = nouveau;
-    }
-  }
-  return rows;
-}
-const teamNoDelete = (p) => { const o = { ...(p || {}) }; delete o.delete; return o; };
-const teamPublicRow = (m) => ({ id: m.id, email: m.email, role_preset: m.role_preset, permissions: teamNoDelete(m.permissions), status: m.status, invited_at: m.invited_at, accepted_at: m.accepted_at });
-async function teamSendInvite(email, ownerLabel, token, preset) {
-  const RESEND_KEY = process.env.RESEND_API_KEY;
-  const lien = `https://adstackofficial.com/adboard?invite=${token}`;
-  if (!RESEND_KEY) return { sent: false, lien };
-  const roleTxt = { media_buyer: 'Media buyer', assistant: 'Assistant', lecture: 'Lecture seule', personnalise: 'Accès personnalisé' }[preset] || 'Membre';
-  const html = `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:24px;color:#111">
-    <h2 style="margin:0 0 12px">${ownerLabel} vous invite sur AdBoard</h2>
-    <p style="line-height:1.5">${ownerLabel} vous donne accès à son espace AdBoard (${roleTxt}) pour suivre et gérer les créatives publicitaires de sa marque.</p>
-    <p style="margin:24px 0"><a href="${lien}" style="background:#2D7FF9;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:bold">Accepter l'invitation</a></p>
-    <p style="line-height:1.5;color:#555;font-size:13px">Connectez-vous avec l'adresse Google ${email}. Ce lien est valable 7 jours.</p></div>`;
-  try {
-    const r = await fetch('https://api.resend.com/emails', {
-      method: 'POST', headers: { Authorization: `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'AdStack <contact@adstackofficial.com>', to: [email], subject: `${ownerLabel} vous invite sur AdBoard`, html })
-    });
-    return { sent: r.ok, lien };
-  } catch (e) { return { sent: false, lien }; }
-}
-// Un membre peut-il faire cette action pour ce propriétaire ? (utilisé par /briefs/create)
-async function teamMemberCan(ownerId, memberId, perm) {
-  if (!TEAM_PERM_KEYS.includes(perm)) return false; // jamais de suppression pour un membre
-  try {
-    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?owner_id=eq.${ownerId}&member_id=eq.${memberId}&status=eq.active&select=permissions&limit=1`, { headers: teamSbHeaders() });
-    const rows = await r.json();
-    return !!(Array.isArray(rows) && rows[0] && rows[0].permissions && rows[0].permissions[perm]);
-  } catch (e) { return false; }
-}
-
-// Livraison : prévient par notification ET par email les membres d'équipe qui travaillent sur les créatives
-// (media buyer, assistant, personnalisé avec demande/édition). Les membres en lecture seule ne sont pas dérangés.
-async function teamNotifyDelivery(ownerId, produit) {
-  try {
-    const rows = await teamRows(ownerId);
-    const dests = rows.filter(r => r.status === 'active' && r.member_id && r.email && r.permissions && (r.permissions.request_production || r.permissions.edit_products));
-    if (!dests.length) return;
-    const ownerLabel = await teamOwnerLabel(ownerId);
-    const RESEND_KEY = process.env.RESEND_API_KEY;
-    const lien = 'https://adstackofficial.com/adboard/gallery';
-    for (const m of dests) {
-      notifyUserBoth(m.member_id, { title: '🎉 Créatives prêtes', body: `Les créatives pour ${produit} sont livrées dans l'espace de ${ownerLabel}.`, url: '/adboard/gallery', type: 'brief' }).catch(() => {});
-      if (!RESEND_KEY) continue;
-      const html = `<div style="font-family:-apple-system,Arial,sans-serif;max-width:520px;margin:0 auto;color:#222;font-size:15px;line-height:1.65;">
-        <p>Bonjour,</p>
-        <p>Les créatives pour <b>${produit}</b> viennent d'être livrées dans l'espace AdBoard de <b>${ownerLabel}</b>.</p>
-        <p style="margin:24px 0"><a href="${lien}" style="background:#2D7FF9;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:bold">Voir les créatives</a></p>
-        <p style="color:#777;font-size:13px">Connectez-vous avec l'adresse ${m.email}.</p></div>`;
-      try {
-        const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from: 'AdStack <contact@adstackofficial.com>', to: [m.email], subject: `Créatives prêtes : ${produit}`, html }) });
-        if (!r.ok) console.error('[Team] email livraison', r.status, (await r.text().catch(() => '')).slice(0, 150));
-      } catch (e) { console.error('[Team] email livraison :', e.message); }
-    }
-  } catch (e) { console.error('[Team] notification livraison :', e.message); }
-}
-
 // MAJ pricing (oct. 2026, nouvelle grille : voir OFFERS) : tarifs en FCFA (price_fcfa = prix MENSUEL du forfait, y compris pour le
 // cycle trimestriel — c'est ce que Chariow facture chaque mois de la période, comme avant), volumes
 // 6 / 12 / 24 créatives par semaine. L'ancien paiement d'essai (First Payment prd_ywk7ik14 + Completion
@@ -863,19 +728,13 @@ const PLAN_MAP = {
   'prd_ljowq8':   { plan: 'starter', cycle: 'monthly',   credits_per_week: 6,  price_fcfa: 180000, prix_img: 7500 },
   'prd_wdya3v9h': { plan: 'starter', cycle: 'quarterly', credits_per_week: 6,  price_fcfa: 120000, prix_img: 5000 },
   'prd_34w031':   { plan: 'pro',     cycle: 'monthly',   credits_per_week: 12, price_fcfa: 330000, prix_img: 6875 },
+  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'quarterly', credits_per_week: 12, price_fcfa: 205000, prix_img: 4271 },
   'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly',   credits_per_week: 24, price_fcfa: 600000, prix_img: 6250 },
-  // Offres « après One Shot » : même offre mensuelle, −50 000 FCFA sur le 1er mois (une fois dans la vie du client).
-  // Ces trois produits Chariow ont remplacé les anciens produits trimestriels (prd_lnp4ax0b, prd_dn4fb72l) ; les
-  // abonnements trimestriels déjà actifs ne sont pas touchés, ils restent en base tels quels.
-  'prd_yslvdsuz': { plan: 'starter', cycle: 'monthly', credits_per_week: 6,  price_fcfa: 130000, prix_img: 5417, promo_pack: true },
-  'prd_lnp4ax0b': { plan: 'pro',     cycle: 'monthly', credits_per_week: 12, price_fcfa: 280000, prix_img: 5833, promo_pack: true },
-  'prd_dn4fb72l': { plan: 'scale',   cycle: 'monthly', credits_per_week: 24, price_fcfa: 550000, prix_img: 5729, promo_pack: true },
-  // Pack One Shot : 6 publicités (2 vidéos + 4 images) pour 50 000 FCFA, une seule fois, sans date de fin (la seule limite dans le temps est l'offre de 50 000 FCFA sur le 1er mois d'abonnement, 30 jours après l'achat, gérée par AdBoard).
-  'prd_rvd1qu12': { plan: 'discovery', cycle: 'one_shot', type: 'pack', total_credits: 6, credits_per_week: 0, price_fcfa: 50000, prix_img: 8333 },
+  'prd_dn4fb72l': { plan: 'scale',   cycle: 'quarterly', credits_per_week: 24, price_fcfa: 345000, prix_img: 3594 },
 };
 
 // 'discovery' : libellé conservé uniquement pour d'anciens comptes déjà abonnés (offre retirée de la vente).
-const PLAN_LABELS = { discovery: 'One Shot', starter: 'PERF+', pro: 'GROWTH', scale: 'SCALE' };
+const PLAN_LABELS = { discovery: 'Discovery', starter: 'PERF+', pro: 'GROWTH', scale: 'SCALE' };
 
 // ── Séquence email de conversion J1/J5/J12/J21 ─────────────────────────────
 const SEQUENCE_PRICES = { starter: { price: OFFERS.starter.monthly.price, prixImg: OFFERS.starter.monthly.prixImg } }; // PERF+ (id interne starter) mensuel en FCFA, référence pour les prix cités dans les emails
@@ -1331,7 +1190,7 @@ async function activateSubscription(userId, planInfo, email, name, phone) {
   const now = new Date();
   // Durée : mensuel = 30 jours, trimestriel = 91 jours (le cycle long est passé d'annuel à trimestriel,
   // même logique de remise). Plus de pack ni de passerelle First Payment → Starter.
-  const dureeJours = isPack ? 3650 : (cycle === 'quarterly' ? 91 : 30);
+  const dureeJours = cycle === 'quarterly' ? 91 : 30;
   const expiresAt = new Date(now.getTime() + dureeJours * 24 * 60 * 60 * 1000);
   const totalCredits = totalCreditsAchat;
 
@@ -1347,18 +1206,12 @@ async function activateSubscription(userId, planInfo, email, name, phone) {
   if (isPack) {
     payload.type = 'pack';
     payload.total_credits = totalCredits;
-    // Réduction « après One Shot » : une seule fois dans la vie du client. Si cette personne a déjà payé un
-    // abonnement, ce pack ne lui ouvre pas la réduction (AdBoard lit ce drapeau).
-    try {
-      const rPrev = await fetch(`${SUPABASE_URL_INT}/rest/v1/transactions?user_id=eq.${userId}&plan=in.(starter,pro,scale)&select=plan&limit=1`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } });
-      if (rPrev.ok) { const prev = await rPrev.json(); if (Array.isArray(prev) && prev.length) payload.promo_pack_used = true; }
-    } catch (e) { console.warn('[Pack] vérification abonnement antérieur impossible:', e.message); }
     payload.credits_per_week = 0; // jamais utilisé en mode pack, mais gardé à 0 par sécurité si du code ancien le lit encore
   } else {
     payload.type = 'subscription';
     payload.credits_per_week = creditsPerWeek;
   }
-  const upsertSub = (body) => fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?on_conflict=user_id`, {
+  const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?on_conflict=user_id`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -1366,15 +1219,8 @@ async function activateSubscription(userId, planInfo, email, name, phone) {
       'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
       'Prefer': 'resolution=merge-duplicates,return=representation',
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(payload)
   });
-  let r = await upsertSub(payload);
-  // Colonne promo_pack_used pas encore créée dans Supabase : on réessaie sans elle plutôt que de perdre l'activation.
-  if (!r.ok && 'promo_pack_used' in payload) {
-    console.warn('[Pack] colonne promo_pack_used absente — activation sans ce drapeau (exécuter le SQL supabase_promo_pack.sql)');
-    const { promo_pack_used, ...sansFlag } = payload;
-    r = await upsertSub(sansFlag);
-  }
   // Cause profonde corrigée (achat confirmé par notification mais jamais reflété dans l'app) :
   // le code affichait "✅ Pack activé" inconditionnellement, sans jamais vérifier que Supabase
   // avait réellement accepté la requête. Si l'upsert échouait (ex : contrainte unique manquante
@@ -1418,7 +1264,6 @@ async function activateSubscription(userId, planInfo, email, name, phone) {
         console.error('[Transactions] ❌ ÉCHEC écriture:', rTx.status, errTx.slice(0, 500));
       } else {
         console.log(`[Transactions] ✅ Loguée : ${plan} (${cycle}) — ${priceFcfa} FCFA`);
-        writeInAppNotification(userId, `Paiement reçu : forfait ${({starter:'PERF+',pro:'GROWTH',scale:'SCALE'})[plan] || plan} — ${Math.round(priceFcfa).toLocaleString('fr-FR')} FCFA. Retrouvez-le dans Facturation.`, 'info').catch(() => {});
       }
     } catch(e) { console.error('[Transactions] Erreur log:', e.message); }
   }
@@ -1501,6 +1346,96 @@ async function traiterAttributionCRM(userId) {
   }
 }
 
+// ── Accès administrateur au CRM : soit la clé du prospecteur (scripts du PC), soit la session Supabase de l'administrateur.
+// La session est vérifiée auprès de Supabase à chaque appel (jamais décodée à la main) et doit appartenir à l'email admin.
+const CRM_ADMIN_EMAIL = (process.env.CRM_ADMIN_EMAIL || 'thefirstquality01@gmail.com').toLowerCase();
+async function crmAdminOk(req) {
+  if (req.headers['x-api-key'] === 'adstack2024xProspectionKey99') return true;
+  const tok = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
+  if (!tok) return false;
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/auth/v1/user`, { headers: { apikey: SUPABASE_ANON_KEY_INT, Authorization: `Bearer ${tok}` } });
+    if (!r.ok) return false;
+    const me = await r.json();
+    return (me.email || '').toLowerCase() === CRM_ADMIN_EMAIL;
+  } catch (_) { return false; }
+}
+
+
+// ── Choix automatique d'UN CT (interface de test de l'agent Creative Image) ──
+// L'agent voit TOUTE la galerie (image + nom + description + balises de chaque CT) et reçoit les mêmes entrées que la création :
+// brief, photo produit, synthèse complète, consigne d'angle / niveau de conscience, assets réels du client.
+const SELECTION_CT_SYSTEME = `Tu es le directeur artistique d'AdStack. Pour UNE créative publicitaire image Meta Ads, tu choisis UN SEUL Creative Template (CT) dans la galerie complète qui t'est montrée : chaque CT est une image de référence accompagnée de son identifiant, de son nom, de sa description et de ses balises.
+
+Tu reçois tout ce que l'agent de création recevra : le brief client, la photo du produit, la synthèse complète de l'analyste de marché, la consigne d'angle et de niveau de conscience de CETTE créative, et les assets réels du client.
+
+RÈGLE ABSOLUE — NIVEAU DE CONSCIENCE : le niveau de conscience de la créative est imposé et vérifié par le code. Une créative Most Aware se fait UNIQUEMENT avec un CT balisé Most Aware ; une créative Product Aware UNIQUEMENT avec un CT balisé Product Aware ; une créative Solution Aware UNIQUEMENT avec un CT balisé Solution Aware. Les CT qui te sont montrés ont déjà été filtrés en conséquence : ne choisis jamais un CT dont la balise contredit le niveau demandé. (Si un message précise qu'aucun CT n'est balisé à ce niveau, choisis alors la structure la plus proche du niveau demandé et dis-le dans ta raison.)
+
+Méthode :
+1. Comprends d'abord le produit, la cible, l'angle imposé et le niveau de conscience de cette créative.
+2. Regarde réellement les images de la galerie. Les balises et descriptions peuvent être absentes ou incomplètes ; quand elles existent, elles sont une donnée pré-établie fiable (la conscience balisée surtout) et priment sur un jugement visuel refait de zéro.
+3. Évalue chaque CT dans cet ordre de priorité strict (un niveau supérieur l'emporte toujours sur un niveau inférieur) :
+   - NICHE : le CT est-il de la niche du produit ou d'une niche visuellement et conceptuellement proche ?
+   - PRODUIT PRÉCIS : comment le produit y est introduit visuellement, et si c'est compatible avec CE produit (forme, usage, taille) et réalisable avec les assets réels du client (aspects photo, kit ou cadeaux, avis, logo, prix affichable).
+   - ANGLE : le fond de l'angle imposé.
+   - NIVEAU DE CONSCIENCE : Solution Aware = transformation (situation actuelle vers situation désirée) ou comparaison entre types de solutions, produit peu ou pas visible ; Product Aware = confiance envers ce produit précis, produit visible et central, jamais de prix ni d'offre ; Most Aware = structure promotionnelle, prix affiché, offre ou pack, urgence, appel à l'action direct.
+   - TON : le registre du CT face au quadrant EPIC de l'angle (émotionnel, pratique, identitaire, critique).
+4. Écarte tout CT impossible à réaliser avec les assets fournis ou qui contredit une contrainte du brief.
+5. Départage les finalistes sur le visuel : le CT qui rendra la créative la plus convaincante pour cette cible précise.
+
+Le choix doit résulter de ton propre raisonnement sur ces données, jamais d'un choix par défaut ni de l'ordre de la liste.
+
+FORMAT : réponds UNIQUEMENT par un objet JSON sur une seule ligne, sans markdown ni backticks : {"id":"<identifiant exact du CT>","raison":"<2 à 4 phrases en français : pourquoi ce CT, et ce qui a fait écarter les finalistes>"}`;
+
+// Niveau de conscience : valeurs balisées 'solution' | 'product' | 'most' (ou « Most Aware »…)
+function niveauCT(v) {
+  const t = String(v || '').toLowerCase();
+  if (t.includes('most')) return 'most';
+  if (t.includes('product')) return 'product';
+  if (t.includes('solution')) return 'solution';
+  if (t.includes('problem')) return 'problem';
+  return '';
+}
+const NIVEAU_LIBELLE = { solution: 'Solution Aware', product: 'Product Aware', most: 'Most Aware', problem: 'Problem Aware' };
+function construireSelectionCT(b) {
+  const cts = Array.isArray(b.cts) ? b.cts : [];
+  const parts = [];
+  parts.push({ type: 'text', text: 'BRIEF CLIENT :\n' + String(b.briefTexte || '(non fourni)').slice(0, 12000) });
+  if (b.productBase64) {
+    parts.push({ type: 'text', text: 'PHOTO DU PRODUIT :' });
+    parts.push({ type: 'image', source: { type: 'base64', media_type: b.productMime || 'image/jpeg', data: b.productBase64 } });
+  }
+  parts.push({ type: 'text', text: 'SYNTHÈSE COMPLÈTE DE L\'ANALYSTE DE MARCHÉ :\n' + String(b.synthese || '(non fournie)') });
+  if (b.angleInstruction) parts.push({ type: 'text', text: 'CONSIGNE D\'ANGLE ET DE NIVEAU DE CONSCIENCE DE CETTE CRÉATIVE :\n' + b.angleInstruction });
+  if (b.niveauTexte) parts.push({ type: 'text', text: b.niveauTexte });
+  if (b.assets && String(b.assets).trim()) parts.push({ type: 'text', text: 'ASSETS RÉELS DU CLIENT :\n' + String(b.assets).slice(0, 2500) });
+  if (Array.isArray(b.excludeIds) && b.excludeIds.length) parts.push({ type: 'text', text: 'CT déjà utilisés au lot précédent pour ce produit (à éviter) : ' + b.excludeIds.join(', ') });
+  parts.push({ type: 'text', text: '━━━ GALERIE COMPLÈTE : ' + cts.length + ' CT ━━━' });
+  cts.forEach((ct, i) => {
+    let ligne = 'CT ' + (i + 1) + ' — ID : ' + ct.id + ' — « ' + (ct.name || ct.id) + ' »' + (ct.meta ? ' — ' + ct.meta : '');
+    if (ct.niche) ligne += ' [niche : ' + ct.niche + ']';
+    if (ct.awareness && ct.awareness.length) ligne += ' [conscience balisée : ' + ct.awareness.join('/') + ']';
+    if (ct.styleTags && ct.styleTags.length) ligne += ' [style : ' + ct.styleTags.join(', ') + ']';
+    parts.push({ type: 'text', text: ligne });
+    if (ct.b64) parts.push({ type: 'image', source: { type: 'base64', media_type: ct.mime || 'image/jpeg', data: ct.b64 } });
+  });
+  parts.push({ type: 'text', text: 'Choisis maintenant LE CT pour cette créative. Réponds uniquement avec le JSON demandé.' });
+  return parts;
+}
+
+function lireChoixCT(raw, cts) {
+  const texte = String(raw || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+  const ids = new Set((cts || []).map(c => c.id));
+  let id = null, raison = '';
+  try {
+    const d = texte.indexOf('{'), f = texte.lastIndexOf('}');
+    if (d !== -1 && f > d) { const j = JSON.parse(texte.slice(d, f + 1)); id = j.id; raison = j.raison || ''; }
+  } catch (_) {}
+  if (!id || !ids.has(id)) { const m = [...texte.matchAll(/ct_[a-zA-Z0-9_]+/g)].map(x => x[0]).find(x => ids.has(x)); if (m) id = m; }
+  if (!id || !ids.has(id)) throw new Error('Choix de CT illisible ou hors galerie : ' + texte.slice(0, 300));
+  return { id, raison: String(raison).trim() };
+}
+
 async function findUserByEmail(email) {
   if (!email) return null;
   // ⚠️ L'API Admin Supabase ignore silencieusement ?email=... et renvoie TOUS les utilisateurs.
@@ -1558,7 +1493,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true }));
+    res.end(JSON.stringify({ ok: true, version: 'v5.70-top-performer-chiffres', balayage: typeof decideBalayage === 'function', scrapecreators_cle: !!SC_KEY }));
     return;
   }
 
@@ -1923,6 +1858,9 @@ const server = http.createServer(async (req, res) => {
     r.end();
   }
 
+  if (req.url.startsWith('/prospector/') && ['/prospector/start','/prospector/stop','/prospector/status'].some(r => req.url.startsWith(r)) && !(await crmAdminOk(req))) {
+    res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'unauthorized' })); return;
+  }
   if (req.method === 'POST' && req.url.startsWith('/prospector/start')) {
     relayToProspector(req.url, 'POST', res);
     return;
@@ -2393,6 +2331,50 @@ ${pageText}`;
   // que l'Usine faisait auparavant depuis le navigateur.
   // ═══════════════════════════════════════════════════════════════════
 
+  // ── Réservation d'appel depuis le formulaire du site ──
+  // Avant : la page de vente lisait et modifiait la table des prospects avec la clé publique, ce qui obligeait à laisser
+  // cette table ouverte à tout le monde. Maintenant tout passe par ici (clé service) : la page n'a plus aucun accès direct.
+  // Les champs de la fiche sont construits ICI à partir de valeurs validées — jamais copiés tels quels depuis la page.
+  if (req.method === 'POST' && req.url === '/reserver-appel') {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 20000) req.destroy(); });
+    req.on('end', async () => {
+      const rep = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
+      try {
+        const d = JSON.parse(body || '{}');
+        const txt = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, max);
+        const digits = String(d.digits || '').replace(/\D/g, '');
+        const slot = Number(d.slot);
+        if (digits.length < 9 || digits.length > 15) return rep(400, { ok: false, error: 'numéro invalide' });
+        if (!Number.isFinite(slot) || slot < Date.now() - 60000 || slot > Date.now() + 14 * 86400000) return rep(400, { ok: false, error: 'créneau invalide' });
+        const nom = txt(d.nom, 120), marque = txt(d.marque, 120), marche = txt(d.marche, 60), lien = txt(d.lien, 300);
+        if (nom.length < 2 || !marche || lien.length < 4) return rep(400, { ok: false, error: 'champs manquants' });
+        const now = new Date().toISOString();
+        const infos = { appel_reserve: true, appel_reserve_at: now, appel_programme_at: new Date(slot).toISOString(), source: 'formulaire_site', form_nom: nom, form_marche: marche, form_ca_objectif: txt(d.ca, 80), form_budget_pub: txt(d.bud, 80), appel_meet_ok: true, form_boutique: lien };
+        const H = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' };
+        const lu = await fetch(`${SUPABASE_URL_INT}/rest/v1/prospects?lien_wa=ilike.*${digits}*&select=id,statut,notes&limit=1`, { headers: H });
+        if (!lu.ok) return rep(502, { ok: false, error: 'lecture ' + lu.status });
+        const ex = (await lu.json())[0];
+        if (ex) {
+          let n = {}; try { n = JSON.parse(ex.notes || '{}') || {}; } catch (_) { n = { texte_ancien: ex.notes || '' }; }
+          ['appel_fait', 'appel_fait_at', 'appel_via', 'pas_interesse', 'pas_interesse_at', 'closing_etat', 'closing_at'].forEach(k => { delete n[k]; });
+          Object.assign(n, infos);
+          const upd = { notes: JSON.stringify(n) };
+          if (ex.statut === 'a_contacter' || ex.statut === 'archive') upd.statut = 'en_suivi';
+          const pr = await fetch(`${SUPABASE_URL_INT}/rest/v1/prospects?id=eq.${ex.id}`, { method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify(upd) });
+          if (!pr.ok) return rep(502, { ok: false, error: 'maj ' + pr.status });
+        } else {
+          const ins = await fetch(`${SUPABASE_URL_INT}/rest/v1/prospects`, { method: 'POST', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify({ nom_marque: marque || nom, produit: '', pays: marche, lien_wa: 'https://wa.me/' + digits, page_produit: lien, statut: 'en_suivi', score: 0, date_collecte: now.slice(0, 10), notes: JSON.stringify(infos) }) });
+          if (!ins.ok) return rep(502, { ok: false, error: 'insertion ' + ins.status });
+        }
+        const chk = await fetch(`${SUPABASE_URL_INT}/rest/v1/prospects?lien_wa=ilike.*${digits}*&select=id&limit=1`, { headers: H });
+        const ok = chk.ok && (await chk.json()).length > 0;
+        return rep(ok ? 200 : 502, { ok });
+      } catch (e) { console.error('/reserver-appel:', e.message); return rep(500, { ok: false, error: 'erreur' }); }
+    });
+    return;
+  }
+
   // ── Insertion prospect depuis le prospecteur (contournement temporaire) ──
   // Le rôle anon est bloqué par un bug apparent côté PostgREST (policy/GRANT corrects,
   // confirmés par test SQL direct, mais l'API rejette quand même en 42501 — signalé à
@@ -2424,31 +2406,6 @@ ${pageText}`;
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true }));
       } catch(e) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, error: e.message }));
-      }
-    });
-    return;
-  }
-
-  // ── Archivage en lot de prospects 'a_contacter' non qualifiés (script verifier_a_contacter) ──
-  // Ne touche QUE les prospects encore au statut a_contacter : jamais un suivi, un lead ou un client.
-  if (req.method === 'POST' && req.url === '/prospector/archive-leads') {
-    let body = '';
-    req.on('data', c => body += c);
-    req.on('end', async () => {
-      try {
-        const ids = (JSON.parse(body).ids || []).map(Number).filter(n => Number.isInteger(n) && n > 0).slice(0, 2000);
-        if (!ids.length) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true, archives: 0 })); return; }
-        const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/prospects?id=in.(${ids.join(',')})&statut=eq.a_contacter`, {
-          method: 'PATCH',
-          headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
-          body: JSON.stringify({ statut: 'archive' })
-        });
-        const rows = r.ok ? await r.json() : [];
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: r.ok, archives: Array.isArray(rows) ? rows.length : 0, status: r.status }));
-      } catch (e) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: e.message }));
       }
@@ -2578,14 +2535,33 @@ ${pageText}`;
         const reqBody = JSON.parse(body);
         const { system, parts, maxOutputTokens, brief, isTest } = reqBody;
         const { marque = '', produit = '', pays = '', lien_page_produit = '' } = brief || {};
+        const { productId = null, nbAngles = 0, forcerBalayage = false } = reqBody;
+        let _dec = { reutiliser: false, raison: 'décision indisponible' };
+        try { _dec = await decideBalayage({ productId, isTest, nbAngles, brief, forcer: forcerBalayage }); }
+        catch (e) { console.log('   ⚠ décision de balayage impossible, nouveau balayage par prudence :', e.message); }
+        const _reutiliser = !!_dec.reutiliser;
+        const _statsBalayage = { reutilise: _reutiliser, raison: _dec.raison };
 
         console.log('\n' + '═'.repeat(60));
         console.log(`🔍 ANALYSTE DE MARCHÉ — ${marque} / ${produit} (${pays})`);
         console.log('═'.repeat(60));
 
+        let donneesBrutes = '';
+        let _planBalayage = null, _scPromise = null;
+        const _compteurSC = { n: 0, credits: 0 };
+        console.log(`\n   → Balayage : ${_reutiliser ? 'RÉUTILISATION de l\'hypothèse stockée — ' : 'NOUVEAU BALAYAGE — '}${_dec.raison}`);
+        if (_reutiliser) {
+          donneesBrutes += `### BALAYAGE DE MARCHÉ NON REFAIT (hypothèse stockée réutilisée)\nLe marché a déjà été balayé en profondeur pour ce produit (${_dec.raison}). Aucune nouvelle donnée de marché n'a été collectée pour cette commande : travaille à partir de l'HYPOTHÈSE EXISTANTE fournie plus haut (stock d'angles en réserve inclus). Seules les variables du brief actuel (prix, offre, garantie, livraison) et la page produit ci-dessous sont à jour.\n\n`;
+        } else {
+        console.log('\n[0/4] Plan de balayage (point de départ : le problème, pas la marque)...');
+        _planBalayage = await planBalayage(brief, produit, marque, pays);
+        console.log(`   → problème : ${_planBalayage.probleme}`);
+        console.log(`   → alternatives : ${_planBalayage.alternatives.join(' | ') || 'n/a'} · concurrents : ${_planBalayage.concurrents.join(' | ') || 'n/a'}`);
+        if (!SC_KEY) console.log('   ⚠ SOCIAL_MEDIA_SCRAPING_API absente : ScrapeCreators ignoré');
+        else _scPromise = balayageScrapeCreators(_planBalayage, pays, _compteurSC).catch(e => ({ texte: '', stats: { erreurs: [e.message] } }));
+
         // ── SOURCE 1/5 — Gemini 2.5 Flash + Google Search grounding ──
         console.log('\n[1/4] Gemini Search grounding (recherche multi-source enrichie)...');
-        let donneesBrutes = '';
         try {
           const token = await getToken();
           const _marchesBrief = Array.isArray(brief && brief.marches) ? brief.marches.filter(Boolean) : [];
@@ -2594,7 +2570,7 @@ ${pageText}`;
             : '';
       const researchPrompt = `Tu es un analyste de marché senior. Tu mènes une recherche APPROFONDIE et MULTI-SOURCE sur le produit "${produit}" de la marque "${marque}" vendu en ${pays}.${_blocMulti}
 
-OBJECTIF : ramener un MAXIMUM de DATA RÉELLE et de VERBATIMS clients authentiques — pas de paraphrase, pas de généralités. Cite les sources URL précises trouvées et les extraits textuels exacts (entre guillemets quand c\'est un verbatim).
+${blocProblemePourRecherche(_planBalayage)}OBJECTIF : ramener un MAXIMUM de DATA RÉELLE et de VERBATIMS clients authentiques — pas de paraphrase, pas de généralités. Cite les sources URL précises trouvées et les extraits textuels exacts (entre guillemets quand c\'est un verbatim).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DOMAINES À EXPLORER EN PRIORITÉ (utilise site: dans tes recherches Google)
@@ -2789,6 +2765,21 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
         // Son intention (recherche sur sites ciblés) est repliée dans le prompt de la Source 1 (TARGET_DOMAINS_HINT).
         console.log('\n[Note] Google Custom Search et Jumia (scraping HTTP direct) retirés — repliés dans la Source 1 (Gemini Search).');
 
+        // ── SOURCE 5 — ScrapeCreators (Reddit, TikTok, pubs Meta) lancé en parallèle plus haut ──
+        if (_scPromise) {
+          console.log('\n[ScrapeCreators] Reddit · TikTok · Bibliothèque de pubs...');
+          try {
+            const sc = await _scPromise;
+            const st = sc.stats || {};
+            console.log(`   → Reddit ${st.reddit || 0} · TikTok ${st.tiktok_videos || 0} vidéo(s) / ${st.tiktok_commentaires || 0} commentaire(s) · pubs ${st.pubs || 0} · ${_compteurSC.n} requête(s), ${_compteurSC.credits} crédit(s)`);
+            (st.erreurs || []).slice(0, 6).forEach(er => console.log('   ✗ ' + er));
+            if (sc.texte) { donneesBrutes += sc.texte; console.log(`   ✓ ${sc.texte.length} chars de voix du marché ajoutés`); }
+            else console.log('   ✗ aucune donnée ScrapeCreators');
+            _statsBalayage.scrapecreators = { requetes: _compteurSC.n, credits: _compteurSC.credits, reddit: st.reddit || 0, tiktok_videos: st.tiktok_videos || 0, tiktok_commentaires: st.tiktok_commentaires || 0, pubs: st.pubs || 0, erreurs: (st.erreurs || []).length };
+          } catch (e) { console.log('   ✗ erreur ScrapeCreators :', e.message); }
+        }
+        } // fin du balayage complet (non exécuté quand l'hypothèse stockée est réutilisée)
+
         // ── SOURCE 6 — Page produit client (lien_page_produit du brief) ──
         if (lien_page_produit && lien_page_produit.startsWith('http')) {
           console.log('\n[4/4] Page produit client...');
@@ -2928,9 +2919,10 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
 
         console.log(`✓ Synthèse reçue — ${text.length} chars`);
         console.log('═'.repeat(60) + '\n');
+        if (!_reutiliser && productId && !isTest) await enregistrerBalayage(productId, { requetes: _compteurSC.n, credits: _compteurSC.credits, plan: _planBalayage });
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ text }));
+        res.end(JSON.stringify({ text, balayage: _statsBalayage }));
       } catch (e) {
         console.error('✗ analyste-synthese error:', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -3315,6 +3307,45 @@ HARD LOCKS :
   }
 
   // ── /select-cts — Sélection intelligente des CTs par Gemini ──
+  // ── /select-ct-agent — l'agent Creative Image choisit lui-même UN CT parmi TOUTE la galerie (interface de test) ──
+  if (req.method === 'POST' && req.url === '/select-ct-agent') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const b = JSON.parse(body);
+        const ctsTous = Array.isArray(b.cts) ? b.cts : [];
+        if (!ctsTous.length) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Galerie CT vide' })); return; }
+        // Niveau de conscience imposé : seuls les CT balisés à ce niveau sont candidats (filtre appliqué par le code, pas laissé au modèle)
+        const niveau = niveauCT(b.niveau);
+        let cts = ctsTous, repli = false, nbBalises = 0;
+        if (niveau) {
+          const balises = ctsTous.filter(c => (c.awareness || []).some(a => niveauCT(a) === niveau));
+          nbBalises = balises.length;
+          if (balises.length) cts = balises;
+          else repli = true;
+          b.niveauTexte = repli
+            ? 'NIVEAU DE CONSCIENCE IMPOSÉ : ' + NIVEAU_LIBELLE[niveau] + '. ⚠ Aucun CT de la galerie n\'est balisé à ce niveau : choisis la structure qui s\'en rapproche le plus et signale-le dans ta raison.'
+            : 'NIVEAU DE CONSCIENCE IMPOSÉ : ' + NIVEAU_LIBELLE[niveau] + '. Les ' + cts.length + ' CT ci-dessous sont TOUS balisés ' + NIVEAU_LIBELLE[niveau] + ' (filtre vérifié par le code).';
+        }
+        console.log('\n🎯 SELECT-CT-AGENT — choix de 1 CT parmi ' + cts.length + (niveau ? ' (niveau ' + NIVEAU_LIBELLE[niveau] + (repli ? ' : AUCUN CT BALISÉ, repli sur ' + ctsTous.length : ' : ' + nbBalises + ' balisés sur ' + ctsTous.length) + ')' : '') + ', ' + cts.filter(c => c.b64).length + ' avec image');
+        const raw = await callGeminiPro(SELECTION_CT_SYSTEME, construireSelectionCT({ ...b, cts }), 24000, {
+          modele: MODELES.creative, temperature: 0.3, thinkingBudget: 16384, logLabel: 'Choix CT', timeoutMs: 150000,
+          typeAppel: b.isTest ? 'selection_ct_test' : 'selection_ct_prod'
+        });
+        const choix = lireChoixCT(raw, cts);
+        console.log('  → CT choisi : ' + choix.id + ' — ' + choix.raison.slice(0, 160));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ id: choix.id, raison: choix.raison, nbCT: cts.length, niveau: niveau || null, nbBalises, repli }));
+      } catch (e) {
+        console.error('✗ SELECT-CT-AGENT error:', e.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   if (req.method === 'POST' && req.url === '/select-cts') {
     let body = '';
     req.on('data', chunk => body += chunk);
@@ -4119,7 +4150,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         if (brief.client.user_id) {
           sendPushToUser(brief.client.user_id, {
             title: '📦 Demande reçue',
-            body: `Tes ${brief.quantity} visuels pour ${brief.product.nom} sont en cours — livraison sous ${brief.client.plan === 'starter' ? '48h' : '24h'}.`,
+            body: `Tes ${brief.quantity} visuels pour ${brief.product.nom} sont en cours — livraison sous 24h.`,
             url: '/adboard/tracking'
           }).catch(()=>{});
         }
@@ -4404,16 +4435,16 @@ if (req.method === 'GET' && req.url.startsWith('/cron/check-pending')) {
       await saveBriefs([b]);
     }
 
-    // ── Rappel — livraison prévue à 24h (48h pour PERF+), marge de 6h pour ne jamais oublier d'envoyer ──
-    const heuresRappel = (b) => (b.client?.plan === 'starter' ? 42 : 18);
+    // ── Rappel 18h — livraison prévue à 24h, marge de 6h pour ne jamais oublier d'envoyer ──
+    const seuil18h = Date.now() - 18 * 60 * 60 * 1000;
     const aRappeler = briefs.filter(b =>
       b.status !== 'done' && b.status !== 'cancelled' && b.status !== 'probleme_agence' &&
-      !b.delivery_reminder_sent && new Date(b.created_at).getTime() <= Date.now() - heuresRappel(b) * 60 * 60 * 1000
+      !b.delivery_reminder_sent && new Date(b.created_at).getTime() <= seuil18h
     );
     for (const b of aRappeler) {
       await notifierAdmin(
-        `📬 ${heuresRappel(b)}h écoulées — envoie les livrables pour ${b.product?.nom || 'produit'}`,
-        `<p><strong>${b.product?.nom || 'Produit'}</strong> — ${heuresRappel(b)}h se sont écoulées depuis la demande. Encore 6h avant l'échéance des ${heuresRappel(b) + 6}h — envoie les livrables au client.</p>
+        `📬 18h écoulées — envoie les livrables pour ${b.product?.nom || 'produit'}`,
+        `<p><strong>${b.product?.nom || 'Produit'}</strong> — 18h se sont écoulées depuis la demande. Encore 6h avant l'échéance des 24h — envoie les livrables au client.</p>
          <p>Client : ${b.client?.email || 'email non renseigné'} — ${b.quantity} images</p>
          <p><a href="https://www.adstackofficial.com/factory.html" style="color:#5B8DEF;">Ouvrir Factory pour envoyer les livrables →</a></p>
          <p style="color:#888;font-size:12px">Reçue le ${new Date(b.created_at).toLocaleString('fr-FR')} — id ${b.id}</p>`
@@ -4447,7 +4478,7 @@ if (req.method === 'GET' && req.url.startsWith('/cron/check-pending')) {
           if (age < J7 || age > J10) continue;
           await sendPushToUser(p.user_id, {
             title: 'Une créative qui sort du lot ?',
-            body: `Vos visuels du batch ${d.semaine || ''} tournent depuis une semaine — marquez celles qui performent, ça affine vos prochains batches.`,
+            body: `Vos visuels du batch ${d.semaine || ''} tournent depuis une semaine — marquez celles qui performent et ajoutez vos chiffres (ROAS, CPA…), ça affine vos prochains batches.`,
             url: '/adboard/gallery'
           });
           d.topPerformerReminderSent = true;
@@ -4981,7 +5012,7 @@ ${formatOffresPourPrompt(currency, currencyRate)}
 Plan actif : ${hasSubscription ? planActive.toUpperCase() + ' — NE JAMAIS le reproposer' : 'AUCUN'}
 
 FORMATS : on produit des VIDÉOS et des IMAGES (pas seulement des images). Chaque lot hebdomadaire = 2 vidéos + 4 images
-(6 créatives), livré en 24h max (48h max pour PERF+). Quand on parle de ce qu'on livre, dis « créatives » (vidéos et images), jamais
+(6 créatives), livré en 24h max. Quand on parle de ce qu'on livre, dis « créatives » (vidéos et images), jamais
 « visuels » ni « images » tout court. Une vidéo ou une image, les deux sont pensées pour vendre sur Meta Ads.
 
 CHOISIR L'OFFRE : UN SEUL CRITÈRE = L'OBJECTIF DE LA PERSONNE (performance, croissance ou expansion)
@@ -4989,20 +5020,20 @@ Ne demande PLUS le chiffre d'affaires visé ni le budget pub — ces critères n
 Pose UNE seule question : « Ton objectif, c'est plutôt performer, grandir ou t'étendre ? » (reformule simplement).
 - PERFORMANCE → PERF+. Elle veut un compte pub qui performe et de meilleurs résultats. PERF+ lui donne tout
   ce qu'il faut : 24 créatives/mois (vidéos + images), 1 produit par semaine, un lot qui s'améliore chaque semaine
-  grâce à ce qui a marché. Garantie Performance en 60 jours.
+  grâce à ce qui a marché. Garantie Performance en 45 jours.
 - CROISSANCE → GROWTH. Elle veut aller plus vite, tester plus, trouver ses gagnants, sans gérer une équipe.
-  GROWTH = 48 créatives/mois, jusqu'à 2 produits par semaine. Garantie Croissance en 60 jours.
+  GROWTH = 48 créatives/mois, jusqu'à 2 produits par semaine. Garantie Croissance en 45 jours.
 - EXPANSION → SCALE. Elle est déjà sur un gros marché, OU elle veut attaquer plusieurs marchés en même temps
   (langues, cultures différentes) sans exploser ses coûts. SCALE = 96 créatives/mois, jusqu'à 4 produits par semaine.
-  Garantie Scaling en 60 jours.
+  Garantie Scaling en 45 jours.
 Si l'objectif n'est pas clair, pose la question de l'objectif avant de recommander. Si la personne le dit déjà,
 recommande directement UNE offre (jamais les trois en vrac) et explique en une phrase pourquoi elle lui correspond.
 Si elle hésite entre deux offres, tranche pour elle : « Pour ton objectif, je te conseille X. »
 (Ces critères servent uniquement si la personne n'a pas d'abonnement actif, ou veut changer de plan.)
 
-GARANTIE — « RÉSULTATS EN 60 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, elle porte un nom selon l'offre : Performance pour PERF+, Croissance pour GROWTH, Scaling pour SCALE, ne parle plus de « livraison 24h ou remboursé »
+GARANTIE — « RÉSULTATS EN 45 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, elle porte un nom selon l'offre : Performance pour PERF+, Croissance pour GROWTH, Scaling pour SCALE, ne parle plus de « livraison 24h ou remboursé »
 ni de « satisfait ou remboursé »). Fonctionnement : le client publie les créatives livrées et investit en publicité avec
-elles pendant 60 jours. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
+elles pendant 45 jours. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
 de son compte publicitaire Meta (dépenses du mois + résultats : ROAS, coût par achat…). On vérifie, puis on le rembourse
 l'intégralité de son paiement. Présente-la simplement, en 2 phrases, comme ce qui retire le risque.
 
@@ -5072,7 +5103,7 @@ Juste avant ou juste après avoir proposé le bouton checkout à une personne ch
 courtes ce qui se passe concrètement après le paiement — ça rassure, une personne qui va payer veut savoir à
 quoi s'attendre. Exemple de ton (adapte au contexte de la conversation, ne récite jamais mot pour mot) :
 "Une fois le paiement fait, tu es redirigé directement sur la plateforme — tu te connectes, tu ajoutes ton
-produit, tu demandes tes créatives, et notre équipe te livre du contenu qui performe sous 24h max (48h max pour PERF+)."
+produit, tu demandes tes créatives, et notre équipe te livre du contenu qui performe sous 24h max."
 Une touche d'enthousiasme sincère est bienvenue, avant ou après le paiement — pas dans chaque message, juste
 au bon moment (ex: quand elle vient de choisir une offre, ou juste avant le bouton) : une phrase courte du
 genre "hâte de voir tes ventes décoller" ou "on est chauds de bosser sur ton produit" — jamais forcé, jamais
@@ -5193,13 +5224,13 @@ sortir de la saturation et grandir durablement. Concrètement, ça veut dire : s
 amélioration continue, chaque semaine, portées par une vraie équipe derrière lui.
 Ne détaille jamais ça comme une liste de features ("analyse de marché + personas + angles + créatives") — c'est
 un mécanisme qu'il découvre une fois client, pas un argument de vente. Ce qui vend, c'est le résultat : passer
-un cap, se démarquer, ne plus deviner ce qui marche. Garantie : résultats en 60 jours
+un cap, se démarquer, ne plus deviner ce qui marche. Garantie : résultats en 45 jours
 ou remboursé.
 Reste volontairement vague sur qui on cible précisément (ne dis jamais "COD", "paiement à la livraison", ou
 "Afrique francophone" comme si c'était notre positionnement officiel) — "on aide des e-commerçants à grandir"
 suffit.
 FORMATS : on produit des VIDÉOS et des IMAGES (pas seulement des images). Chaque lot hebdomadaire = 2 vidéos + 4 images
-(6 créatives), livré en 24h max (48h max pour PERF+). Quand on parle de ce qu'on livre, dis « créatives » (vidéos et images), jamais
+(6 créatives), livré en 24h max. Quand on parle de ce qu'on livre, dis « créatives » (vidéos et images), jamais
 « visuels » ni « images » tout court. Une vidéo ou une image, les deux sont pensées pour vendre sur Meta Ads.
 
 Ne dis jamais qu'on utilise de l'IA, un modèle, ou toute formulation technique — c'est toujours "notre équipe"
@@ -5230,12 +5261,12 @@ Ne demande PLUS le chiffre d'affaires visé ni le budget pub — ces critères n
 Pose UNE seule question : « Ton objectif, c'est plutôt performer, grandir ou t'étendre ? » (reformule simplement).
 - PERFORMANCE → PERF+. Elle veut un compte pub qui performe et de meilleurs résultats. PERF+ lui donne tout
   ce qu'il faut : 24 créatives/mois (vidéos + images), 1 produit par semaine, un lot qui s'améliore chaque semaine
-  grâce à ce qui a marché. Garantie Performance en 60 jours.
+  grâce à ce qui a marché. Garantie Performance en 45 jours.
 - CROISSANCE → GROWTH. Elle veut aller plus vite, tester plus, trouver ses gagnants, sans gérer une équipe.
-  GROWTH = 48 créatives/mois, jusqu'à 2 produits par semaine. Garantie Croissance en 60 jours.
+  GROWTH = 48 créatives/mois, jusqu'à 2 produits par semaine. Garantie Croissance en 45 jours.
 - EXPANSION → SCALE. Elle est déjà sur un gros marché, OU elle veut attaquer plusieurs marchés en même temps
   (langues, cultures différentes) sans exploser ses coûts. SCALE = 96 créatives/mois, jusqu'à 4 produits par semaine.
-  Garantie Scaling en 60 jours.
+  Garantie Scaling en 45 jours.
 Si l'objectif n'est pas clair, pose la question de l'objectif avant de recommander. Si la personne le dit déjà,
 recommande directement UNE offre (jamais les trois en vrac) et explique en une phrase pourquoi elle lui correspond.
 Si elle hésite entre deux offres, tranche pour elle : « Pour ton objectif, je te conseille X. »
@@ -5243,19 +5274,19 @@ Si elle hésite entre deux offres, tranche pour elle : « Pour ton objectif, je 
 PAIEMENT ET GARANTIE
 Wave, Orange Money, Moov Money, MTN MoMo, Djamo — paiement sécurisé via Chariow. Abonnement mensuel résiliable
 à tout moment (pas d'engagement, abonnement mensuel uniquement). Garantie :
-résultats en 60 jours ou remboursé.
+résultats en 45 jours ou remboursé.
 
-GARANTIE — « RÉSULTATS EN 60 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, elle porte un nom selon l'offre : Performance pour PERF+, Croissance pour GROWTH, Scaling pour SCALE, ne parle plus de « livraison 24h ou remboursé »
+GARANTIE — « RÉSULTATS EN 45 JOURS OU REMBOURSÉ » (c'est la SEULE garantie, elle porte un nom selon l'offre : Performance pour PERF+, Croissance pour GROWTH, Scaling pour SCALE, ne parle plus de « livraison 24h ou remboursé »
 ni de « satisfait ou remboursé »). Fonctionnement : le client publie les créatives livrées et investit en publicité avec
-elles pendant 60 jours. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
+elles pendant 45 jours. S'il ne constate aucune amélioration de ses performances, il écrit sur WhatsApp avec des captures
 de son compte publicitaire Meta (dépenses du mois + résultats : ROAS, coût par achat…). On vérifie, puis on le rembourse
 l'intégralité de son paiement. Présente-la simplement, en 2 phrases, comme ce qui retire le risque.
 
 PROCESS DE LIVRAISON (à jour — ne JAMAIS mentionner WhatsApp, Google Drive, ou un "formulaire de brief" à
 remplir, ce n'est plus le fonctionnement réel)
 Abonnement en ligne → connexion Google sur AdBoard → import du produit dans le catalogue, demande de créatives en
-2 clics → production → livraison directement dans AdBoard (Galerie Créatives ; Ad Copies et Données Marché pour GROWTH et SCALE) sous
-24h (48h pour PERF+), avec suivi de production en temps réel → cycle hebdomadaire.
+2 clics → production → livraison directement dans AdBoard (Galerie Créatives, Ad Copies, Données Marché) sous
+24h, avec suivi de production en temps réel → cycle hebdomadaire.
 
 DÉMO — CONTRAIREMENT À UNE ANCIENNE CONSIGNE, NE JAMAIS NIER OU ÉVITER LE SUJET
 Beaucoup de prospects arrivant sur cette page ont déjà reçu une démo personnalisée avant d'être relancés — si la
@@ -5562,12 +5593,16 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
     const creativesTopPerformer = (product.creatives || []).filter(c => c.topPerformer);
     if (creativesTopPerformer.length && deliveriesMemeCible.length) {
       const scores = {}; // nom d'angle -> score cumulé
+      // v5.70 : score chiffré (ROAS, CPA, dépenses…) comparé aux autres créatives de LA MÊME cible ;
+      // sans chiffres, repli sur le rang manuel.
+      const semainesCible = new Set(deliveriesMemeCible.map(d => d.semaine));
+      const scoresTP = scoresTopPerformer(creativesTopPerformer.filter(c => semainesCible.has(c.week)));
       deliveriesMemeCible.forEach((d, i) => {
         const poidsRecence = i + 1; // livraison la plus ancienne DE CETTE CIBLE = 1, chaque suivante pèse plus
         creativesTopPerformer.filter(c => c.week === d.semaine).forEach(c => {
           // Rang manuel (drag-and-drop client) — DOIT rester identique à Platform.jsx. Rang 1 =
           // ×2, rang 2 = ×1.5... décroît vers 1 (neutre) pour rangs élevés/non classées.
-          const rankMultiplier = c.topPerformerRank ? (1 + 1 / c.topPerformerRank) : 1;
+          const rankMultiplier = multiplicateurTP(c, scoresTP);
           if (!c.angle) return;
           scores[c.angle] = (scores[c.angle] || 0) + poidsRecence * rankMultiplier;
         });
@@ -5669,23 +5704,129 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/delete-creatives
   return;
 }
 
+// ══ TOP PERFORMER — copie exacte de src/topPerformer.js (AdBoard) ══
+// Top Performer — chiffres fournis par le client + classement automatique.
+// CE FICHIER EST AUSSI COPIÉ TEL QUEL DANS serveur.js (bloc « TOP PERFORMER »), pour que le
+// classement vu par le client et l'angle gagnant calculé par le serveur soient toujours identiques.
+// Ne rien importer ici : fonctions pures uniquement.
+
+// Les chiffres que le client peut donner. Tous facultatifs. `sens` : 'haut' = plus c'est grand, mieux c'est.
+const TP_CHAMPS = [
+  { k: 'roas',     label: 'ROAS',          aide: 'ex. 2,8',            unite: '×',  sens: 'haut', poids: 3,   max: 200 },
+  { k: 'cpa',      label: 'CPA',           aide: 'en $ ou €',     unite: '',   sens: 'bas',  poids: 3,   max: 100000000 },
+  { k: 'depenses', label: 'Dépenses',      aide: 'en $ ou €',      unite: '',   sens: 'haut', poids: 1.5, max: 1000000000 },
+  { k: 'jours',    label: 'Jours actifs',  aide: 'ex. 12',             unite: 'j',  sens: 'haut', poids: 1,   max: 365, entier: true },
+  { k: 'achats',   label: 'Achats',        aide: 'nombre de ventes',   unite: '',   sens: 'haut', poids: 1,   max: 10000000, entier: true },
+  { k: 'ctr',      label: 'CTR',           aide: 'ex. 1,9',            unite: '%',  sens: 'haut', poids: 1,   max: 100 },
+];
+
+function _nombre(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/\s/g, '').replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+// Nettoie ce que le client a saisi : ne garde que des nombres valides (> 0 et sous la borne).
+// Renvoie null si rien d'exploitable. Jamais d'erreur : une saisie bancale est simplement ignorée.
+function nettoyerStats(brut) {
+  if (!brut || typeof brut !== 'object') return null;
+  const out = {};
+  for (const ch of TP_CHAMPS) {
+    let n = _nombre(brut[ch.k]);
+    if (n === null || n <= 0 || n > ch.max) continue;
+    if (ch.entier) n = Math.round(n);
+    else n = Math.round(n * 1000) / 1000;
+    out[ch.k] = n;
+  }
+  if (!Object.keys(out).length) return null;
+  return out;
+}
+
+const aDesChiffres = (c) => !!(c && c.tpStats && TP_CHAMPS.some(ch => Number.isFinite(c.tpStats[ch.k])));
+
+const _borne = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+
+// Score de chaque créative, PAR RAPPORT aux autres créatives du même groupe (même produit, même cible).
+// Pour chaque chiffre : on compare à la moyenne du groupe (1 = dans la moyenne, 2 = deux fois mieux),
+// à l'envers pour le CPA (plus bas = mieux). Puis moyenne pondérée des chiffres que la créative a donnés.
+// Une créative sans aucun chiffre n'a pas de score : elle reste au classement manuel (repli).
+function scoresTopPerformer(creatives) {
+  const liste = (creatives || []).filter(Boolean);
+  const moyennes = {};
+  for (const ch of TP_CHAMPS) {
+    const vals = liste.map(c => c.tpStats && c.tpStats[ch.k]).filter(Number.isFinite);
+    if (vals.length) moyennes[ch.k] = vals.reduce((a, b) => a + b, 0) / vals.length;
+  }
+  const res = {};
+  for (const c of liste) {
+    let somme = 0, poids = 0, n = 0;
+    for (const ch of TP_CHAMPS) {
+      const v = c.tpStats && c.tpStats[ch.k];
+      if (!Number.isFinite(v) || !moyennes[ch.k]) continue;
+      const ratio = ch.sens === 'haut' ? v / moyennes[ch.k] : moyennes[ch.k] / v;
+      somme += ch.poids * _borne(ratio, 0.25, 3);
+      poids += ch.poids; n++;
+    }
+    res[c.id] = n ? { score: somme / poids, chiffre: true, nbChiffres: n } : { score: null, chiffre: false, nbChiffres: 0 };
+  }
+  return res;
+}
+
+// Classement : d'abord les créatives chiffrées (meilleur score en tête), puis celles sans chiffres,
+// dans l'ordre manuel du client (rang 1 d'abord, sans rang à la fin).
+function classerTopPerformer(creatives) {
+  const liste = [...(creatives || [])];
+  const sc = scoresTopPerformer(liste);
+  const rang = (c) => (c.topPerformerRank ?? Infinity);
+  return liste.sort((a, b) => {
+    const A = sc[a.id], B = sc[b.id];
+    if (A.chiffre !== B.chiffre) return A.chiffre ? -1 : 1;
+    if (A.chiffre && B.chiffre && Math.abs(A.score - B.score) > 1e-9) return B.score - A.score;
+    if (A.chiffre && B.chiffre) {
+      const r = (b.tpStats.roas || 0) - (a.tpStats.roas || 0);
+      if (r) return r;
+      const d = (b.tpStats.depenses || 0) - (a.tpStats.depenses || 0);
+      if (d) return d;
+    }
+    return rang(a) - rang(b);
+  });
+}
+
+// Poids d'une créative marquée dans le calcul de l'angle gagnant (remplace le seul « rang manuel »).
+// Chiffrée : son score (0,3 à 3). Sinon : repli sur le rang manuel (rang 1 = ×2, rang 2 = ×1,5 …), neutre sans rang.
+function multiplicateurTP(c, scores) {
+  const s = scores && scores[c.id];
+  if (s && s.chiffre) return _borne(s.score, 0.3, 3);
+  return c.topPerformerRank ? (1 + 1 / c.topPerformerRank) : 1;
+}
+
+// ══ fin TOP PERFORMER ══
+
 // POST /products/:id/mark-top-performer — marque/démarque une créative comme Top Performer
-// depuis la Galerie AdBoard (bouton actif seulement 7j après arrivée, contrôlé côté client).
+// depuis la Galerie AdBoard (v5.70 : plus de délai de 7 jours ; chiffres facultatifs).
 if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/mark-top-performer$/)) {
   let body = '';
   req.on('data', c => body += c);
   req.on('end', async () => {
     try {
       const productId = req.url.split('/')[2];
-      const { creativeId, value } = JSON.parse(body);
+      const { creativeId, value, stats } = JSON.parse(body);
       if (!creativeId) { res.writeHead(400); res.end(JSON.stringify({error:'creativeId requis'})); return; }
+      // v5.70 : plus de délai de 7 jours ; le client peut donner des chiffres (tous facultatifs).
+      const statsPropres = value === false ? null : nettoyerStats(stats);
 
       const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=creatives`, {
         headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
       });
       const prRows = await prRes.json();
       const existing = prRows?.[0]?.creatives || [];
-      const updated = existing.map(c => c.id === creativeId ? { ...c, topPerformer: value !== false } : c);
+      const updated = existing.map(c => {
+        if (c.id !== creativeId) return c;
+        if (value === false) { const { tpStats, tpAt, topPerformerRank, ...reste } = c; return { ...reste, topPerformer: false }; }
+        const n = { ...c, topPerformer: true, tpAt: new Date().toISOString() };
+        if (statsPropres) n.tpStats = statsPropres;
+        return n;
+      });
 
       await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
         method: 'PATCH',
@@ -5695,6 +5836,43 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/mark-top-perform
 
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true }));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+  return;
+}
+
+// POST /products/:id/top-performer-stats — le client ajoute / corrige les chiffres d'une créative déjà marquée.
+// stats vide ou invalide = on efface les chiffres (la créative retombe au classement manuel).
+if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/top-performer-stats$/)) {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', async () => {
+    try {
+      const productId = req.url.split('/')[2];
+      const { creativeId, stats } = JSON.parse(body);
+      if (!creativeId) { res.writeHead(400); res.end(JSON.stringify({error:'creativeId requis'})); return; }
+      const propres = nettoyerStats(stats);
+      const prRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=creatives`, {
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+      });
+      const prRows = await prRes.json();
+      const existing = prRows?.[0]?.creatives || [];
+      const cible = existing.find(c => c.id === creativeId);
+      if (!cible || !cible.topPerformer) { res.writeHead(404); res.end(JSON.stringify({error:'créative non marquée Top Performer'})); return; }
+      const updated = existing.map(c => {
+        if (c.id !== creativeId) return c;
+        if (!propres) { const { tpStats, ...reste } = c; return reste; }
+        return { ...c, tpStats: propres };
+      });
+      await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
+        method: 'PATCH',
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ creatives: updated })
+      });
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok: true, stats: propres }));
     } catch(e) {
       res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
     }
@@ -5753,6 +5931,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/reorder-top-perf
 // avec la clé service pour tout voir peu importe le compte. Inclut TOUT abonné, qu'il ait ou
 // non été prospect/lead dans le CRM au préalable.
 if (req.method === 'GET' && req.url === '/crm/clients') {
+  if (!(await crmAdminOk(req))) { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'unauthorized' })); return; }
   try {
     const [subsRes, usersRes, briefsRes, txRes] = await Promise.all([
       fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?select=*`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }),
@@ -5962,201 +6141,13 @@ if (req.method === 'POST' && req.url === '/reconcile-account') {
 // Même logique de calcul que computeCredits()/verifierPlafondProduction() côté client
 // (Platform.jsx) — DOIT rester identique, sinon le chiffre affiché au client contredirait ce
 // que le serveur autorise réellement.
-// ═════ ROUTES COMPTES ÉQUIPE (v5.68) ═════
-// ── Annulation d'une demande : le propriétaire, ou le membre qui a lui-même fait cette demande (jamais celle d'un autre) ──
-if (req.method === 'POST' && req.url.split('?')[0] === '/briefs/cancel') {
-  let body = '';
-  req.on('data', c => body += c);
-  req.on('end', async () => {
-    const J = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
-    try {
-      const me = await teamAuthUser(req);
-      if (!me) return J(401, { error: 'connexion_requise' });
-      let b = {}; try { b = JSON.parse(body); } catch (_) {}
-      if (!b.briefId) return J(400, { error: 'briefId_requis' });
-      const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${encodeURIComponent(b.briefId)}&select=id,user_id,status,requested_by&limit=1`, { headers: teamSbHeaders() });
-      const rows = await r.json();
-      const brief = Array.isArray(rows) ? rows[0] : null;
-      if (!brief) return J(200, { error: 'introuvable' });
-      const permis = brief.user_id === me.id || (brief.requested_by === me.id && await teamMemberCan(brief.user_id, me.id, 'request_production'));
-      if (!permis) return J(200, { error: 'non_autorise' });
-      if (brief.status !== 'pending') return J(200, { error: 'non_annulable' });
-      const u = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${brief.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ status: 'cancelled', cancelled_at: new Date().toISOString() }) });
-      if (!u.ok) return J(500, { error: 'annulation_impossible' });
-      if (brief.user_id !== me.id) writeInAppNotification(brief.user_id, `${me.email} a annulé une demande de production.`, 'info').catch(() => {});
-      return J(200, { ok: true });
-    } catch (e) { console.error('[Briefs/cancel]', e.message); return J(500, { error: 'reseau' }); }
-  });
-  return;
-}
-
-// ── Historique de facturation du propriétaire (jamais la commission interne) ──
-if (req.method === 'GET' && req.url.split('?')[0] === '/billing/history') {
-  (async () => {
-    const J = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
-    try {
-      const me = await teamAuthUser(req);
-      if (!me) return J(401, { error: 'connexion_requise' });
-      let tr = await fetch(`${SUPABASE_URL_INT}/rest/v1/transactions?user_id=eq.${me.id}&select=*&order=created_at.desc&limit=200`, { headers: teamSbHeaders() });
-      if (!tr.ok) tr = await fetch(`${SUPABASE_URL_INT}/rest/v1/transactions?user_id=eq.${me.id}&select=*&limit=200`, { headers: teamSbHeaders() });
-      const rows = tr.ok ? await tr.json() : [];
-      const transactions = (Array.isArray(rows) ? rows : []).map(t => ({ date: t.created_at || t.date || t.paid_at || null, plan: t.plan || null, cycle: t.cycle || null, montant_fcfa: t.montant_fcfa || 0 }))
-        .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-      const sub = await teamLatestSub(me.id);
-      const subscription = sub ? { plan: sub.plan, active: !!sub.active && !(sub.expires_at && new Date(sub.expires_at) < new Date()), started_at: sub.started_at, expires_at: sub.expires_at || null, type: sub.type || null } : null;
-      return J(200, { subscription, transactions });
-    } catch (e) { console.error('[Billing]', e.message); return J(500, { error: 'reseau' }); }
-  })();
-  return;
-}
-
-if (req.url.split('?')[0].startsWith('/team/')) {
-  let body = '';
-  req.on('data', c => body += c);
-  req.on('end', async () => {
-    const J = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
-    try {
-      const route = req.url.split('?')[0];
-      const me = await teamAuthUser(req);
-      if (!me) return J(401, { error: 'connexion_requise' });
-      let b = {}; try { b = body ? JSON.parse(body) : {}; } catch (_) {}
-
-      // Mes espaces : le mien + ceux où je suis membre + invitations en attente pour mon adresse
-      if (req.method === 'GET' && route === '/team/workspaces') {
-        const ownSub = await teamLatestSub(me.id);
-        const rows = await teamRows(me.id);
-        const mr = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?member_id=eq.${me.id}&status=eq.active&select=owner_id,role_preset,permissions`, { headers: teamSbHeaders() });
-        const mem = await mr.json();
-        const memberships = [];
-        for (const m of (Array.isArray(mem) ? mem : [])) {
-          const osub = await teamLatestSub(m.owner_id);
-          if (!osub || !osub.active) continue;
-          memberships.push({ ownerId: m.owner_id, ownerLabel: await teamOwnerLabel(m.owner_id), preset: m.role_preset, permissions: teamNoDelete(m.permissions) });
-        }
-        const pr = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?email=eq.${encodeURIComponent(me.email)}&status=eq.invited&select=id,owner_id,token_expires_at`, { headers: teamSbHeaders() });
-        const pend = await pr.json();
-        const pending = [];
-        for (const p of (Array.isArray(pend) ? pend : [])) {
-          if (p.token_expires_at && new Date(p.token_expires_at) < new Date()) continue;
-          pending.push({ id: p.id, ownerLabel: await teamOwnerLabel(p.owner_id) });
-        }
-        const max = ownSub && ownSub.plan in TEAM_SEATS ? TEAM_SEATS[ownSub.plan] : 0;
-        return J(200, { own: { hasPlan: !!(ownSub && ownSub.active), plan: ownSub ? ownSub.plan : null, seats: { used: rows.filter(r => r.status !== 'suspended').length, max } }, memberships, pending });
-      }
-
-      // Accepter une invitation (par lien, ou par identifiant si l'email Google correspond)
-      if (req.method === 'POST' && route === '/team/accept') {
-        let q;
-        if (b.token) q = `token_hash=eq.${teamHash(b.token)}`;
-        else if (b.id) q = `id=eq.${encodeURIComponent(b.id)}`;
-        else return J(400, { error: 'token_ou_id_requis' });
-        const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?${q}&select=*&limit=1`, { headers: teamSbHeaders() });
-        const rows = await r.json();
-        const inv = Array.isArray(rows) ? rows[0] : null;
-        if (!inv || inv.status === 'removed') return J(200, { error: 'invitation_invalide' });
-        if (inv.status === 'active' && inv.member_id === me.id) return J(200, { ok: true, ownerId: inv.owner_id, deja: true });
-        if (inv.status !== 'invited') return J(200, { error: 'invitation_invalide' });
-        if (inv.token_expires_at && new Date(inv.token_expires_at) < new Date()) return J(200, { error: 'invitation_expiree' });
-        if (String(inv.email).toLowerCase() !== me.email) return J(200, { error: 'email_different', attendu: String(inv.email).replace(/^(.).*(@.*)$/, '$1***$2') });
-        if (inv.owner_id === me.id) return J(200, { error: 'invitation_invalide' });
-        await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?id=eq.${inv.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ member_id: me.id, status: 'active', accepted_at: new Date().toISOString(), token_hash: null }) });
-        writeInAppNotification(inv.owner_id, `${me.email} a rejoint votre équipe sur AdBoard.`, 'info').catch(() => {});
-        return J(200, { ok: true, ownerId: inv.owner_id });
-      }
-
-      // ── Routes réservées au propriétaire de l'espace ──
-      const sub = await teamLatestSub(me.id);
-      if (!sub || !sub.active || !(sub.plan in TEAM_SEATS) || sub.type === 'pack') return J(200, { error: 'abonnement_requis' });
-      const max = TEAM_SEATS[sub.plan];
-
-      if (req.method === 'GET' && route === '/team/members') {
-        const rows = await teamEnforce(me.id, sub);
-        return J(200, { seats: { used: rows.filter(r => r.status !== 'suspended').length, max }, plan: sub.plan, members: rows.map(teamPublicRow) });
-      }
-
-      if (req.method === 'POST' && route === '/team/invite') {
-        const email = String(b.email || '').trim().toLowerCase();
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return J(200, { error: 'email_invalide' });
-        if (email === me.email) return J(200, { error: 'email_invalide' });
-        const preset = TEAM_PRESETS[b.preset] ? b.preset : 'media_buyer';
-        const rows = await teamEnforce(me.id, sub);
-        if (rows.filter(r => r.status !== 'suspended').length >= max) return J(200, { error: 'places_epuisees', max });
-        if (rows.some(r => String(r.email).toLowerCase() === email)) return J(200, { error: 'deja_invite' });
-        const token = crypto.randomBytes(24).toString('hex');
-        const ins = await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members`, {
-          method: 'POST', headers: { ...teamSbHeaders(), Prefer: 'return=representation' },
-          body: JSON.stringify({ owner_id: me.id, email, role_preset: preset, permissions: teamCleanPerms(b.permissions, preset), status: 'invited', token_hash: teamHash(token), token_expires_at: new Date(Date.now() + 7 * 864e5).toISOString() })
-        });
-        if (!ins.ok) { console.error('[Team] insert', ins.status, await ins.text().catch(() => '')); return J(500, { error: 'creation_impossible' }); }
-        const created = (await ins.json())[0];
-        const mail = await teamSendInvite(email, me.name || (me.email.split('@')[0]), token, preset);
-        return J(200, { ok: true, member: teamPublicRow(created), emailEnvoye: mail.sent, lien: mail.lien });
-      }
-
-      if (req.method === 'POST' && route === '/team/update') {
-        const rows = await teamRows(me.id);
-        const m = rows.find(r => r.id === b.id);
-        if (!m) return J(200, { error: 'introuvable' });
-        const preset = TEAM_PRESETS[b.preset] ? b.preset : m.role_preset;
-        await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?id=eq.${m.id}&owner_id=eq.${me.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ role_preset: preset, permissions: teamCleanPerms(b.permissions, preset) }) });
-        return J(200, { ok: true });
-      }
-
-      if (req.method === 'POST' && route === '/team/remove') {
-        const rows = await teamRows(me.id);
-        const m = rows.find(r => r.id === b.id);
-        if (!m) return J(200, { error: 'introuvable' });
-        await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?id=eq.${m.id}&owner_id=eq.${me.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ status: 'removed', token_hash: null }) });
-        return J(200, { ok: true });
-      }
-
-      if (req.method === 'POST' && route === '/team/resend') {
-        const rows = await teamRows(me.id);
-        const m = rows.find(r => r.id === b.id && r.status === 'invited');
-        if (!m) return J(200, { error: 'introuvable' });
-        const token = crypto.randomBytes(24).toString('hex');
-        await fetch(`${SUPABASE_URL_INT}/rest/v1/team_members?id=eq.${m.id}&owner_id=eq.${me.id}`, { method: 'PATCH', headers: teamSbHeaders(), body: JSON.stringify({ token_hash: teamHash(token), token_expires_at: new Date(Date.now() + 7 * 864e5).toISOString() }) });
-        const mail = await teamSendInvite(m.email, me.name || (me.email.split('@')[0]), token, m.role_preset);
-        return J(200, { ok: true, emailEnvoye: mail.sent, lien: mail.lien });
-      }
-
-      return J(404, { error: 'route_inconnue' });
-    } catch (e) {
-      console.error('[Team] erreur :', e.message);
-      return J(500, { error: 'erreur_serveur' });
-    }
-  });
-  return;
-}
-
 if (req.method === 'POST' && req.url === '/briefs/create') {
   let body = '';
   req.on('data', c => body += c);
   req.on('end', async () => {
     try {
-      const parsedBody = JSON.parse(body);
-      const { productId, quantity } = parsedBody;
-      const requesterId = parsedBody.userId;
-      if (!requesterId || !productId || !quantity) { res.writeHead(400); res.end(JSON.stringify({error:'userId, productId et quantity requis'})); return; }
-      // Espace d'équipe : un membre demande pour le compte du propriétaire (connexion vérifiée + autorisation requise).
-      // userId devient l'identifiant du propriétaire pour tout le reste (abonnement, crédits, création du brief).
-      let userId = requesterId;
-      let requestedBy = requesterId;
-      if (parsedBody.ownerId && parsedBody.ownerId !== requesterId) {
-        const meTeam = await teamAuthUser(req);
-        if (!meTeam || meTeam.id !== requesterId) { res.writeHead(401, {'Content-Type':'application/json'}); res.end(JSON.stringify({ error: 'connexion_requise' })); return; }
-        if (!(await teamMemberCan(parsedBody.ownerId, requesterId, 'request_production'))) { res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ error: 'non_autorise' })); return; }
-        userId = parsedBody.ownerId;
-      }
-      // Le produit doit appartenir à l'espace concerné (ancienne faille : aucun contrôle).
-      try {
-        const pr = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${encodeURIComponent(productId)}&user_id=eq.${userId}&select=id&limit=1`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } });
-        const prRows = await pr.json();
-        if (!Array.isArray(prRows) || !prRows.length) { res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ error: 'produit_introuvable' })); return; }
-      } catch (eProd) {
-        console.warn('[Briefs] vérification produit impossible :', eProd.message);
-        if (userId !== requesterId) { res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ error: 'produit_introuvable' })); return; }
-      }
+      const { userId, productId, quantity } = JSON.parse(body);
+      if (!userId || !productId || !quantity) { res.writeHead(400); res.end(JSON.stringify({error:'userId, productId et quantity requis'})); return; }
       // Volumes de production : 6 à 24 visuels, par multiples de 3 (3 visuels par angle, 2 à 8 angles).
       // Les anciens clients AdBoard encore ouverts peuvent envoyer 9 ou 18 : toujours valides. Au-delà de 24 : refusé.
       if (!Number.isInteger(quantity) || quantity < 6 || quantity > 24 || quantity % 3 !== 0) {
@@ -6226,20 +6217,10 @@ if (req.method === 'POST' && req.url === '/briefs/create') {
       const insertRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs`, {
         method: 'POST',
         headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-        body: JSON.stringify({ user_id: userId, product_id: productId, quantity, status: 'pending', credits_used: quantity, requested_by: requestedBy })
+        body: JSON.stringify({ user_id: userId, product_id: productId, quantity, status: 'pending', credits_used: quantity })
       });
-      let insertFinal = insertRes;
-      if (!insertRes.ok) {
-        // Colonne requested_by absente (SQL équipe pas encore lancé) : on réessaie sans elle — jamais bloquer une demande pour ça.
-        insertFinal = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs`, {
-          method: 'POST',
-          headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-          body: JSON.stringify({ user_id: userId, product_id: productId, quantity, status: 'pending', credits_used: quantity })
-        });
-      }
-      if (!insertFinal.ok) { res.writeHead(500); res.end(JSON.stringify({ error: 'Échec de la création' })); return; }
-      const rows = await insertFinal.json();
-      if (requestedBy !== userId) writeInAppNotification(userId, `Un membre de votre équipe a demandé un lot de ${quantity} créatives.`, 'info').catch(() => {});
+      if (!insertRes.ok) { res.writeHead(500); res.end(JSON.stringify({ error: 'Échec de la création' })); return; }
+      const rows = await insertRes.json();
 
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true, brief: rows[0] }));
@@ -6467,7 +6448,7 @@ if (req.method === 'POST' && req.url === '/send-prospect-sms') {
 // (qui n'a que la clé anonyme), pour ne pas donner un accès total à la base à qui ouvre
 // les outils de développement du navigateur.
 if (req.method === 'GET' && req.url === '/crm/utilisateurs') {
-  if (req.headers['x-api-key'] !== 'adstack2024xProspectionKey99') {
+  if (!(await crmAdminOk(req))) {
     res.writeHead(401); res.end(JSON.stringify({ error: 'unauthorized' })); return;
   }
   try {
@@ -7166,7 +7147,6 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
       }
       // Email en complément du push (au cas où le push ne soit pas activé/vu) — texte à
       // valider, voir sendDeliverablesReadyEmail ci-dessous pour le contenu exact.
-      if (userId) teamNotifyDelivery(userId, briefs[idx].product?.nom || 'votre produit').catch(()=>{});
       if (briefs[idx].client?.email) {
         sendDeliverablesReadyEmail({
           email: briefs[idx].client.email,
@@ -7433,6 +7413,257 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
 
   res.writeHead(404); res.end('Not found');
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v5.68 — BALAYAGE PAR LE PROBLÈME + SCRAPECREATORS + HYPOTHÈSE STOCKÉE
+//   • planBalayage : part du PROBLÈME du client (pas de la marque), liste concurrents directs et alternatives
+//   • balayageScrapeCreators : Reddit, TikTok (vidéos + commentaires), Bibliothèque de pubs Meta — plafonné
+//   • decideBalayage : réutilise l'hypothèse stockée tant qu'il reste assez d'angles en réserve et que le
+//     dernier balayage a moins de 30 jours ; sinon nouveau balayage
+//   • enregistrerBalayage : date du dernier balayage par produit (table Supabase balayages_marche)
+// ═══════════════════════════════════════════════════════════════════════════
+const SC_KEY = process.env.SOCIAL_MEDIA_SCRAPING_API || '';
+const SC_BASE = 'https://api.scrapecreators.com';
+const SC_MAX_REQUETES = parseInt(process.env.SC_MAX_REQUETES || '16', 10);
+const BALAYAGE_VALIDITE_JOURS = parseInt(process.env.BALAYAGE_VALIDITE_JOURS || '30', 10);
+
+async function scGet(chemin, params, compteur, timeoutMs = 25000) {
+  if (!SC_KEY) throw new Error('clé SOCIAL_MEDIA_SCRAPING_API absente sur Render');
+  if (compteur.n >= SC_MAX_REQUETES) throw new Error('plafond de ' + SC_MAX_REQUETES + ' requêtes atteint');
+  compteur.n++;
+  const qs = new URLSearchParams();
+  Object.entries(params || {}).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') qs.set(k, String(v)); });
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const r = await fetch(SC_BASE + chemin + '?' + qs.toString(), { headers: { 'x-api-key': SC_KEY }, signal: ctl.signal });
+    const txt = await r.text();
+    let j = null; try { j = JSON.parse(txt); } catch (e) { /* réponse non JSON */ }
+    if (!r.ok) throw new Error('HTTP ' + r.status + (j && (j.message || j.error) ? ' ' + (j.message || j.error) : ''));
+    compteur.credits += (j && typeof j.credits_charged === 'number') ? j.credits_charged : 1;
+    return j || {};
+  } finally { clearTimeout(t); }
+}
+
+function _coupe(s, n) { s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n) + '…' : s; }
+
+// Plan de balayage : tout part du PROBLÈME que le produit résout, jamais du nom de la marque.
+async function planBalayage(brief, produit, marque, pays) {
+  const repli = { probleme: produit, formulations: [produit], categorie: produit, alternatives: [], concurrents: [],
+                  reddit: [produit], tiktok: [produit], ads: [produit], source: 'repli' };
+  try {
+    const token = await getToken();
+    const briefTxt = JSON.stringify(brief || {}).slice(0, 3000);
+    const prompt = `Tu prépares la recherche de marché pour un produit vendu en ${pays || 'Afrique francophone'}.
+Produit : "${produit}"${marque ? ` (marque du client : ${marque}, probablement inconnue du marché)` : ''}.
+Brief (extrait) : ${briefTxt}
+
+Règle de fond : la recherche PART DU PROBLÈME que la cible veut résoudre, pas de la marque. Les gens ne parlent pas de la marque du client : ils parlent de leur problème et des solutions qu'ils connaissent.
+
+Réponds UNIQUEMENT par un objet JSON, sans texte autour, avec ces clés :
+{
+ "probleme": "le problème principal vécu par la cible, en une phrase courte et concrète",
+ "formulations": ["3 façons dont les gens en parlent vraiment, dans leurs mots, dans la langue du marché"],
+ "categorie": "catégorie du produit en 2-4 mots",
+ "alternatives": ["jusqu'à 5 solutions ALTERNATIVES que la cible utilise ou envisage pour le même problème (produits d'autres catégories compris)"],
+ "concurrents": ["jusqu'à 3 produits directement concurrents (même catégorie)"],
+ "reddit": ["3 requêtes courtes centrées sur le problème, en français ou en anglais selon où la cible en parle"],
+ "tiktok": ["2 requêtes courtes centrées sur le problème, dans la langue de la cible"],
+ "ads": ["3 mots-clés pour la bibliothèque de pubs : le problème, une alternative, un concurrent direct"]
+}`;
+    const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                   generationConfig: { temperature: 0.2, maxOutputTokens: 1800, ...reflexion(MODELES.tendances, 0) } };
+    const d = await vertexRequest(token, MODELES.tendances, body, 40000, 'analyste_plan_balayage');
+    const raw = (d.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).filter(Boolean).join('');
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error('réponse sans JSON');
+    const j = JSON.parse(m[0]);
+    const arr = (x, n) => (Array.isArray(x) ? x : []).map(v => _coupe(v, 90)).filter(Boolean).slice(0, n);
+    const plan = {
+      probleme: _coupe(j.probleme || produit, 200),
+      formulations: arr(j.formulations, 3),
+      categorie: _coupe(j.categorie || produit, 60),
+      alternatives: arr(j.alternatives, 5),
+      concurrents: arr(j.concurrents, 3),
+      reddit: arr(j.reddit, 3),
+      tiktok: arr(j.tiktok, 2),
+      ads: arr(j.ads, 3),
+      source: 'gemini'
+    };
+    if (!plan.reddit.length) plan.reddit = [plan.probleme];
+    if (!plan.tiktok.length) plan.tiktok = [plan.probleme];
+    if (!plan.ads.length) plan.ads = [plan.categorie];
+    return plan;
+  } catch (e) {
+    console.log('   ✗ plan de balayage échoué, repli sur le nom du produit :', e.message);
+    return repli;
+  }
+}
+
+// Texte injecté en tête du prompt de recherche Google : force le point de départ « problème ».
+function blocProblemePourRecherche(plan) {
+  if (!plan) return '';
+  return `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POINT DE DÉPART DE LA RECHERCHE : LE PROBLÈME, PAS LA MARQUE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Problème de la cible : ${plan.probleme}
+Façons dont les gens en parlent : ${plan.formulations.join(' | ') || 'n/a'}
+Catégorie : ${plan.categorie}
+Alternatives que la cible connaît déjà : ${plan.alternatives.join(', ') || 'n/a'}
+Concurrents directs : ${plan.concurrents.join(', ') || 'n/a'}
+→ Cherche d'abord ce que les gens disent de CE PROBLÈME et de ces ALTERNATIVES (avis, échecs, scepticisme, ce qu'ils ont déjà essayé). La marque du client est probablement inconnue : ne gaspille pas tes requêtes dessus.
+→ Les discussions qui parlent d'un produit précis restent acceptables quand elles décrivent le problème.
+
+`;
+}
+
+// Balayage ScrapeCreators : voix du marché au niveau du PROBLÈME + pubs natives des alternatives/concurrents.
+async function balayageScrapeCreators(plan, pays, compteur) {
+  const stats = { reddit: 0, tiktok_videos: 0, tiktok_commentaires: 0, pubs: 0, erreurs: [] };
+  const sections = { reddit: '', tiktok: '', pubs: '' };
+  const geo = PAYS_TO_GEO[pays] || '';
+
+  const tacheReddit = async () => {
+    const lignes = [];
+    for (const q of plan.reddit.slice(0, 3)) {
+      try {
+        const j = await scGet('/v1/reddit/search', { query: q, filter: 'posts', sort: 'relevance', timeframe: 'all', trim: 'true' }, compteur);
+        const posts = (j.posts || []).slice(0, 5);
+        posts.forEach(p => {
+          stats.reddit++;
+          lignes.push(`- [${p.subreddit_name_prefixed || ('r/' + (p.subreddit || '?'))}] "${_coupe(p.title, 160)}"${p.selftext ? ' — ' + _coupe(p.selftext, 380) : ''} (score ${p.score ?? '?'}, ${p.num_comments ?? '?'} commentaires) ${p.url || ''}`);
+        });
+      } catch (e) { stats.erreurs.push('reddit « ' + q + ' » : ' + e.message); }
+    }
+    try {
+      const qC = plan.formulations[0] || plan.probleme;
+      const j = await scGet('/v1/reddit/search', { query: qC, filter: 'comments', sort: 'top', trim: 'true' }, compteur);
+      const liste = (j.comments || j.posts || []).slice(0, 8);
+      liste.forEach(c => {
+        const t = c.body || c.selftext || c.text || c.comment || '';
+        if (String(t).length < 25) return;
+        stats.reddit++;
+        lignes.push(`- [commentaire ${c.subreddit_name_prefixed || ''}] "${_coupe(t, 380)}" (score ${c.score ?? '?'}) ${c.url || c.permalink || ''}`);
+      });
+    } catch (e) { stats.erreurs.push('reddit commentaires : ' + e.message); }
+    if (lignes.length) sections.reddit = `### SOURCE — SCRAPECREATORS · REDDIT (discussions sur le PROBLÈME : « ${plan.probleme} »)\n` + lignes.join('\n') + '\n\n';
+  };
+
+  const tacheTikTok = async () => {
+    const videos = [];
+    for (const q of plan.tiktok.slice(0, 2)) {
+      try {
+        const j = await scGet('/v1/tiktok/search/keyword', { query: q }, compteur);
+        const items = (j.search_item_list || []).map(x => x.aweme_info).filter(Boolean);
+        items.sort((a, b) => ((b.statistics?.comment_count) || 0) - ((a.statistics?.comment_count) || 0));
+        items.slice(0, 2).forEach(a => videos.push({ q, a }));
+      } catch (e) { stats.erreurs.push('tiktok « ' + q + ' » : ' + e.message); }
+    }
+    const lignes = [];
+    let nbCom = 0;
+    for (const { a } of videos.slice(0, 4)) {
+      stats.tiktok_videos++;
+      const pseudo = a.author?.unique_id || '';
+      const url = a.share_url || (pseudo && a.aweme_id ? `https://www.tiktok.com/@${pseudo}/video/${a.aweme_id}` : '');
+      lignes.push(`- VIDÉO « ${_coupe(a.desc, 220)} » (${a.statistics?.play_count ?? '?'} vues, ${a.statistics?.comment_count ?? '?'} commentaires) ${url}`);
+      if (!url) continue;
+      try {
+        const j = await scGet('/v1/tiktok/video/comments', { url, trim: 'true' }, compteur);
+        const coms = (j.comments || []).filter(c => String(c.text || '').length >= 15)
+          .sort((x, y) => (y.digg_count || 0) - (x.digg_count || 0)).slice(0, 8);
+        coms.forEach(c => { nbCom++; lignes.push(`    · commentaire : "${_coupe(c.text, 300)}" (${c.digg_count ?? 0} likes)`); });
+      } catch (e) { stats.erreurs.push('tiktok commentaires : ' + e.message); }
+    }
+    stats.tiktok_commentaires = nbCom;
+    if (lignes.length) sections.tiktok = `### SOURCE — SCRAPECREATORS · TIKTOK (vidéos et commentaires sur le problème)\n` + lignes.join('\n') + '\n\n';
+  };
+
+  const tachePubs = async () => {
+    const lignes = [];
+    const vus = new Set();
+    for (const q of plan.ads.slice(0, 3)) {
+      try {
+        let j = await scGet('/v1/facebook/adLibrary/search/ads', { query: q, country: geo || 'ALL', status: 'ACTIVE', sort_by: 'total_impressions', media_type: 'ALL' }, compteur);
+        let res = j.searchResults || [];
+        if (!res.length && geo) {
+          j = await scGet('/v1/facebook/adLibrary/search/ads', { query: q, country: 'ALL', language: 'FR', status: 'ACTIVE', sort_by: 'total_impressions', media_type: 'ALL' }, compteur);
+          res = j.searchResults || [];
+        }
+        res.slice(0, 6).forEach(ad => {
+          const cle = ad.collation_id || ad.ad_archive_id;
+          if (cle && vus.has(cle)) return;
+          if (cle) vus.add(cle);
+          const s = ad.snapshot || {};
+          const corps = (s.body && (s.body.text || s.body)) || s.link_description || '';
+          if (!corps && !s.title) return;
+          const jours = ad.start_date ? Math.max(0, Math.round((Date.now() / 1000 - ad.start_date) / 86400)) : null;
+          stats.pubs++;
+          lignes.push(`- [${ad.page_name || '?'}] (recherche « ${q} »${jours !== null ? ', diffusée depuis ' + jours + ' j' : ''}${ad.collation_count > 1 ? ', ' + ad.collation_count + ' variantes' : ''}) ${s.title ? 'TITRE « ' + _coupe(s.title, 120) + ' » — ' : ''}« ${_coupe(typeof corps === 'string' ? corps : JSON.stringify(corps), 420)} »${s.cta_text ? ' [CTA : ' + s.cta_text + ']' : ''}`);
+        });
+      } catch (e) { stats.erreurs.push('pubs « ' + q + ' » : ' + e.message); }
+    }
+    if (lignes.length) sections.pubs = `### SOURCE — SCRAPECREATORS · BIBLIOTHÈQUE DE PUBS META (pubs actives des alternatives et concurrents, classées par impressions — les plus longtemps diffusées sont les plus rentables)\n` + lignes.join('\n') + '\n\n';
+  };
+
+  await Promise.all([tacheReddit(), tacheTikTok(), tachePubs()]);
+  const texte = [sections.reddit, sections.tiktok, sections.pubs].map(s => s.slice(0, 7000)).join('');
+  return { texte, stats };
+}
+
+// ── Hypothèse stockée : faut-il refaire un balayage ? ──
+function _nbAnglesReserve(syntheseTxt) {
+  const m = String(syntheseTxt || '').match(/STOCK\s*:\s*(\d+)\s+angles?\s+construits?\s+au\s+total\s*,\s*(\d+)\s+partis?\s+dans\s+ce\s+lot\s*,\s*(\d+)\s+restants?\s+en\s+r[ée]serve/i);
+  return m ? parseInt(m[3], 10) : null;
+}
+
+async function _memeCible(cibleBrief, cibleStockee) {
+  try {
+    const token = await getToken();
+    const body = { contents: [{ role: 'user', parts: [{ text: `Deux descriptions de cible marketing. Désignent-elles la même cible (même type de personne, même âge approximatif, même situation), même reformulée autrement ?\nA : ${cibleBrief}\nB : ${cibleStockee}\nRéponds uniquement : {"meme": true} ou {"meme": false}` }] }],
+                   generationConfig: { temperature: 0, maxOutputTokens: 40, ...reflexion(MODELES.tendances, 0) } };
+    const d = await vertexRequest(token, MODELES.tendances, body, 20000, 'analyste_meme_cible');
+    const raw = (d.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).join('');
+    return /"meme"\s*:\s*true/i.test(raw);
+  } catch (e) { return false; }
+}
+
+async function decideBalayage({ productId, isTest, nbAngles, brief, forcer }) {
+  if (forcer) return { reutiliser: false, raison: 'balayage forcé' };
+  if (isTest) return { reutiliser: false, raison: 'interface de test : balayage toujours refait' };
+  if (!productId) return { reutiliser: false, raison: 'produit sans identifiant' };
+  const H = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` };
+  const rp = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${encodeURIComponent(productId)}&select=derniere_synthese,marche,deliveries`, { headers: H });
+  const prod = (await rp.json())?.[0];
+  if (!prod || !prod.derniere_synthese) return { reutiliser: false, raison: 'première commande sur ce produit' };
+  const rb = await fetch(`${SUPABASE_URL_INT}/rest/v1/balayages_marche?product_id=eq.${encodeURIComponent(productId)}&select=balayage_at`, { headers: H });
+  const lig = rb.ok ? (await rb.json())?.[0] : null;
+  if (!lig || !lig.balayage_at) return { reutiliser: false, raison: 'date du dernier balayage inconnue (une seule fois, elle sera enregistrée)' };
+  const age = (Date.now() - new Date(lig.balayage_at).getTime()) / 86400000;
+  if (age > BALAYAGE_VALIDITE_JOURS) return { reutiliser: false, raison: `dernier balayage il y a ${Math.round(age)} jours (limite ${BALAYAGE_VALIDITE_JOURS})` };
+  const reserve = _nbAnglesReserve(prod.derniere_synthese);
+  if (reserve === null) return { reutiliser: false, raison: 'ligne « STOCK » illisible dans l\'hypothèse stockée' };
+  if (reserve < (nbAngles || 1)) return { reutiliser: false, raison: `${reserve} angle(s) en réserve pour ${nbAngles || 1} demandé(s)` };
+  const cibleBrief = String((brief && brief.cible) || '').trim();
+  if (cibleBrief) {
+    const p = prod.marche && prod.marche.persona;
+    const derniere = (prod.deliveries || []).slice(-1)[0];
+    const stockee = p ? [p.nom, p.role, p.age ? p.age + ' ans' : null, p.ville].filter(Boolean).join(', ') : (derniere && derniere.cible) || '';
+    if (!stockee || !(await _memeCible(cibleBrief, stockee))) return { reutiliser: false, raison: 'le client impose une cible différente de celle de l\'hypothèse stockée' };
+  }
+  return { reutiliser: true, raison: `balayage du ${String(lig.balayage_at).slice(0, 10)} (${Math.round(age)} j), ${reserve} angle(s) en réserve`, reserve, age: Math.round(age) };
+}
+
+async function enregistrerBalayage(productId, infos) {
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/balayages_marche?on_conflict=product_id`, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ product_id: productId, balayage_at: new Date().toISOString(), requetes_sc: infos.requetes || 0, credits_sc: infos.credits || 0, plan: infos.plan || null })
+    });
+    if (!r.ok) console.log('   ⚠ date du balayage non enregistrée (HTTP ' + r.status + ') — table balayages_marche créée ?');
+    else console.log('   ✓ date du balayage enregistrée pour ce produit');
+  } catch (e) { console.log('   ⚠ date du balayage non enregistrée :', e.message); }
+}
 
 // ── HTTPS GET → JSON ────────────────────────────
 function httpsGetJson(targetUrl) {
