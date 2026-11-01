@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.68-balayage-probleme (analyste : recherche qui part du problème, ScrapeCreators Reddit/TikTok/pubs Meta, hypothèse stockée réutilisée 30 jours tant qu'il reste des angles en réserve) | v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.69-ct-niveau-conscience (choix de CT : niveau de conscience imposé, seuls les CT balisés à ce niveau sont candidats) | v5.68-balayage-probleme (analyste : recherche qui part du problème, ScrapeCreators Reddit/TikTok/pubs Meta, hypothèse stockée réutilisée 30 jours tant qu'il reste des angles en réserve) | v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -1369,6 +1369,8 @@ const SELECTION_CT_SYSTEME = `Tu es le directeur artistique d'AdStack. Pour UNE 
 
 Tu reçois tout ce que l'agent de création recevra : le brief client, la photo du produit, la synthèse complète de l'analyste de marché, la consigne d'angle et de niveau de conscience de CETTE créative, et les assets réels du client.
 
+RÈGLE ABSOLUE — NIVEAU DE CONSCIENCE : le niveau de conscience de la créative est imposé et vérifié par le code. Une créative Most Aware se fait UNIQUEMENT avec un CT balisé Most Aware ; une créative Product Aware UNIQUEMENT avec un CT balisé Product Aware ; une créative Solution Aware UNIQUEMENT avec un CT balisé Solution Aware. Les CT qui te sont montrés ont déjà été filtrés en conséquence : ne choisis jamais un CT dont la balise contredit le niveau demandé. (Si un message précise qu'aucun CT n'est balisé à ce niveau, choisis alors la structure la plus proche du niveau demandé et dis-le dans ta raison.)
+
 Méthode :
 1. Comprends d'abord le produit, la cible, l'angle imposé et le niveau de conscience de cette créative.
 2. Regarde réellement les images de la galerie. Les balises et descriptions peuvent être absentes ou incomplètes ; quand elles existent, elles sont une donnée pré-établie fiable (la conscience balisée surtout) et priment sur un jugement visuel refait de zéro.
@@ -1385,6 +1387,16 @@ Le choix doit résulter de ton propre raisonnement sur ces données, jamais d'un
 
 FORMAT : réponds UNIQUEMENT par un objet JSON sur une seule ligne, sans markdown ni backticks : {"id":"<identifiant exact du CT>","raison":"<2 à 4 phrases en français : pourquoi ce CT, et ce qui a fait écarter les finalistes>"}`;
 
+// Niveau de conscience : valeurs balisées 'solution' | 'product' | 'most' (ou « Most Aware »…)
+function niveauCT(v) {
+  const t = String(v || '').toLowerCase();
+  if (t.includes('most')) return 'most';
+  if (t.includes('product')) return 'product';
+  if (t.includes('solution')) return 'solution';
+  if (t.includes('problem')) return 'problem';
+  return '';
+}
+const NIVEAU_LIBELLE = { solution: 'Solution Aware', product: 'Product Aware', most: 'Most Aware', problem: 'Problem Aware' };
 function construireSelectionCT(b) {
   const cts = Array.isArray(b.cts) ? b.cts : [];
   const parts = [];
@@ -1395,6 +1407,7 @@ function construireSelectionCT(b) {
   }
   parts.push({ type: 'text', text: 'SYNTHÈSE COMPLÈTE DE L\'ANALYSTE DE MARCHÉ :\n' + String(b.synthese || '(non fournie)') });
   if (b.angleInstruction) parts.push({ type: 'text', text: 'CONSIGNE D\'ANGLE ET DE NIVEAU DE CONSCIENCE DE CETTE CRÉATIVE :\n' + b.angleInstruction });
+  if (b.niveauTexte) parts.push({ type: 'text', text: b.niveauTexte });
   if (b.assets && String(b.assets).trim()) parts.push({ type: 'text', text: 'ASSETS RÉELS DU CLIENT :\n' + String(b.assets).slice(0, 2500) });
   if (Array.isArray(b.excludeIds) && b.excludeIds.length) parts.push({ type: 'text', text: 'CT déjà utilisés au lot précédent pour ce produit (à éviter) : ' + b.excludeIds.join(', ') });
   parts.push({ type: 'text', text: '━━━ GALERIE COMPLÈTE : ' + cts.length + ' CT ━━━' });
@@ -3301,17 +3314,29 @@ HARD LOCKS :
     req.on('end', async () => {
       try {
         const b = JSON.parse(body);
-        const cts = Array.isArray(b.cts) ? b.cts : [];
-        if (!cts.length) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Galerie CT vide' })); return; }
-        console.log('\n🎯 SELECT-CT-AGENT — choix de 1 CT parmi ' + cts.length + ' (' + cts.filter(c => c.b64).length + ' avec image)');
-        const raw = await callGeminiPro(SELECTION_CT_SYSTEME, construireSelectionCT(b), 24000, {
+        const ctsTous = Array.isArray(b.cts) ? b.cts : [];
+        if (!ctsTous.length) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Galerie CT vide' })); return; }
+        // Niveau de conscience imposé : seuls les CT balisés à ce niveau sont candidats (filtre appliqué par le code, pas laissé au modèle)
+        const niveau = niveauCT(b.niveau);
+        let cts = ctsTous, repli = false, nbBalises = 0;
+        if (niveau) {
+          const balises = ctsTous.filter(c => (c.awareness || []).some(a => niveauCT(a) === niveau));
+          nbBalises = balises.length;
+          if (balises.length) cts = balises;
+          else repli = true;
+          b.niveauTexte = repli
+            ? 'NIVEAU DE CONSCIENCE IMPOSÉ : ' + NIVEAU_LIBELLE[niveau] + '. ⚠ Aucun CT de la galerie n\'est balisé à ce niveau : choisis la structure qui s\'en rapproche le plus et signale-le dans ta raison.'
+            : 'NIVEAU DE CONSCIENCE IMPOSÉ : ' + NIVEAU_LIBELLE[niveau] + '. Les ' + cts.length + ' CT ci-dessous sont TOUS balisés ' + NIVEAU_LIBELLE[niveau] + ' (filtre vérifié par le code).';
+        }
+        console.log('\n🎯 SELECT-CT-AGENT — choix de 1 CT parmi ' + cts.length + (niveau ? ' (niveau ' + NIVEAU_LIBELLE[niveau] + (repli ? ' : AUCUN CT BALISÉ, repli sur ' + ctsTous.length : ' : ' + nbBalises + ' balisés sur ' + ctsTous.length) + ')' : '') + ', ' + cts.filter(c => c.b64).length + ' avec image');
+        const raw = await callGeminiPro(SELECTION_CT_SYSTEME, construireSelectionCT({ ...b, cts }), 24000, {
           modele: MODELES.creative, temperature: 0.3, thinkingBudget: 16384, logLabel: 'Choix CT', timeoutMs: 150000,
           typeAppel: b.isTest ? 'selection_ct_test' : 'selection_ct_prod'
         });
         const choix = lireChoixCT(raw, cts);
         console.log('  → CT choisi : ' + choix.id + ' — ' + choix.raison.slice(0, 160));
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ id: choix.id, raison: choix.raison, nbCT: cts.length }));
+        res.end(JSON.stringify({ id: choix.id, raison: choix.raison, nbCT: cts.length, niveau: niveau || null, nbBalises, repli }));
       } catch (e) {
         console.error('✗ SELECT-CT-AGENT error:', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
