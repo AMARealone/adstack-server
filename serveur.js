@@ -8,8 +8,11 @@ const webpush = require('web-push');
 const crypto = require('crypto');
 const zlib = require('zlib');
 const path = require('path');
-const PLANIF = require('./planificateur_lot'); // v5.73 — planificateur de lot (mode plan seulement)
-const HYPO2 = require('./hypothese_v2'); // v5.73 — lecture de l'hypothèse : angles, raisons d'acheter, maturité de la cible
+// v5.73 — modules du planificateur : un fichier manquant ne doit JAMAIS empêcher le serveur de démarrer (les routes /lot/* répondent alors 503).
+let PLANIF = null, HYPO2 = null;
+try { PLANIF = require('./planificateur_lot'); } catch (e) { console.error('[v5.73] planificateur_lot.js introuvable ou invalide : routes /lot/plan indisponibles —', e.message); }
+try { HYPO2 = require('./hypothese_v2'); } catch (e) { console.error('[v5.73] hypothese_v2.js introuvable ou invalide : routes /lot/diagnostic et /lot/plan-auto indisponibles —', e.message); }
+const modulesLotOk = (res) => { if (PLANIF && HYPO2) return true; res.writeHead(503, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Modules du planificateur absents sur le serveur (planificateur_lot.js / hypothese_v2.js)' })); return false; };
 // ── v5.72 — Suivi du coût d'UNE production d'hypothèse (plafond 2 $). Estimation : tarifs réglables par variables Render. ──
 const { AsyncLocalStorage } = require('async_hooks');
 const _coutALS = new AsyncLocalStorage();
@@ -5633,6 +5636,7 @@ if (req.method === 'GET' && req.url.startsWith('/users/search')) {
 // ── v5.73 — Planificateur de lot (MODE PLAN SEULEMENT : aucun appel IA, aucun coût) ──
 // GET /lot/budget?taille=6 → composition (1 vidéo + 2 images par angle) + budget tout compris + répartition
 if (req.method === 'GET' && req.url.startsWith('/lot/budget')) {
+  if (!modulesLotOk(res)) return;
   try {
     const u = new URL(req.url, 'http://x'); const taille = parseInt(u.searchParams.get('taille') || '6', 10);
     const hyp = u.searchParams.get('hypotheseExiste') === '1';
@@ -5643,6 +5647,7 @@ if (req.method === 'GET' && req.url.startsWith('/lot/budget')) {
 }
 // POST /lot/plan { taille, angles:[{id,nom}], galerieCT:[{id,format,concept,axes,maturite}], historique, ctGagnants, cible, hypotheseExiste, anglesGagnants }
 if (req.method === 'POST' && req.url === '/lot/plan') {
+  if (!modulesLotOk(res)) return;
   let body = ''; req.on('data', c => body += c);
   req.on('end', () => {
     try {
@@ -5655,6 +5660,7 @@ if (req.method === 'POST' && req.url === '/lot/plan') {
 
 // POST /lot/diagnostic { synthese } → maturité, angles (facette + 3 raisons) et besoin de migration, SANS appel IA.
 if (req.method === 'POST' && req.url === '/lot/diagnostic') {
+  if (!modulesLotOk(res)) return;
   let body = ''; req.on('data', c => body += c);
   req.on('end', () => {
     try {
@@ -5668,6 +5674,7 @@ if (req.method === 'POST' && req.url === '/lot/diagnostic') {
 // POST /lot/plan-auto { productId, taille, synthese? } → plan de lot complet depuis l'hypothèse stockée, la galerie balisée,
 // l'historique et les CT gagnants. MODE PLAN SEULEMENT : aucun appel IA, aucun coût, rien n'est produit.
 if (req.method === 'POST' && req.url === '/lot/plan-auto') {
+  if (!modulesLotOk(res)) return;
   let body = ''; req.on('data', c => body += c);
   req.on('end', async () => {
     try {
