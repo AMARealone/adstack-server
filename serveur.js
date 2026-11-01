@@ -1361,6 +1361,68 @@ async function crmAdminOk(req) {
   } catch (_) { return false; }
 }
 
+
+// ── Choix automatique d'UN CT (interface de test de l'agent Creative Image) ──
+// L'agent voit TOUTE la galerie (image + nom + description + balises de chaque CT) et reçoit les mêmes entrées que la création :
+// brief, photo produit, synthèse complète, consigne d'angle / niveau de conscience, assets réels du client.
+const SELECTION_CT_SYSTEME = `Tu es le directeur artistique d'AdStack. Pour UNE créative publicitaire image Meta Ads, tu choisis UN SEUL Creative Template (CT) dans la galerie complète qui t'est montrée : chaque CT est une image de référence accompagnée de son identifiant, de son nom, de sa description et de ses balises.
+
+Tu reçois tout ce que l'agent de création recevra : le brief client, la photo du produit, la synthèse complète de l'analyste de marché, la consigne d'angle et de niveau de conscience de CETTE créative, et les assets réels du client.
+
+Méthode :
+1. Comprends d'abord le produit, la cible, l'angle imposé et le niveau de conscience de cette créative.
+2. Regarde réellement les images de la galerie. Les balises et descriptions peuvent être absentes ou incomplètes ; quand elles existent, elles sont une donnée pré-établie fiable (la conscience balisée surtout) et priment sur un jugement visuel refait de zéro.
+3. Évalue chaque CT dans cet ordre de priorité strict (un niveau supérieur l'emporte toujours sur un niveau inférieur) :
+   - NICHE : le CT est-il de la niche du produit ou d'une niche visuellement et conceptuellement proche ?
+   - PRODUIT PRÉCIS : comment le produit y est introduit visuellement, et si c'est compatible avec CE produit (forme, usage, taille) et réalisable avec les assets réels du client (aspects photo, kit ou cadeaux, avis, logo, prix affichable).
+   - ANGLE : le fond de l'angle imposé.
+   - NIVEAU DE CONSCIENCE : Solution Aware = transformation (situation actuelle vers situation désirée) ou comparaison entre types de solutions, produit peu ou pas visible ; Product Aware = confiance envers ce produit précis, produit visible et central, jamais de prix ni d'offre ; Most Aware = structure promotionnelle, prix affiché, offre ou pack, urgence, appel à l'action direct.
+   - TON : le registre du CT face au quadrant EPIC de l'angle (émotionnel, pratique, identitaire, critique).
+4. Écarte tout CT impossible à réaliser avec les assets fournis ou qui contredit une contrainte du brief.
+5. Départage les finalistes sur le visuel : le CT qui rendra la créative la plus convaincante pour cette cible précise.
+
+Le choix doit résulter de ton propre raisonnement sur ces données, jamais d'un choix par défaut ni de l'ordre de la liste.
+
+FORMAT : réponds UNIQUEMENT par un objet JSON sur une seule ligne, sans markdown ni backticks : {"id":"<identifiant exact du CT>","raison":"<2 à 4 phrases en français : pourquoi ce CT, et ce qui a fait écarter les finalistes>"}`;
+
+function construireSelectionCT(b) {
+  const cts = Array.isArray(b.cts) ? b.cts : [];
+  const parts = [];
+  parts.push({ type: 'text', text: 'BRIEF CLIENT :\n' + String(b.briefTexte || '(non fourni)').slice(0, 12000) });
+  if (b.productBase64) {
+    parts.push({ type: 'text', text: 'PHOTO DU PRODUIT :' });
+    parts.push({ type: 'image', source: { type: 'base64', media_type: b.productMime || 'image/jpeg', data: b.productBase64 } });
+  }
+  parts.push({ type: 'text', text: 'SYNTHÈSE COMPLÈTE DE L\'ANALYSTE DE MARCHÉ :\n' + String(b.synthese || '(non fournie)') });
+  if (b.angleInstruction) parts.push({ type: 'text', text: 'CONSIGNE D\'ANGLE ET DE NIVEAU DE CONSCIENCE DE CETTE CRÉATIVE :\n' + b.angleInstruction });
+  if (b.assets && String(b.assets).trim()) parts.push({ type: 'text', text: 'ASSETS RÉELS DU CLIENT :\n' + String(b.assets).slice(0, 2500) });
+  if (Array.isArray(b.excludeIds) && b.excludeIds.length) parts.push({ type: 'text', text: 'CT déjà utilisés au lot précédent pour ce produit (à éviter) : ' + b.excludeIds.join(', ') });
+  parts.push({ type: 'text', text: '━━━ GALERIE COMPLÈTE : ' + cts.length + ' CT ━━━' });
+  cts.forEach((ct, i) => {
+    let ligne = 'CT ' + (i + 1) + ' — ID : ' + ct.id + ' — « ' + (ct.name || ct.id) + ' »' + (ct.meta ? ' — ' + ct.meta : '');
+    if (ct.niche) ligne += ' [niche : ' + ct.niche + ']';
+    if (ct.awareness && ct.awareness.length) ligne += ' [conscience balisée : ' + ct.awareness.join('/') + ']';
+    if (ct.styleTags && ct.styleTags.length) ligne += ' [style : ' + ct.styleTags.join(', ') + ']';
+    parts.push({ type: 'text', text: ligne });
+    if (ct.b64) parts.push({ type: 'image', source: { type: 'base64', media_type: ct.mime || 'image/jpeg', data: ct.b64 } });
+  });
+  parts.push({ type: 'text', text: 'Choisis maintenant LE CT pour cette créative. Réponds uniquement avec le JSON demandé.' });
+  return parts;
+}
+
+function lireChoixCT(raw, cts) {
+  const texte = String(raw || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+  const ids = new Set((cts || []).map(c => c.id));
+  let id = null, raison = '';
+  try {
+    const d = texte.indexOf('{'), f = texte.lastIndexOf('}');
+    if (d !== -1 && f > d) { const j = JSON.parse(texte.slice(d, f + 1)); id = j.id; raison = j.raison || ''; }
+  } catch (_) {}
+  if (!id || !ids.has(id)) { const m = [...texte.matchAll(/ct_[a-zA-Z0-9_]+/g)].map(x => x[0]).find(x => ids.has(x)); if (m) id = m; }
+  if (!id || !ids.has(id)) throw new Error('Choix de CT illisible ou hors galerie : ' + texte.slice(0, 300));
+  return { id, raison: String(raison).trim() };
+}
+
 async function findUserByEmail(email) {
   if (!email) return null;
   // ⚠️ L'API Admin Supabase ignore silencieusement ?email=... et renvoie TOUS les utilisateurs.
@@ -3197,6 +3259,33 @@ HARD LOCKS :
   }
 
   // ── /select-cts — Sélection intelligente des CTs par Gemini ──
+  // ── /select-ct-agent — l'agent Creative Image choisit lui-même UN CT parmi TOUTE la galerie (interface de test) ──
+  if (req.method === 'POST' && req.url === '/select-ct-agent') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const b = JSON.parse(body);
+        const cts = Array.isArray(b.cts) ? b.cts : [];
+        if (!cts.length) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Galerie CT vide' })); return; }
+        console.log('\n🎯 SELECT-CT-AGENT — choix de 1 CT parmi ' + cts.length + ' (' + cts.filter(c => c.b64).length + ' avec image)');
+        const raw = await callGeminiPro(SELECTION_CT_SYSTEME, construireSelectionCT(b), 24000, {
+          modele: MODELES.creative, temperature: 0.3, thinkingBudget: 16384, logLabel: 'Choix CT', timeoutMs: 150000,
+          typeAppel: b.isTest ? 'selection_ct_test' : 'selection_ct_prod'
+        });
+        const choix = lireChoixCT(raw, cts);
+        console.log('  → CT choisi : ' + choix.id + ' — ' + choix.raison.slice(0, 160));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ id: choix.id, raison: choix.raison, nbCT: cts.length }));
+      } catch (e) {
+        console.error('✗ SELECT-CT-AGENT error:', e.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   if (req.method === 'POST' && req.url === '/select-cts') {
     let body = '';
     req.on('data', chunk => body += chunk);
