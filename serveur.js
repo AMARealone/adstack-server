@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.72-analyste-budget (analyste : suivi du coût avec plafond 2 $, YouTube 10 vidéos/120 commentaires, Trends multi-termes avec requêtes en hausse, 3 recherches approfondies en parallèle) | v5.70-top-performer-chiffres (Top Performer sans délai de 7 jours, chiffres facultatifs, classement automatique par produit et cible) | v5.69-ct-niveau-conscience (choix de CT : niveau de conscience imposé, seuls les CT balisés à ce niveau sont candidats) | v5.68-balayage-probleme (analyste : recherche qui part du problème, ScrapeCreators Reddit/TikTok/pubs Meta, hypothèse stockée réutilisée 30 jours tant qu'il reste des angles en réserve) | v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.73-planificateur-lot (planificateur de lot en plan seulement : 1 vidéo + 2 images par angle, budgets 25/45/63/80 $, routes /lot/budget et /lot/plan, CT gagnants et historique dans renewal-context) | v5.72-analyste-budget (analyste : suivi du coût avec plafond 2 $, YouTube 10 vidéos/120 commentaires, Trends multi-termes avec requêtes en hausse, 3 recherches approfondies en parallèle) | v5.70-top-performer-chiffres (Top Performer sans délai de 7 jours, chiffres facultatifs, classement automatique par produit et cible) | v5.69-ct-niveau-conscience (choix de CT : niveau de conscience imposé, seuls les CT balisés à ce niveau sont candidats) | v5.68-balayage-probleme (analyste : recherche qui part du problème, ScrapeCreators Reddit/TikTok/pubs Meta, hypothèse stockée réutilisée 30 jours tant qu'il reste des angles en réserve) | v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -8,6 +8,7 @@ const webpush = require('web-push');
 const crypto = require('crypto');
 const zlib = require('zlib');
 const path = require('path');
+const PLANIF = require('./planificateur_lot'); // v5.73 — planificateur de lot (mode plan seulement)
 // ── v5.72 — Suivi du coût d'UNE production d'hypothèse (plafond 2 $). Estimation : tarifs réglables par variables Render. ──
 const { AsyncLocalStorage } = require('async_hooks');
 const _coutALS = new AsyncLocalStorage();
@@ -1539,7 +1540,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, version: 'v5.72-analyste-budget', balayage: typeof decideBalayage === 'function', scrapecreators_cle: !!SC_KEY }));
+    res.end(JSON.stringify({ ok: true, version: 'v5.73-planificateur-lot', balayage: typeof decideBalayage === 'function', scrapecreators_cle: !!SC_KEY }));
     return;
   }
 
@@ -5628,6 +5629,29 @@ if (req.method === 'GET' && req.url.startsWith('/users/search')) {
   return;
 }
 
+// ── v5.73 — Planificateur de lot (MODE PLAN SEULEMENT : aucun appel IA, aucun coût) ──
+// GET /lot/budget?taille=6 → composition (1 vidéo + 2 images par angle) + budget tout compris + répartition
+if (req.method === 'GET' && req.url.startsWith('/lot/budget')) {
+  try {
+    const u = new URL(req.url, 'http://x'); const taille = parseInt(u.searchParams.get('taille') || '6', 10);
+    const hyp = u.searchParams.get('hypotheseExiste') === '1';
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ composition: PLANIF.composition(taille), budget: PLANIF.repartitionBudget(taille, { hypotheseExiste: hyp }) }));
+  } catch (e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message })); }
+  return;
+}
+// POST /lot/plan { taille, angles:[{id,nom}], galerieCT:[{id,format,concept,axes,maturite}], historique, ctGagnants, cible, hypotheseExiste, anglesGagnants }
+if (req.method === 'POST' && req.url === '/lot/plan') {
+  let body = ''; req.on('data', c => body += c);
+  req.on('end', () => {
+    try {
+      const r = PLANIF.planifierLot(JSON.parse(body));
+      res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(r));
+    } catch (e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message })); }
+  });
+  return;
+}
+
 // GET /products/:id/renewal-context — tout le contexte nécessaire à Factory pour décider :
 // nouvelle commande ou renouvellement, même cible ou rotation, quels CT éviter, quels angles
 // ne jamais répéter. Recalculé entièrement depuis `deliveries` (source de vérité chronologique)
@@ -5732,6 +5756,23 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
     // CT utilisés au dernier lot livré pour ce produit
     const ctsUtilisesDernierLot = derniereLivraison?.cts_utilises || [];
 
+
+    // v5.73 — CT gagnants (Top Performer) de la cible courante : les 3 meilleurs, classés par le même score
+    // (ROAS, CPA, dépenses, rang) que l'angle gagnant. Le planificateur en place AU PLUS UN par lot,
+    // avec un nouvel angle. Seules les créatives dont le CT a été enregistré à la livraison comptent.
+    let ctGagnants = [];
+    try {
+      const semCible = new Set(deliveriesMemeCible.map(d => d.semaine));
+      const tp = creativesTopPerformer.filter(c => semCible.has(c.week) && (c.ct || c.ctId));
+      const sc = scoresTopPerformer(tp);
+      ctGagnants = tp.map(c => ({ ctId: c.ct || c.ctId, angle: c.angle || null, score: multiplicateurTP(c, sc) }))
+        .sort((a, b) => b.score - a.score)
+        .filter((x, i, arr) => arr.findIndex(y => y.ctId === x.ctId) === i)
+        .slice(0, 3);
+    } catch (e) { console.warn('[renewal-context] ctGagnants:', e.message); }
+    // Historique des créatives livrées (fiche minimale) : base du calcul de redondance entre lots.
+    const historiqueCreatives = deliveries.flatMap(d => (d.plan_lot && d.plan_lot.length ? d.plan_lot : (d.cts_utilises || []).map(ct => ({ ctId: ct, format: 'image', semaine: d.semaine }))));
+
     // Une commande encore en cours pour ce même produit ailleurs ? (bloque le renouvellement)
     const briefs = await loadBriefs();
     // Fenêtre de sécurité : une génération réellement en cours dure au maximum ~15-20min pour un
@@ -5754,6 +5795,8 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
       nbAnglesCibleCourante,
       rotationNecessaire: nbAnglesCibleCourante >= SEUIL_ANGLES_AVANT_ROTATION,
       ctsUtilisesDernierLot,
+      ctGagnants,
+      historiqueCreatives,
       commandeActiveAilleurs,
       angleGagnant,
       // Portrait déjà généré pour cibleActuelle — permet à la Factory de le réutiliser tel quel
@@ -9510,6 +9553,8 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
           id: idCandidat, productId,
           angle: angleCreative, cible: cibleCeLot,
           week: weekLabel, imageUrl: url || null, thumbUrl: thumbUrl || null,
+          // v5.73 — identifiant du CT enregistré : permet de retrouver les CT gagnants (Top Performer) et de mesurer la redondance entre lots.
+          ct: c.ct || null,
           // Vidéo 9:16 : AdBoard l'affiche en 4:5 dans la grille (via thumbUrl = affiche) et en 9:16 à l'ouverture.
           ...(c.videoUrl ? { type: 'video', videoUrl: c.videoUrl } : {})
         });
@@ -9562,7 +9607,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
     // FOIS, plus jamais rafraîchie, peu importe combien de relances suivaient.
     const dejaCreeMemeVersion = livraisonExistante && livraisonExistante.generation_version === generationVersion;
     const dejaCree = dejaCreeMemeVersion;
-    const nouvelleEntreeLivraison = { ticketId, semaine: weekLabel, date: dateLabel, created_at: new Date().toISOString(), cible: cibleCeLot, cible_signature: cibleSignatureCeLot, angles: angleEntries, cts_utilises: ctsUtilisesCeLot, generation_version: generationVersion };
+    const nouvelleEntreeLivraison = { ticketId, semaine: weekLabel, date: dateLabel, created_at: new Date().toISOString(), cible: cibleCeLot, cible_signature: cibleSignatureCeLot, angles: angleEntries, cts_utilises: ctsUtilisesCeLot, plan_lot: (deliverables.plan_lot || []).slice(0, 40), generation_version: generationVersion };
     const deliveriesFinal = dejaCree
       ? existingDeliveries
       : livraisonExistante
