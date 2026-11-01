@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.70-top-performer-chiffres (Top Performer sans délai de 7 jours, chiffres facultatifs, classement automatique par produit et cible) | v5.69-ct-niveau-conscience (choix de CT : niveau de conscience imposé, seuls les CT balisés à ce niveau sont candidats) | v5.68-balayage-probleme (analyste : recherche qui part du problème, ScrapeCreators Reddit/TikTok/pubs Meta, hypothèse stockée réutilisée 30 jours tant qu'il reste des angles en réserve) | v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.72-analyste-budget (analyste : suivi du coût avec plafond 2 $, YouTube 10 vidéos/120 commentaires, Trends multi-termes avec requêtes en hausse, 3 recherches approfondies en parallèle) | v5.70-top-performer-chiffres (Top Performer sans délai de 7 jours, chiffres facultatifs, classement automatique par produit et cible) | v5.69-ct-niveau-conscience (choix de CT : niveau de conscience imposé, seuls les CT balisés à ce niveau sont candidats) | v5.68-balayage-probleme (analyste : recherche qui part du problème, ScrapeCreators Reddit/TikTok/pubs Meta, hypothèse stockée réutilisée 30 jours tant qu'il reste des angles en réserve) | v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -8,6 +8,45 @@ const webpush = require('web-push');
 const crypto = require('crypto');
 const zlib = require('zlib');
 const path = require('path');
+// ── v5.72 — Suivi du coût d'UNE production d'hypothèse (plafond 2 $). Estimation : tarifs réglables par variables Render. ──
+const { AsyncLocalStorage } = require('async_hooks');
+const _coutALS = new AsyncLocalStorage();
+const COUT_MAX_HYPOTHESE = parseFloat(process.env.COUT_MAX_HYPOTHESE || '2');
+const TARIFS = {
+  pro_in:  parseFloat(process.env.TARIF_PRO_IN  || '2'),
+  pro_out: parseFloat(process.env.TARIF_PRO_OUT || '12'),
+  fl_in:   parseFloat(process.env.TARIF_FLASH_IN  || '0.5'),
+  fl_out:  parseFloat(process.env.TARIF_FLASH_OUT || '3'),
+  recherche: parseFloat(process.env.TARIF_RECHERCHE || '0.014')
+};
+const _COUTS_AGENTS = {};   // depuis le dernier démarrage du serveur
+function agentDeAppel(t) {
+  t = String(t || '');
+  if (/^analyste/.test(t)) return 'Analyste de marché';
+  if (/^copywriter/.test(t)) return 'Copywriter';
+  if (/^creative_prod|^selection_ct|^aspects|^photo/.test(t)) return 'Creative Image';
+  if (/video/i.test(t)) return 'Créative Vidéo';
+  if (/^generation_image/.test(t)) return 'Creative Image';
+  return 'Autres (fiche produit, démo, divers)';
+}
+function nouveauSuiviCout() { const st = { usd: 0, lignes: {}, max: COUT_MAX_HYPOTHESE }; _coutALS.enterWith(st); return st; }
+function noterCout(modele, data, typeAppel) {
+  if (!data) return;
+  const st = _coutALS.getStore();
+  const u = data.usageMetadata || {};
+  const pro = /pro/i.test(String(modele));
+  const tin = u.promptTokenCount || 0, tout = (u.candidatesTokenCount || 0) + (u.thoughtsTokenCount || 0);
+  const q = ((data.candidates && data.candidates[0] && data.candidates[0].groundingMetadata && data.candidates[0].groundingMetadata.webSearchQueries) || []).length;
+  const usd = (tin * (pro ? TARIFS.pro_in : TARIFS.fl_in) + tout * (pro ? TARIFS.pro_out : TARIFS.fl_out)) / 1e6 + q * TARIFS.recherche;
+  const ag = agentDeAppel(typeAppel);
+  const reg = _COUTS_AGENTS[ag] || (_COUTS_AGENTS[ag] = { appels: 0, usd: 0, tok_in: 0, tok_out: 0, recherches: 0, derniere_usd: 0, productions: 0 });
+  reg.appels++; reg.usd += usd; reg.tok_in += tin; reg.tok_out += tout; reg.recherches += q;
+  if (st) {
+    st.usd += usd;
+    const k = pro ? 'pro' : 'flash'; st.lignes[k] = (st.lignes[k] || 0) + usd;
+    if (q) st.lignes.recherches = (st.lignes.recherches || 0) + q * TARIFS.recherche;
+  }
+}
 const fs = require('fs');
 const sharp = require('sharp');
 // ── Diagnostic temporaire (bug miniatures, échec systématique "vipspng: libpng read error"
@@ -562,6 +601,7 @@ async function vertexRequest(token, model, body, timeoutMs = 90000, typeAppel = 
     for (let essai = 0; essai < 2; essai++) {
       try {
         const data = await appelUnModele(token, cand, corps, timeoutMs, typeAppel);
+        try { noterCout(cand, data, typeAppel); } catch (_) {}
         const cle = typeAppel + '|' + cand;
         if (!_MODELES_VUS.has(cle)) { _MODELES_VUS.add(cle); console.log('[modeles] ' + typeAppel + ' → ' + cand + (cand !== model ? ' (repli ; modèle demandé : ' + model + ')' : '')); }
         return data;
@@ -1491,9 +1531,15 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify(etatModeles(), null, 1));
     return;
   }
+  if (req.method === 'GET' && req.url === '/couts') {
+    const lignes = Object.entries(_COUTS_AGENTS).map(([agent, r]) => ({ agent, appels: r.appels, total_usd: Math.round(r.usd * 1000) / 1000, productions: r.productions, derniere_production_usd: Math.round(r.derniere_usd * 1000) / 1000, moyenne_par_production_usd: r.productions ? Math.round(r.usd / r.productions * 1000) / 1000 : null, tokens_entree: r.tok_in, tokens_sortie_et_reflexion: r.tok_out, recherches_google: r.recherches }));
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify({ depuis_demarrage: true, plafond_hypothese_usd: COUT_MAX_HYPOTHESE, tarifs: TARIFS, agents: lignes, total_usd: Math.round(lignes.reduce((n, l) => n + l.total_usd, 0) * 1000) / 1000, note: 'Estimation à partir des tokens et recherches comptés ; ScrapeCreators et vidéo (ElevenLabs/Veo du service vidéo) non inclus. Remis à zéro à chaque redémarrage du serveur.' }));
+    return;
+  }
   if (req.method === 'GET' && req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, version: 'v5.70-top-performer-chiffres', balayage: typeof decideBalayage === 'function', scrapecreators_cle: !!SC_KEY }));
+    res.end(JSON.stringify({ ok: true, version: 'v5.72-analyste-budget', balayage: typeof decideBalayage === 'function', scrapecreators_cle: !!SC_KEY }));
     return;
   }
 
@@ -2536,6 +2582,7 @@ ${pageText}`;
         const { system, parts, maxOutputTokens, brief, isTest } = reqBody;
         const { marque = '', produit = '', pays = '', lien_page_produit = '' } = brief || {};
         const { productId = null, nbAngles = 0, forcerBalayage = false } = reqBody;
+        const _suiviCout = nouveauSuiviCout();
         let _dec = { reutiliser: false, raison: 'décision indisponible' };
         try { _dec = await decideBalayage({ productId, isTest, nbAngles, brief, forcer: forcerBalayage }); }
         catch (e) { console.log('   ⚠ décision de balayage impossible, nouveau balayage par prudence :', e.message); }
@@ -2661,6 +2708,39 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
           console.log('   ✗ erreur Gemini :', e.message);
         }
 
+        // ── v5.71 — APPROFONDISSEMENT : 3 recherches ciblées en parallèle (alternatives/concurrents, vie réelle de la cible, signaux précoces) ──
+        try {
+          const _pb = (_planBalayage && _planBalayage.probleme) || produit;
+          const _alts = (_planBalayage && _planBalayage.alternatives || []).join(' ; ') || 'à identifier toi-même';
+          const _concs = (_planBalayage && _planBalayage.concurrents || []).join(' ; ') || 'à identifier toi-même';
+          const _entete = `Tu es un analyste de marché senior. Produit : "${produit}"${marque ? ` (marque "${marque}")` : ''}, vendu en ${pays}. Problème que le produit résout : ${_pb}. Alternatives déjà repérées : ${_alts}. Concurrents déjà repérés : ${_concs}.\nRÈGLES : recherche réellement (plusieurs requêtes Google distinctes, pas de doublon). Cite entre guillemets les phrases exactes trouvées + URL. Ce qui n'est pas trouvé s'écrit [NON TROUVÉ] — ne fabrique jamais. Ce qui est une déduction s'écrit [DÉDUIT]. Donnée brute uniquement, sans synthèse. Écris en français, sois exhaustif et concret (noms propres, prix, lieux, objets, phrases).\n\n`;
+          const _passes = [
+            { nom: 'alternatives', prompt: _entete + `MISSION : FICHES DÉTAILLÉES des ALTERNATIVES et des CONCURRENTS (8 à 12 fiches). Pour CHAQUE alternative ou concurrent (produits, marques, remèdes traditionnels, habitudes comme le café/le thé, médecin/pharmacien, ne rien faire…) : nom exact ; prix réel en devise locale et par jour d'usage ; où on l'achète (quels lieux, quels sites, quels vendeurs) ; la promesse exacte et les mots qu'il emploie ; formats de pub et rituels d'usage ; ce que les gens en disent de bien (verbatims) ; ce que les gens en disent de mal (verbatims) ; ses faiblesses structurelles ; la raison précise pour laquelle un utilisateur l'abandonne ou le garde malgré tout. Cherche aussi : quelles publicités ces concurrents diffusent en ce moment (Meta Ad Library / TikTok) et avec quels angles ; quel angle AUCUN concurrent n'occupe (territoires libres).` },
+            { nom: 'vie_cible', prompt: _entete + `MISSION : LA VIE RÉELLE DE LA CIBLE du produit en ${pays}, de façon ultra-concrète. Cherche des forums, groupes, vidéos, articles, témoignages, commentaires. Ramène : (1) le profil réel des gens qui ont ce problème (métiers, âges, situation familiale, revenus) avec exemples de personnes réelles qui témoignent ; (2) leur ENTOURAGE : conjoint(e), enfants, parents, collègues, voisins, amis, belle-famille, patron, pharmacien, médecin, marabout/guérisseur, influenceur suivi — pour chaque type de personne : comment elle parle du problème, ce qu'elle conseille, comment elle réagit, quel rôle elle joue dans l'achat ; (3) les LIEUX réels de leur journée (type de logement, quartier-type, transport, lieu de travail, marché, pharmacie, salle, église/mosquée…) avec lumière, bruits, objets visibles ; (4) les OBJETS et marques réellement utilisés au quotidien (téléphone, vêtements, boissons, repas, produits déjà achetés) ; (5) expressions, proverbes, mots d'argot et façons exactes de parler du problème dans la langue locale ; (6) horaires et rythme d'une journée type, avec les moments où le problème frappe le plus.` },
+            { nom: 'signaux', prompt: _entete + `MISSION : SIGNAUX PRÉCOCES (6 à 12 insights que les concurrents n'ont pas encore exploités). Cherche : tendances récentes qui montent (hashtags, sons, formats TikTok/Instagram/YouTube liés au problème), nouveaux comportements de la cible, changements de contexte (prix, loi, saison, événements, usages mobile money/WhatsApp), conversations récentes (3 derniers mois) dans les commentaires et forums où les gens expriment une frustration pour laquelle aucune marque ne répond encore, nouveaux entrants ou produits étrangers en train d'arriver, et croyances qui changent. Pour chaque signal : la preuve (phrase exacte + URL + date si visible), pourquoi c'est encore peu exploité, combien de temps l'avance peut durer.` }
+          ];
+          if (_suiviCout.usd > COUT_MAX_HYPOTHESE * 0.45) throw new Error(`budget déjà à ${_suiviCout.usd.toFixed(2)} $ avant l'approfondissement : étape sautée`);
+          console.log(`\n[1bis] Approfondissement (alternatives · vie de la cible · signaux précoces) — 3 recherches en parallèle... (coût estimé jusqu'ici : ${_suiviCout.usd.toFixed(2)} $)`);
+          const _tokenB = await getToken();
+          const _res = await Promise.all(_passes.map(async (ps) => {
+            try {
+              const d = await vertexRequest(_tokenB, MODELES.scraping, {
+                contents: [{ role: 'user', parts: [{ text: ps.prompt }] }],
+                tools: [{ googleSearch: {} }],
+                generationConfig: { temperature: 0.2, maxOutputTokens: 14000, ...reflexion(MODELES.scraping, 2048) }
+              }, 170000, isTest ? 'analyste_approfondi_test' : 'analyste_approfondi_prod');
+              if (d.error) throw new Error(d.error.message || JSON.stringify(d.error));
+              const c = d.candidates && d.candidates[0];
+              const t = ((c && c.content && c.content.parts) || []).filter(x => !x.thought).map(x => x.text).filter(Boolean).join('\n');
+              const q = (c && c.groundingMetadata && c.groundingMetadata.webSearchQueries) || [];
+              console.log(`   ✓ ${ps.nom} : ${t.length} car., ${q.length} requête(s)`);
+              return { nom: ps.nom, t, q };
+            } catch (e) { console.log(`   ✗ ${ps.nom} ignoré : ${e.message}`); return null; }
+          }));
+          const _titres = { alternatives: 'FICHES ALTERNATIVES ET CONCURRENTS (approfondi)', vie_cible: 'VIE RÉELLE DE LA CIBLE : ENTOURAGE, LIEUX, OBJETS, LANGAGE (approfondi)', signaux: 'SIGNAUX PRÉCOCES : CE QUE LES CONCURRENTS N\'ONT PAS ENCORE EXPLOITÉ (approfondi)' };
+          for (const r of _res) if (r && r.t) donneesBrutes += `\n### SOURCE — ${_titres[r.nom]}\nRequêtes : ${r.q.join(' | ') || 'n/a'}\n\n${r.t}\n`;
+        } catch (e) { console.log('   ✗ approfondissement ignoré :', e.message); }
+
         // Terme de catégorie/problème dérivé une seule fois, partagé par Trends ET YouTube
         // ci-dessous — évite un second appel Gemini redondant pour le même besoin.
         let termeCategorieDerivee = produit;
@@ -2681,20 +2761,28 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
           // Cause profonde corrigée (quasi toujours 0 requête associée trouvée) : interroger le
           // NOM DE MARQUE exact du produit — une marque neuve n'a structurellement aucun volume
           // de recherche, Trends ne peut rien renvoyer.
-          const termeTrends = termeCategorieDerivee;
           const geo = PAYS_TO_GEO[pays] || '';
           const googleTrends = require('google-trends-api');
-          const raw = await googleTrends.relatedQueries({ keyword: termeTrends, geo, hl: 'fr' });
-          const j = JSON.parse(raw);
-          const ranked = j?.default?.rankedList?.[0]?.rankedKeyword || [];
-          const top = ranked.slice(0, 8).map(k => k.query);
-          console.log(`   → geo=${geo || '(monde)'}, ${top.length} requête(s) associée(s)`);
-          top.forEach(q => console.log(`      • ${q}`));
-          if (top.length) {
-            donneesBrutes += `### SOURCE — GOOGLE TRENDS (requêtes associées à "${termeTrends}", ${geo || 'monde'})\n${top.join(', ')}\n\n`;
-          } else {
-            console.log('   ✗ aucune requête associée trouvée');
+          const _termes = [...new Set([termeCategorieDerivee, (_planBalayage && _planBalayage.probleme) || '', ...(_planBalayage && _planBalayage.alternatives || []).slice(0, 2), ...(_planBalayage && _planBalayage.formulations || []).slice(0, 1)].map(x => String(x || '').trim().slice(0, 60)).filter(x => x.length > 2))].slice(0, 5);
+          let _nTr = 0;
+          for (const termeTrends of _termes) {
+            for (const g of (geo ? [geo, ''] : [''])) {
+              try {
+                const raw = await googleTrends.relatedQueries({ keyword: termeTrends, geo: g, hl: 'fr' });
+                const j = JSON.parse(raw);
+                const lists = j?.default?.rankedList || [];
+                const top = (lists[0]?.rankedKeyword || []).slice(0, 10).map(k => k.query);
+                const montee = (lists[1]?.rankedKeyword || []).slice(0, 10).map(k => `${k.query}${k.formattedValue ? ' (' + k.formattedValue + ')' : ''}`);
+                console.log(`   → "${termeTrends}" geo=${g || 'monde'} : ${top.length} requête(s) associée(s), ${montee.length} en hausse`);
+                if (top.length || montee.length) {
+                  _nTr++;
+                  donneesBrutes += `### SOURCE — GOOGLE TRENDS ("${termeTrends}", ${g || 'monde'})\nRequêtes associées : ${top.join(', ') || 'aucune'}\nRequêtes en forte hausse (signal précoce) : ${montee.join(', ') || 'aucune'}\n\n`;
+                  break;
+                }
+              } catch (eT) { console.log(`   ✗ Trends "${termeTrends}" :`, String(eT.message).slice(0, 80)); }
+            }
           }
+          if (!_nTr) console.log('   ✗ aucune requête associée trouvée');
         } catch (e) {
           const hint = e.message.includes('Cannot find module') ? ' — exécute : npm install google-trends-api' : '';
           console.log('   ✗ erreur Trends :', e.message + hint);
@@ -2709,44 +2797,41 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
           // dominer la pertinence YouTube, qui n'a aucun moyen de savoir qu'il s'agit d'un
           // vêtement et non d'une voiture. Le terme de catégorie dérivé plus haut sert de
           // requête principale — bien plus fiable pour rester sur la vraie nature du produit.
-          let ytQuery = `${termeCategorieDerivee} avis test`;
-          let ytQ = encodeURIComponent(ytQuery);
-
-          let searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=3&relevanceLanguage=fr&q=${ytQ}&key=${YOUTUBE_API_KEY}`;
-          let searchData = await httpsGetJson(searchUrl);
-          if (searchData.error) throw new Error(searchData.error.message);
-          let videos = searchData.items || [];
-          console.log(`   → ${videos.length} vidéo(s) trouvée(s) pour "${ytQuery}"`);
-
-          if (!videos.length) {
-            // Repli — si la catégorie générique ne ramène rien, tenter le nom exact du produit
-            // en dernier recours (rare mais possible sur une marque déjà connue/référencée).
-            ytQuery = `${produit} avis`;
-            ytQ = encodeURIComponent(ytQuery);
-            searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=3&relevanceLanguage=fr&q=${ytQ}&key=${YOUTUBE_API_KEY}`;
-            searchData = await httpsGetJson(searchUrl);
-            if (searchData.error) throw new Error(searchData.error.message);
-            videos = searchData.items || [];
-            console.log(`   → élargi à "${ytQuery}" : ${videos.length} vidéo(s) trouvée(s)`);
-          }
-          videos.forEach(v => console.log(`      • ${v.snippet.title}`));
-
-          let allComments = [];
-          for (const v of videos.slice(0, 2)) {
+          const _pbYT = (_planBalayage && _planBalayage.probleme) || termeCategorieDerivee;
+          const _altsYT = (_planBalayage && _planBalayage.alternatives || []).slice(0, 2);
+          const _reqsYT = [...new Set([`${termeCategorieDerivee} avis test`, `${_pbYT}`, ...(_planBalayage && _planBalayage.formulations || []).slice(0, 2), ..._altsYT.map(a => `${a} avis`)])].slice(0, 5);
+          const _vus = new Set(); let videos = [];
+          for (const ytQuery of _reqsYT) {
             try {
-              const cUrl = `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&order=relevance&maxResults=10&videoId=${v.id.videoId}&key=${YOUTUBE_API_KEY}`;
+              const sU = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=4&relevanceLanguage=fr&q=${encodeURIComponent(ytQuery)}&key=${YOUTUBE_API_KEY}`;
+              const sD = await httpsGetJson(sU);
+              if (sD.error) throw new Error(sD.error.message);
+              for (const v of (sD.items || [])) if (v.id && v.id.videoId && !_vus.has(v.id.videoId)) { _vus.add(v.id.videoId); videos.push({ ...v, _req: ytQuery }); }
+              console.log(`   → "${ytQuery}" : ${(sD.items || []).length} vidéo(s)`);
+            } catch (e) { console.log(`   ✗ requête YouTube "${ytQuery}" :`, e.message); }
+          }
+          videos = videos.slice(0, 10);
+          videos.forEach(v => console.log(`      • ${v.snippet.title}`));
+          const ytQuery = _reqsYT.join(' | ');
+
+          let allComments = [], _okVid = 0;
+          for (const v of videos) {
+            if (_okVid >= 6) break;
+            try {
+              const cUrl = `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&order=relevance&maxResults=40&videoId=${v.id.videoId}&key=${YOUTUBE_API_KEY}`;
               const cData = await httpsGetJson(cUrl);
               if (cData.error) throw new Error(cData.error.message);
-              const comments = (cData.items || []).map(c => c.snippet.topLevelComment.snippet.textOriginal);
-              allComments.push(...comments);
+              const comments = (cData.items || []).map(c => c.snippet.topLevelComment.snippet.textOriginal).filter(t => t && t.length > 25);
+              if (comments.length) { _okVid++; allComments.push(...comments.map(t => ({ t, v: v.snippet.title }))); }
             } catch (e) {
-              console.log(`      ✗ commentaires indisponibles (${v.snippet.title.slice(0,40)}...) :`, e.message);
+              console.log(`      ✗ commentaires indisponibles (${v.snippet.title.slice(0,40)}...) :`, String(e.message).slice(0, 60));
             }
           }
-          console.log(`   → ${allComments.length} commentaire(s) récupéré(s)`);
+          console.log(`   → ${allComments.length} commentaire(s) récupéré(s) sur ${_okVid} vidéo(s)`);
+          if (videos.length) donneesBrutes += `### SOURCE — YOUTUBE (vidéos du sujet : ${videos.map(v => `"${v.snippet.title}" (${v.snippet.channelTitle})`).join(' ; ').slice(0, 1800)})\n\n`;
           if (allComments.length) {
-            donneesBrutes += `### SOURCE — YOUTUBE (commentaires, ${videos.length} vidéo(s) sur "${ytQuery}")\n` +
-              allComments.slice(0, 15).map(c => `- "${c.replace(/\n/g, ' ').slice(0, 200)}"`).join('\n') + '\n\n';
+            donneesBrutes += `### SOURCE — YOUTUBE (commentaires, ${_okVid} vidéo(s))\n` +
+              allComments.slice(0, 120).map(c => `- [${c.v.slice(0, 50)}] "${c.t.replace(/\n/g, ' ').slice(0, 300)}"`).join('\n') + '\n\n';
           }
         } catch (e) {
           console.log('   ✗ erreur YouTube :', e.message);
@@ -2911,18 +2996,27 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
         });
 
         // ── Synthèse finale — Gemini 2.5 Pro (mode test) ──
-        console.log('\n→ Gemini 2.5 Pro (mode test) — synthèse S0→S7...');
+        // v5.72 — Budget : on projette le coût de la synthèse (entrée + sortie attendue + réflexion) et on réduit la réflexion si le plafond serait dépassé.
+        const _carEntree = claudeContent.reduce((n, b) => n + (b.type === 'text' ? b.text.length : 0), 0) + String(system || '').length;
+        const _tokEntree = Math.round(_carEntree / 3);
+        let _reflexionSynth = 24576;
+        const _projete = (r) => _suiviCout.usd + (_tokEntree * TARIFS.pro_in + (45000 + r) * TARIFS.pro_out) / 1e6;
+        if (_projete(_reflexionSynth) > COUT_MAX_HYPOTHESE) _reflexionSynth = 8192;
+        if (_projete(_reflexionSynth) > COUT_MAX_HYPOTHESE) _reflexionSynth = 2048;
+        console.log(`\n→ Synthèse — coût estimé jusqu'ici ${_suiviCout.usd.toFixed(2)} $ · entrée ≈ ${_tokEntree} tokens · réflexion ${_reflexionSynth} · projection finale ≈ ${_projete(_reflexionSynth).toFixed(2)} $ (plafond ${COUT_MAX_HYPOTHESE} $)`);
         const text = await callGeminiPro(system, claudeContent, maxOutputTokens || 64000, {
-          modele: MODELES.analyste, temperature: 0.4, thinkingBudget: 24576, logLabel: 'Analyste Hypothèse', timeoutMs: 420000,
+          modele: MODELES.analyste, temperature: 0.4, thinkingBudget: _reflexionSynth, logLabel: 'Analyste Hypothèse', timeoutMs: 420000,
           typeAppel: isTest ? 'analyste_synthese_test' : 'analyste_synthese_prod'
         });
 
         console.log(`✓ Synthèse reçue — ${text.length} chars`);
+        { const r = _COUTS_AGENTS['Analyste de marché']; if (r) { r.productions++; r.derniere_usd = _suiviCout.usd; } }
+        console.log(`💰 COÛT ESTIMÉ DE CETTE HYPOTHÈSE : ${_suiviCout.usd.toFixed(2)} $ (Google : ${Object.entries(_suiviCout.lignes).map(([k, v]) => k + ' ' + v.toFixed(2)).join(' · ')} ; ScrapeCreators : ${_compteurSC.credits || 0} crédit(s) en plus) — plafond ${COUT_MAX_HYPOTHESE} $`);
         console.log('═'.repeat(60) + '\n');
         if (!_reutiliser && productId && !isTest) await enregistrerBalayage(productId, { requetes: _compteurSC.n, credits: _compteurSC.credits, plan: _planBalayage });
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ text, balayage: _statsBalayage }));
+        res.end(JSON.stringify({ text, balayage: _statsBalayage, cout_estime_usd: Math.round(_suiviCout.usd * 100) / 100 }));
       } catch (e) {
         console.error('✗ analyste-synthese error:', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
