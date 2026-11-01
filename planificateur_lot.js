@@ -14,7 +14,10 @@ const SEUIL_COMPAT_CIBLE = 0.5
 const AXES = ['style', 'voix', 'lieu', 'rythme', 'structure', 'ouverture', 'musique', 'palette']
 // Coûts unitaires ESTIMÉS (à remplacer par les coûts réels du registre quand il existera)
 const EST = { hypothese: 2.0, image: 0.30, copieParAngle: 0.10, planificateur: 0.05, reserveRefaits: 0.15 }
-const NIVEAUX = ['Solution', 'Product', 'Most']
+// Plafonds par format (compétence de l'analyste, S3) : la vidéo peut descendre jusqu'à Problem Aware, l'image jamais plus froid que Solution Aware.
+// Most Aware vit dans la conversion de la vidéo (derniers 25-30 %) et dans l'ad copy.
+const NIVEAU_VIDEO = 'Problem'
+const NIVEAUX_IMAGES = ['Solution', 'Product']
 
 function composition(taille) {
   if (!Number.isInteger(taille) || taille < 6 || taille % 3 !== 0 || taille > 24) throw new Error('Taille de lot invalide : ' + taille + ' (multiple de 3, entre 6 et 24)')
@@ -99,7 +102,7 @@ function controlerLot(lot, historique, galerieExistante, tailleAttendue) {
 }
 
 // Choix glouton déterministe : CT compatibles, non utilisés, qui diffèrent le plus de ce qui est déjà pris
-function planifierLot({ taille, angles, galerieCT, historique = [], ctGagnants = [], cible = null, hypotheseExiste = false, anglesGagnants = [], niveauVideo = 'Solution' }) {
+function planifierLot({ taille, angles, galerieCT, historique = [], ctGagnants = [], cible = null, hypotheseExiste = false, anglesGagnants = [] }) {
   const c = composition(taille)
   if (!angles || angles.length < c.angles) throw new Error(`Hypothèse : ${angles ? angles.length : 0} angle(s) disponible(s), ${c.angles} nécessaires`)
   const angPris = angles.filter(a => !anglesGagnants.includes(a.id)).slice(0, c.angles)
@@ -115,7 +118,7 @@ function planifierLot({ taille, angles, galerieCT, historique = [], ctGagnants =
   })
   const poolV = candidats('video'), poolI = candidats('image')
   let gagnantPlace = false
-  const choisir = (pool, fmt, angle, niveau) => {
+  const choisir = (pool, fmt, angle, niveau, k) => {
     let meilleur = null, meilleurScore = -1
     for (const ct of pool) {
       if (lot.some(x => x.ctId === ct.id)) continue
@@ -131,12 +134,12 @@ function planifierLot({ taille, angles, galerieCT, historique = [], ctGagnants =
     if (!meilleur) { alertes.push(`Aucun CT ${fmt} valable pour l'angle ${angle.id} (${niveau})`); return }
     if (meilleur.estGagnant) gagnantPlace = true
     const n = lot.length + 1
-    lot.push({ id: `${angle.id}-${fmt === 'video' ? 'V' : 'I'}${n}`, ctId: meilleur.ct.id, format: fmt, concept: meilleur.ct.concept, axes: meilleur.ct.axes || {}, angleId: angle.id, niveau, ctGagnant: meilleur.estGagnant, compatCible: Math.round(compat(meilleur.ct) * 100) / 100 })
+    lot.push({ id: `${angle.id}-${fmt === 'video' ? 'V' : 'I'}${n}`, ctId: meilleur.ct.id, format: fmt, concept: meilleur.ct.concept, axes: meilleur.ct.axes || {}, angleId: angle.id, niveau, facette: angle.facette || null, raisonIdx: k, raison: (angle.raisons && angle.raisons[k]) || null, ctGagnant: meilleur.estGagnant, compatCible: Math.round(compat(meilleur.ct) * 100) / 100 })
   }
-  const autres = NIVEAUX.filter(n => n !== niveauVideo)
-  angPris.forEach(angle => { choisir(poolV, 'video', angle, niveauVideo); choisir(poolI, 'image', angle, autres[0]); choisir(poolI, 'image', angle, autres[1]) })
+  // Une raison d'acheter par créative de l'angle : 0 = vidéo, 1 et 2 = images.
+  angPris.forEach(angle => { choisir(poolV, 'video', angle, NIVEAU_VIDEO, 0); choisir(poolI, 'image', angle, NIVEAUX_IMAGES[0], 1); choisir(poolI, 'image', angle, NIVEAUX_IMAGES[1], 2) })
   const controles = controlerLot(lot, historique, [], taille)
   return { composition: c, budget: repartitionBudget(taille, { hypotheseExiste }), lot, controles, alertes, rejetes }
 }
 
-module.exports = { TAILLES, BUDGET_PAR_TAILLE, AXES, composition, budgetTotal, repartitionBudget, ressemblance, redondanceLot, similairesGalerie, compatibiliteCible, controlerLot, planifierLot, EST }
+module.exports = { NIVEAU_VIDEO, NIVEAUX_IMAGES, TAILLES, BUDGET_PAR_TAILLE, AXES, composition, budgetTotal, repartitionBudget, ressemblance, redondanceLot, similairesGalerie, compatibiliteCible, controlerLot, planifierLot, EST }

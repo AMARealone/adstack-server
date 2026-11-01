@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.73-planificateur-lot (planificateur de lot en plan seulement : 1 vidéo + 2 images par angle, budgets 25/45/63/80 $, routes /lot/budget et /lot/plan, CT gagnants et historique dans renewal-context) | v5.72-analyste-budget (analyste : suivi du coût avec plafond 2 $, YouTube 10 vidéos/120 commentaires, Trends multi-termes avec requêtes en hausse, 3 recherches approfondies en parallèle) | v5.70-top-performer-chiffres (Top Performer sans délai de 7 jours, chiffres facultatifs, classement automatique par produit et cible) | v5.69-ct-niveau-conscience (choix de CT : niveau de conscience imposé, seuls les CT balisés à ce niveau sont candidats) | v5.68-balayage-probleme (analyste : recherche qui part du problème, ScrapeCreators Reddit/TikTok/pubs Meta, hypothèse stockée réutilisée 30 jours tant qu'il reste des angles en réserve) | v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.73-planificateur-lot (routes /lot/diagnostic, /lot/plan-auto et /tag-ct-lot ; planificateur de lot en plan seulement : 1 vidéo + 2 images par angle, budgets 25/45/63/80 $, routes /lot/budget et /lot/plan, CT gagnants et historique dans renewal-context) | v5.72-analyste-budget (analyste : suivi du coût avec plafond 2 $, YouTube 10 vidéos/120 commentaires, Trends multi-termes avec requêtes en hausse, 3 recherches approfondies en parallèle) | v5.70-top-performer-chiffres (Top Performer sans délai de 7 jours, chiffres facultatifs, classement automatique par produit et cible) | v5.69-ct-niveau-conscience (choix de CT : niveau de conscience imposé, seuls les CT balisés à ce niveau sont candidats) | v5.68-balayage-probleme (analyste : recherche qui part du problème, ScrapeCreators Reddit/TikTok/pubs Meta, hypothèse stockée réutilisée 30 jours tant qu'il reste des angles en réserve) | v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const zlib = require('zlib');
 const path = require('path');
 const PLANIF = require('./planificateur_lot'); // v5.73 — planificateur de lot (mode plan seulement)
+const HYPO2 = require('./hypothese_v2'); // v5.73 — lecture de l'hypothèse : angles, raisons d'acheter, maturité de la cible
 // ── v5.72 — Suivi du coût d'UNE production d'hypothèse (plafond 2 $). Estimation : tarifs réglables par variables Render. ──
 const { AsyncLocalStorage } = require('async_hooks');
 const _coutALS = new AsyncLocalStorage();
@@ -5652,6 +5653,73 @@ if (req.method === 'POST' && req.url === '/lot/plan') {
   return;
 }
 
+// POST /lot/diagnostic { synthese } → maturité, angles (facette + 3 raisons) et besoin de migration, SANS appel IA.
+if (req.method === 'POST' && req.url === '/lot/diagnostic') {
+  let body = ''; req.on('data', c => body += c);
+  req.on('end', () => {
+    try {
+      const { synthese } = JSON.parse(body);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ maturite: HYPO2.lireMaturite(synthese), angles: HYPO2.lireAngles(synthese), diagnostic: HYPO2.diagnostic(synthese) }));
+    } catch (e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message })); }
+  });
+  return;
+}
+// POST /lot/plan-auto { productId, taille, synthese? } → plan de lot complet depuis l'hypothèse stockée, la galerie balisée,
+// l'historique et les CT gagnants. MODE PLAN SEULEMENT : aucun appel IA, aucun coût, rien n'est produit.
+if (req.method === 'POST' && req.url === '/lot/plan-auto') {
+  let body = ''; req.on('data', c => body += c);
+  req.on('end', async () => {
+    try {
+      const { productId, taille = 6 } = JSON.parse(body);
+      let synthese = JSON.parse(body).synthese || null;
+      const H = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` };
+      const pr = (await (await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=derniere_synthese,deliveries,marche,creatives`, { headers: H })).json())[0] || {};
+      synthese = synthese || pr.derniere_synthese;
+      if (!synthese) throw new Error('Aucune hypothèse stockée pour ce produit');
+      const maturite = HYPO2.lireMaturite(synthese), angles = HYPO2.lireAngles(synthese), diag = HYPO2.diagnostic(synthese);
+      const gal = await chargerGalerieBalisee();
+      if (!gal.cts.length) throw new Error(`Aucun CT balisé (${gal.total} CT dans la galerie, 0 balisé) : lance balisage_ct.mjs`);
+      const deliveries = pr.deliveries || [];
+      const historique = deliveries.flatMap(d => (d.plan_lot && d.plan_lot.length ? d.plan_lot : (d.cts_utilises || []).map(ct => ({ ctId: ct, format: 'image' }))));
+      historique.forEach((h, i) => { const c = gal.parId[h.ctId]; if (c) historique[i] = { ...h, concept: c.concept, axes: c.axes, format: c.format }; });
+      const gagn = (pr.creatives || []).filter(c => c.topPerformer && (c.ct || c.ctId)).map(c => ({ ctId: c.ct || c.ctId }));
+      const r = PLANIF.planifierLot({ taille, angles, galerieCT: gal.cts, historique, ctGagnants: gagn, cible: maturite, hypotheseExiste: !!pr.derniere_synthese });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ...r, diagnostic: diag, maturite, galerie: { total: gal.total, balises: gal.cts.length } }));
+    } catch (e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message })); }
+  });
+  return;
+}
+// POST /tag-ct-lot { format, name, meta, awareness, styleTags, niche, texte?, imageB64?, mime? } → balises de maturité et axes de diversité d'UN CT (Gemini, quelques centimes).
+if (req.method === 'POST' && req.url === '/tag-ct-lot') {
+  let body = ''; req.on('data', c => body += c);
+  req.on('end', async () => {
+    try {
+      const b = JSON.parse(body);
+      const token = await getToken();
+      const consigne = 'Tu lis un modèle de publicité (CT) ' + (b.format === 'video' ? 'VIDÉO' : 'IMAGE') + ' utilisé pour produire des créatives Meta Ads. Réponds UNIQUEMENT en JSON valide avec ces clés : '
+        + '"generations" (liste parmi "Z","Y","X","Boomers","toutes" : les générations qui comprennent immédiatement ce concept — "toutes" si un public large le comprend), '
+        + '"aisanceNumerique" (entier 0 à 3 : 0 = public qui découvre à peine les réseaux, 3 = public très à l\'aise avec les codes des réseaux ; c\'est le niveau MINIMUM requis pour comprendre ce CT), '
+        + '"rythmes" (liste parmi "lent","moyen","rapide" : le rythme du CT), "humour" (aucun, leger ou second_degre), '
+        + '"axes" (objet de courtes valeurs en minuscules sans espaces superflus : "style" (photoreel, 3d, dessin, documentaire, ugc, studio, illustration, collage...), "structure" (la structure narrative ou graphique : aveu, audit, rituel, split, etiquette, temoignage, comparatif...), "ouverture" (question, chiffre, scene, cri, produit...), "palette" (chaud, froid, vert, neutre, contraste...), '
+        + (b.format === 'video' ? '"voix" (veo, elevenlabs, voixoff, muet), "lieu" (le décor dominant), "rythme" (lent, moyen, rafale), "musique" (calme, urbain, afro, aucune...)' : '"lieu" (le décor dominant ou "aucun")') + '). '
+        + 'Décris sans inventer : si une information manque, mets null. Ne recopie aucune phrase du CT.\n\nNOM : ' + (b.name || '') + '\nMETA : ' + (b.meta || '') + '\nCONSCIENCE : ' + (b.awareness || []).join(',') + '\nSTYLE : ' + (b.styleTags || []).join(',') + '\nNICHE : ' + (b.niche || '') + (b.texte ? '\n\n=== TEXTE DU CT ===\n' + String(b.texte).slice(0, 30000) : '');
+      const parts = [{ text: consigne }];
+      if (b.imageB64) parts.unshift({ inlineData: { mimeType: b.mime || 'image/jpeg', data: b.imageB64 } });
+      const data = await vertexRequest(token, MODELES.utilitaire, { contents: [{ role: 'user', parts }], generationConfig: { temperature: 0.2, maxOutputTokens: 1500, responseMimeType: 'application/json', ...reflexion(MODELES.utilitaire, 0) } });
+      if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+      const raw = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).join('').trim().replace(/^```(?:json)?|```$/g, '').trim();
+      const j = JSON.parse(raw);
+      const GEN = ['Z', 'Y', 'X', 'Boomers', 'toutes'], RY = ['lent', 'moyen', 'rapide'];
+      const ax = {}; Object.entries(j.axes || {}).forEach(([k, v]) => { if (v != null && String(v).trim()) ax[k] = String(v).toLowerCase().trim().slice(0, 30); });
+      const out = { generations: (j.generations || []).filter(x => GEN.includes(x)), aisanceNumerique: Math.max(0, Math.min(3, parseInt(j.aisanceNumerique, 10) || 0)), rythmes: (j.rythmes || []).filter(x => RY.includes(x)), humour: ['aucun', 'leger', 'second_degre'].includes(j.humour) ? j.humour : null, axes: ax, balise_le: new Date().toISOString().slice(0, 10) };
+      res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(out));
+    } catch (e) { console.error('✗ TAG-CT-LOT:', e.message); res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message })); }
+  });
+  return;
+}
+
 // GET /products/:id/renewal-context — tout le contexte nécessaire à Factory pour décider :
 // nouvelle commande ou renouvellement, même cible ou rotation, quels CT éviter, quels angles
 // ne jamais répéter. Recalculé entièrement depuis `deliveries` (source de vérité chronologique)
@@ -8724,6 +8792,25 @@ function fetchPageText(targetUrl, depth, avecImages, htmlPrefourni) {
 // de disparaître silencieusement (loadBriefs() catchait l'échec et retournait [] sans avertir).
 // Migré vers Supabase (table commandes, clé service — jamais exposée, contourne RLS comme
 // pour prospects/demos).
+// v5.73 — Galerie CT balisée (maturité + axes de diversité) pour le planificateur de lot. Lecture seule.
+async function chargerGalerieBalisee() {
+  const H = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' };
+  const lister = async (prefix) => (await (await fetch(`${SUPABASE_URL_INT}/storage/v1/object/list/ct-gallery`, { method: 'POST', headers: H, body: JSON.stringify({ prefix, limit: 2000 }) })).json()) || [];
+  const [imgs, vids] = await Promise.all([lister(''), lister('video')]);
+  const jobs = [];
+  imgs.forEach(f => { const m = (f.name || '').match(/^(ct_\d+_[a-z0-9]+)\.json$/i); if (m) jobs.push({ id: m[1], format: 'image', url: `${SUPABASE_URL_INT}/storage/v1/object/public/ct-gallery/${f.name}` }); });
+  vids.forEach(f => { const m = (f.name || '').match(/^(vct_\d+_[a-z0-9]+)\.json$/i); if (m) jobs.push({ id: m[1], format: 'video', url: `${SUPABASE_URL_INT}/storage/v1/object/public/ct-gallery/video/${f.name}` }); });
+  const cts = [];
+  await Promise.all(jobs.map(async j => {
+    try {
+      const m = await (await fetch(j.url + '?t=' + Date.now())).json();
+      if (!m.lot) return;
+      cts.push({ id: j.id, format: j.format, concept: (m.name || j.id) + '|' + ((m.lot.axes || {}).structure || ''), axes: m.lot.axes || {}, maturite: { generations: m.lot.generations || [], aisanceNumerique: m.lot.aisanceNumerique, rythmes: m.lot.rythmes || [] } });
+    } catch (_) {}
+  }));
+  return { total: jobs.length, cts, parId: Object.fromEntries(cts.map(c => [c.id, c])) };
+}
+
 async function loadBriefs() {
   try {
     const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/commandes?order=created_at.desc`, {
