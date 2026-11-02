@@ -1,5 +1,5 @@
 // AdStack Image Server — Zero dependencies, just Node.js built-ins
-// SERVER_VERSION v5.73-planificateur-lot (routes /lot/diagnostic, /lot/plan-auto et /tag-ct-lot ; planificateur de lot en plan seulement : 1 vidéo + 2 images par angle, budgets 25/45/63/80 $, routes /lot/budget et /lot/plan, CT gagnants et historique dans renewal-context) | v5.72-analyste-budget (analyste : suivi du coût avec plafond 2 $, YouTube 10 vidéos/120 commentaires, Trends multi-termes avec requêtes en hausse, 3 recherches approfondies en parallèle) | v5.70-top-performer-chiffres (Top Performer sans délai de 7 jours, chiffres facultatifs, classement automatique par produit et cible) | v5.69-ct-niveau-conscience (choix de CT : niveau de conscience imposé, seuls les CT balisés à ce niveau sont candidats) | v5.68-balayage-probleme (analyste : recherche qui part du problème, ScrapeCreators Reddit/TikTok/pubs Meta, hypothèse stockée réutilisée 30 jours tant qu'il reste des angles en réserve) | v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
+// SERVER_VERSION v5.74-sans-doublon (analyse identique jamais relancée ; v5.73-planificateur-lot (routes /lot/diagnostic, /lot/plan-auto et /tag-ct-lot ; planificateur de lot en plan seulement : 1 vidéo + 2 images par angle, budgets 25/45/63/80 $, routes /lot/budget et /lot/plan, CT gagnants et historique dans renewal-context) | v5.72-analyste-budget (analyste : suivi du coût avec plafond 2 $, YouTube 10 vidéos/120 commentaires, Trends multi-termes avec requêtes en hausse, 3 recherches approfondies en parallèle) | v5.70-top-performer-chiffres (Top Performer sans délai de 7 jours, chiffres facultatifs, classement automatique par produit et cible) | v5.69-ct-niveau-conscience (choix de CT : niveau de conscience imposé, seuls les CT balisés à ce niveau sont candidats) | v5.68-balayage-probleme (analyste : recherche qui part du problème, ScrapeCreators Reddit/TikTok/pubs Meta, hypothèse stockée réutilisée 30 jours tant qu'il reste des angles en réserve) | v5.67-ct-video (route /name-ct-video : nom, méta-description et balises d'un CT vidéo) | v5.66-cible-souple (la personne des photos suit la CIBLE réelle du brief, jamais une règle pays → apparence ; remplacement seulement si la cible est certaine et la personne la contredit nettement) | v5.65-photos-au-lancement (les photos ne sont préparées qu'au lancement de la production, plus à la réception de la demande) | v5.64-apparence-doublons (apparence du marché déduite même pour un pays absent de la table ou Cameroun ; brief renvoyé plusieurs fois par le navigateur : doublons ignorés, enregistrement du seul brief reçu) | v5.63-modeles-verifies (créative image et copywriter sur Gemini 3.1 Pro ; sonde de TOUS les modèles au démarrage ; page GET /modeles qui affiche l'état réel de chaque tâche) | v5.62-aspects-ia (assemblage des aspects par Gemini 3 Pro Image puis contrôle, repli montage simple ; aspect kit/cadeaux ; sélecteur de CT informé des assets du client) | v5.61-photos-aspects (créative image : l'agent choisit les aspects du produit selon le CT, le code les assemble en UNE seule image (4 max) pour Gemini Image ; photos du produit : chaque aspect est analysé, nettoyé avec discernement ou gardé tel quel, la personne est remplacée si elle ne correspond pas au marché cible, tout est vérifié et mis en cache ; fin de la recherche de meilleure image et du choix dans le carrousel) | v5.60-multi-marche (marchés compatibles : le serveur garde la liste des marchés et les prix par pays, écarte un pays incompatible, analyste et créatives en mode multi-pays sans lieu ni prix ambigu ; captures d'avis transcrites) | v5.59-analyste-modeles (analyste : Gemini 3.1 Pro pour l'hypothese et la recherche Google Search, Gemini 3 Flash pour les controles, routeur avec repli automatique et sonde au demarrage) | v5.58-modeles (un modele Gemini par tache, reglable par variable d'environnement Render ; adaptateur de reflexion pour Gemini 3+ ; budget de sortie de l'analyste porte a 64000) | v5.57-avis-15 (15 avis dans la fiche, analyste : jusqu'à 100 cartes d'avis) | v5.56-navigateur (Chromium côté serveur : avis et contenus chargés en JavaScript, fiche auto + analyste) | v5.55-redirection-locale (v5.54-aspects-uniques) (remplissage auto : Shopify .js + politiques, garde-fous bilingues, aspects photo au lieu d'emballage) | v5.51-offres (grille 180/330/600k, garantie 45 jours) | v5.50-faits-client (documents integraux, DONNEES BRUTES garanties) | v5.49-fiche-auto (fetch-product-info : remplissage quasi complet de la fiche par Gemini — logo, couleurs, garantie, livraison, avis, cible, tri visuel des images ; webhook/brief : galerie + infos fiche produit v7.0)
 const http = require('http');
 const https = require('https');
 const { Resvg } = require('@resvg/resvg-js');
@@ -24,6 +24,8 @@ const TARIFS = {
   fl_out:  parseFloat(process.env.TARIF_FLASH_OUT || '3'),
   recherche: parseFloat(process.env.TARIF_RECHERCHE || '0.014')
 };
+// v5.74 — une analyse identique (meme corps de requete) deja EN COURS, ou finie depuis moins de 3 min, n'est jamais relancee : la 2e requete recoit la meme reponse (double clic, page rechargee, relance du navigateur : ~1 $ chaque fois).
+const _ANALYSTE_DEDUP = new Map();
 const _COUTS_AGENTS = {};   // depuis le dernier démarrage du serveur
 function agentDeAppel(t) {
   t = String(t || '');
@@ -1544,7 +1546,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, version: 'v5.73-planificateur-lot', balayage: typeof decideBalayage === 'function', scrapecreators_cle: !!SC_KEY }));
+    res.end(JSON.stringify({ ok: true, version: 'v5.74-sans-doublon', balayage: typeof decideBalayage === 'function', scrapecreators_cle: !!SC_KEY }));
     return;
   }
 
@@ -2582,6 +2584,14 @@ ${pageText}`;
     let body = '';
     req.on('data', c => body += c);
     req.on('end', async () => {
+      const _cleDedup = crypto.createHash('sha256').update(body).digest('hex');
+      { const e0 = _ANALYSTE_DEDUP.get(_cleDedup);
+        if (e0 && (!e0.fin || Date.now() - e0.fin < 180000)) {
+          console.log(`♻️  Analyse identique déjà ${e0.fin ? 'terminée il y a moins de 3 min' : 'en cours'} : pas de nouvelle recherche, la même réponse est renvoyée (aucun coût en plus).`);
+          const r0 = await e0.p; res.writeHead(r0.status, { 'Content-Type': 'application/json' }); res.end(r0.corps); return;
+        } }
+      let _fin0; const _entree = { fin: 0, p: new Promise(r => { _fin0 = r; }) }; _ANALYSTE_DEDUP.set(_cleDedup, _entree);
+      const finirAnalyse = (status, obj) => { const corps = JSON.stringify(obj); _entree.fin = Date.now(); if (status !== 200) _ANALYSTE_DEDUP.delete(_cleDedup); _fin0({ status, corps }); try { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(corps); } catch (_) {} };
       try {
         const reqBody = JSON.parse(body);
         const { system, parts, maxOutputTokens, brief, isTest } = reqBody;
@@ -3020,12 +3030,10 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
         console.log('═'.repeat(60) + '\n');
         if (!_reutiliser && productId && !isTest) await enregistrerBalayage(productId, { requetes: _compteurSC.n, credits: _compteurSC.credits, plan: _planBalayage });
 
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ text, balayage: _statsBalayage, cout_estime_usd: Math.round(_suiviCout.usd * 100) / 100 }));
+        finirAnalyse(200, { text, balayage: _statsBalayage, cout_estime_usd: Math.round(_suiviCout.usd * 100) / 100 });
       } catch (e) {
         console.error('✗ analyste-synthese error:', e.message);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: e.message }));
+        finirAnalyse(500, { error: e.message });
       }
     });
     return;
