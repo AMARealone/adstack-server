@@ -4280,7 +4280,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
 // GET /commandes — liste des tickets pour la vue Factory
   if (req.method === 'GET' && req.url === '/commandes') {
 
-    const briefs = await loadBriefs();
+    const briefs = await loadBriefsListe();
     res.writeHead(200, {'Content-Type':'application/json'});
     res.end(JSON.stringify(briefs));
     return;
@@ -4290,7 +4290,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
   if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/start$/)) {
 
     const id = req.url.split('/')[2];
-    const briefs = await loadBriefs();
+    const briefs = await loadBriefs(id);
     const idx = briefs.findIndex(b => b.id === id);
     if (idx >= 0) {
       briefs[idx].status = 'in_production';
@@ -4315,7 +4315,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
       if (!Array.isArray(briefs[idx].product?.photos_produit)) {
         console.log(`[Photos] commande ${id} : préparation en cours, attente...`);
         await Promise.race([preparationPhotosCommande(id), new Promise(r => setTimeout(r, 85000))]);
-        const frais = await loadBriefs();
+        const frais = await loadBriefs(id);
         const f = frais.find(b => b.id === id);
         if (f) {
           briefs[idx].product = f.product;
@@ -4340,7 +4340,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
   // produit, alors qu'aucune génération n'avait jamais réellement tourné.
   if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/generation-started$/)) {
     const id = req.url.split('/')[2];
-    const briefs = await loadBriefs();
+    const briefs = await loadBriefs(id);
     const idx = briefs.findIndex(b => b.id === id);
     if (idx >= 0) {
       briefs[idx].generation_started_at = new Date().toISOString();
@@ -5512,7 +5512,7 @@ Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`;
 // POST /commandes/:id/cancel — annulation depuis AdBoard
 if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/cancel$/)) {
   const id = req.url.split('/')[2];
-  const briefs = await loadBriefs();
+  const briefs = await loadBriefs(id);
   const idx = briefs.findIndex(b => b.id === id);
   if (idx >= 0) {
     briefs[idx].status = 'cancelled';
@@ -5543,7 +5543,7 @@ if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/delete$/)) {
     try { source = JSON.parse(body || '{}').source || null; } catch(e) {}
     try {
       // Lire le ticket AVANT suppression — pour notifier le client et connaître son produit.
-      const briefs = await loadBriefs();
+      const briefs = await loadBriefs(id);
       const brief = briefs.find(b => b.id === id);
 
       // Cause profonde corrigée (client recevant "un problème est survenu" malgré des livrables
@@ -5562,6 +5562,7 @@ if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/delete$/)) {
         if (rowsStatut.length) statutReelBriefs = rowsStatut[0].status;
       } catch(e) { console.warn('[Delete] Lecture statut briefs échouée, repli sur commandes :', e.message); }
 
+      invaliderListeCommandes();
       await fetch(`${SUPABASE_URL_INT}/rest/v1/commandes?id=eq.${id}`, {
         method: 'DELETE',
         headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
@@ -6504,7 +6505,7 @@ if (req.method === 'POST' && req.url === '/manual-deliver') {
       let generationVersion = 1;
       if (ticketId) {
         try {
-          const briefsPourVersion = await loadBriefs();
+          const briefsPourVersion = await loadBriefs(ticketId);
           const briefTrouve = briefsPourVersion.find(b => b.id === ticketId);
           if (briefTrouve?.generation_version) generationVersion = briefTrouve.generation_version;
         } catch(eVer) { console.warn('[manual-deliver] Lecture generation_version échouée, repli sur 1 :', eVer.message); }
@@ -7288,7 +7289,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
   if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/done$/)) {
 
     const id = req.url.split('/')[2];
-    const briefs = await loadBriefs();
+    const briefs = await loadBriefs(id);
     const idx = briefs.findIndex(b => b.id === id);
     if (idx >= 0) {
       briefs[idx].status = 'done';
@@ -7392,7 +7393,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
         const { index } = JSON.parse(body);
         if (typeof index !== 'number') { res.writeHead(400); res.end(JSON.stringify({ error: 'index (nombre) requis' })); return; }
 
-        const briefs = await loadBriefs();
+        const briefs = await loadBriefs(id);
         const idx = briefs.findIndex(b => b.id === id);
         if (idx < 0) { res.writeHead(404); res.end(JSON.stringify({ error: 'Brief not found' })); return; }
         if (!briefs[idx].deliverables) { res.writeHead(400); res.end(JSON.stringify({ error: 'Aucun livrable sauvegardé pour ce ticket' })); return; }
@@ -7429,7 +7430,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
   if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/send-marche$/)) {
     try {
       const id = req.url.split('/')[2];
-      const briefs = await loadBriefs();
+      const briefs = await loadBriefs(id);
       const idx = briefs.findIndex(b => b.id === id);
       if (idx < 0) { res.writeHead(404); res.end(JSON.stringify({ error: 'Brief not found' })); return; }
       if (!briefs[idx].deliverables?.marche) { res.writeHead(400); res.end(JSON.stringify({ error: 'Aucune donnée marché sauvegardée pour ce ticket' })); return; }
@@ -7467,7 +7468,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
         const { index } = JSON.parse(body);
         if (typeof index !== 'number') { res.writeHead(400); res.end(JSON.stringify({ error: 'index (nombre) requis' })); return; }
 
-        const briefs = await loadBriefs();
+        const briefs = await loadBriefs(id);
         const idx = briefs.findIndex(b => b.id === id);
         if (idx < 0) { res.writeHead(404); res.end(JSON.stringify({ error: 'Brief not found' })); return; }
         if (!briefs[idx].deliverables) { res.writeHead(400); res.end(JSON.stringify({ error: 'Aucun livrable sauvegardé pour ce ticket' })); return; }
@@ -7580,7 +7581,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
         // (x-upsert:true) avec la nouvelle image entre-temps. La métadonnée texte (ct/desc,
         // stockée en JSON, jamais mise en cache) se mettait à jour normalement — d'où l'angle/
         // description corrects mais l'image visuellement figée sur l'ancienne version.
-        const briefsPourVersion = await loadBriefs();
+        const briefsPourVersion = await loadBriefs(id);
         const briefTrouve = briefsPourVersion.find(b => b.id === id);
         const generationVersion = briefTrouve?.generation_version || 1;
         const { imageUrl, thumbUrl } = await uploadCreativeImage(imgB64, mime || 'image/png', `${id}_g${generationVersion}_${index}`, thumbB64);
@@ -7609,6 +7610,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
         // complète qui ne change jamais pendant la génération) à chaque sauvegarde automatique —
         // le vrai poids venait de là, pas seulement de la fréquence des appels. Écriture ciblée
         // maintenant : uniquement la colonne deliverables, rien d'autre n'est retransmis.
+        invaliderListeCommandes();
         const rPatch = await fetch(`${SUPABASE_URL_INT}/rest/v1/commandes?id=eq.${id}`, {
           method: 'PATCH',
           headers: {
@@ -8832,9 +8834,21 @@ async function chargerGalerieBalisee() {
   return { total: jobs.length, cts, parId: Object.fromEntries(cts.map(c => [c.id, c])) };
 }
 
-async function loadBriefs() {
+// v5.70 — ÉCONOMIE DE SORTIE SUPABASE (quota gratuit dépassé : 7 Go). Cause : loadBriefs() relisait TOUTE la table `commandes` (~20 Mo) à chaque appel :
+//  (1) Factory demandait la liste toutes les 60 s ; (2) 13 routes qui ne travaillent que sur UN ticket relisaient aussi les 8 tickets.
+// Correctifs : loadBriefs(id) ne lit que la ligne demandée ; la liste complète est gardée 45 s en mémoire (vidée à chaque écriture).
+let _cmdListe = { t: 0, data: null, p: null };
+function invaliderListeCommandes() { _cmdListe = { t: 0, data: null, p: null }; }
+async function loadBriefsListe() {
+  if (_cmdListe.data && Date.now() - _cmdListe.t < 45000) return _cmdListe.data;
+  if (_cmdListe.p) return _cmdListe.p;
+  const p = loadBriefs().then(d => { if (Array.isArray(d) && d.length) _cmdListe = { t: Date.now(), data: d, p: null }; else _cmdListe.p = null; return d; }).catch(e => { _cmdListe.p = null; throw e; });
+  _cmdListe.p = p; return p;
+}
+async function loadBriefs(idUnique) {
   try {
-    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/commandes?order=created_at.desc`, {
+    const filtre = idUnique ? `?id=eq.${encodeURIComponent(idUnique)}` : '?order=created_at.desc';
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/commandes${filtre}`, {
       headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -8846,6 +8860,7 @@ async function loadBriefs() {
 }
 
 async function saveBriefs(briefs) {
+  invaliderListeCommandes();
   try {
     for (const b of briefs) {
       const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/commandes`, {
@@ -8878,6 +8893,7 @@ async function saveBriefs(briefs) {
   } catch(e) {
     console.error('[Commandes] Sauvegarde Supabase échouée :', e.message);
   }
+  invaliderListeCommandes();
 }
 
 // ── Effacement de fond — via Gemini (gemini-3-pro-image), pas rembg ──
@@ -9136,7 +9152,7 @@ function preparationPhotosCommande(idCommande) {
   if (_prepPhotos.has(idCommande)) return _prepPhotos.get(idCommande);
   const p = (async () => {
     try {
-      const briefs = await loadBriefs();
+      const briefs = await loadBriefs(idCommande);
       const b = briefs.find(x => x.id === idCommande);
       if (!b) return null;
       const { photos } = await preparerPhotosProduit(b.product);
@@ -9150,7 +9166,7 @@ function preparationPhotosCommande(idCommande) {
           nobg = 'data:' + base.mime + ';base64,' + base.b64;
         } catch (e) { console.log('[photos] photo principale non rechargée : ' + e.message); }
       }
-      const frais = await loadBriefs();
+      const frais = await loadBriefs(idCommande);
       const fb = frais.find(x => x.id === idCommande);
       if (!fb) return null;
       fb.product = fb.product || {};
