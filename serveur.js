@@ -2434,6 +2434,37 @@ ${pageText}`;
   // Supabase). En attendant leur réponse, le prospecteur passe par ici avec la clé
   // service, qui contourne RLS entièrement. À repasser en direct anon une fois le bug
   // Supabase résolu, si on veut revenir à l'architecture d'origine.
+  // ── Script PC « ads J+3 » : lecture des leads et écriture du relevé (clé service : RLS contournée) ──
+  if (req.method === 'GET' && req.url === '/prospector/leads-ads') {
+    if (!(await crmAdminOk(req))) { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'unauthorized' })); return; }
+    try {
+      const rr = await fetch(`${SUPABASE_URL_INT}/rest/v1/prospects?or=(statut.eq.lead,notes.ilike.*ecrit_etat*)&select=id,nom_marque,statut,lien_ads,date_lead,date_contact,notes,ads_j10&limit=5000`, {
+        headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
+      });
+      const txt = await rr.text();
+      res.writeHead(rr.ok ? 200 : rr.status, { 'Content-Type': 'application/json' }); res.end(txt);
+    } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (req.method === 'POST' && req.url === '/prospector/ads-j10') {
+    if (!(await crmAdminOk(req))) { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'unauthorized' })); return; }
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { id, valeur } = JSON.parse(body);
+        if (!id) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'missing_id' })); return; }
+        const rr = await fetch(`${SUPABASE_URL_INT}/rest/v1/prospects?id=eq.${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ ads_j10: valeur })
+        });
+        res.writeHead(rr.ok ? 200 : rr.status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: rr.ok }));
+      } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message })); }
+    });
+    return;
+  }
+
   if (req.method === 'POST' && req.url === '/prospector/save-lead') {
     let body = '';
     req.on('data', c => body += c);
