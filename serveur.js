@@ -170,21 +170,21 @@ const OFFERS = {
     imagesPerWeek: 6, batchesPerWeek: 1, creativesPerMonth: 24, videosPerMonth: 8, imagesPerMonth: 16, produitsPerWeek: '1',
     garantie: 'Performance en 45 jours',
     // prixImg = prix moyen par créative (vidéos + images), arrondi
-    monthly: { price: 180000, prixImg: 7500, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
+    monthly: { price: 140000, prixImg: 5833, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
   },
   pro: {
     id: 'pro', name: 'GROWTH', best: true,
     tagline: 'Accélérer la production et la croissance de votre marque, sans la prise de tête de gérer une équipe.',
     imagesPerWeek: 12, batchesPerWeek: 2, creativesPerMonth: 48, videosPerMonth: 16, imagesPerMonth: 32, produitsPerWeek: "jusqu'à 2",
     garantie: 'Croissance en 45 jours',
-    monthly: { price: 330000, prixImg: 6875, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
+    monthly: { price: 260000, prixImg: 5417, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
   },
   scale: {
     id: 'scale', name: 'SCALE',
     tagline: 'Exploiter plusieurs marchés avec des langues et cultures différentes, sans exploser vos coûts ni augmenter la complexité.',
     imagesPerWeek: 24, batchesPerWeek: 4, creativesPerMonth: 96, videosPerMonth: 32, imagesPerMonth: 64, produitsPerWeek: "jusqu'à 4",
     garantie: 'Scaling en 45 jours',
-    monthly: { price: 600000, prixImg: 6250, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
+    monthly: { price: 480000, prixImg: 5000, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
   },
 };
 
@@ -196,8 +196,8 @@ function formatOffresPourPrompt(currency, currencyRate) {
   const fmt = (fcfa) => fcfa.toLocaleString('fr-FR') + ' FCFA';
   const { starter, pro, scale } = OFFERS;
   const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (abonnement mensuel, résiliable à tout moment) · ${o.creativesPerMonth} créatives/mois (${o.videosPerMonth} vidéos + ${o.imagesPerMonth} images, ${o.batchesPerWeek} ${o.batchesPerWeek > 1 ? 'lots' : 'lot'}/semaine) · ${o.produitsPerWeek} produit${o.produitsPerWeek === '1' ? '' : 's'} couvert${o.produitsPerWeek === '1' ? '' : 's'}/semaine · stratégie marketing (recherche marché, concurrents, cible), ad copies, apprentissage continu et accès à AdBoard inclus · production en ${o.monthly.delivery} max après demande · garantie ${o.garantie}`;
-  // Offre de départ sans abonnement (affichée sous les 3 offres sur la page de vente) — ne jamais l'appeler « One Shot ».
-  const depart = `Pack de 6 publicités (pour ceux qui ne sont pas prêts pour un abonnement) : ${fmt(PACK_PRIX_FCFA)}, une seule fois — 2 vidéos + 4 images optimisées conversion, reçues dans AdBoard. Si la personne s'abonne dans les 30 jours, ${fmt(PACK_PRIX_FCFA)} sont déduits de son 1er mois.`;
+  // Offre de départ sans abonnement (affichée sous les offres sur la page de vente) : ONE SHOT.
+  const depart = `ONE SHOT (pour ceux qui ne sont pas prêts pour un abonnement) : ${fmt(ONESHOT_PRIX_FCFA)}, une seule fois, 1 produit — 6 créatives (2 vidéos + 4 images) optimisées conversion à partir d'une stratégie marketing, reçues dans AdBoard sous 48h maximum. Sans Ad Copies. Lien : https://shop.adstackofficial.com/${ONESHOT_PRODUCT_ID}/checkout`;
   return [ligne(starter), ligne(pro), ligne(scale), depart].join('\n');
 }
 
@@ -771,17 +771,24 @@ const SUPABASE_ANON_KEY_INT = process.env.SUPABASE_ANON_KEY || '';
 // 6 / 12 / 24 créatives par semaine. L'ancien paiement d'essai (First Payment prd_ywk7ik14 + Completion
 // prd_c0ga3snp) est retiré : ces deux produits ne sont plus reconnus par le webhook.
 // Factures PDF / emails de confirmation / colonne montant_fcfa : les valeurs sont maintenant bien en FCFA.
+// ONE SHOT : 6 créatives (2 vidéos + 4 images) pour 1 produit, achat unique, livrées dans AdBoard sous 48h. Vendu par lien Chariow direct
+// (page de vente + envoi au prospect), jamais dans AdBoard. Le prix se change ici (ou via la variable d'environnement ONESHOT_PRIX_FCFA).
+const ONESHOT_PRODUCT_ID = process.env.ONESHOT_PRODUCT_ID || 'prd_y6lv33mv';
+const ONESHOT_PRIX_FCFA = parseInt(process.env.ONESHOT_PRIX_FCFA, 10) || 50000;
 const PLAN_MAP = {
-  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly',   credits_per_week: 6,  price_fcfa: 180000, prix_img: 7500 },
+  // TEST (75 000 FCFA, 12 créatives/mois) et ONE SHOT (achat unique) — ajoutés le 8 nov. 2026. Grille alignée sur la page de vente et AdBoard.
+  'prd_yslvdsuz': { plan: 'test',    cycle: 'monthly',   credits_per_week: 3,  price_fcfa: 75000,  prix_img: 6250 },
+  [ONESHOT_PRODUCT_ID]: { plan: 'oneshot', cycle: 'monthly', type: 'pack', total_credits: 6, duree_jours: 60, price_fcfa: ONESHOT_PRIX_FCFA, prix_img: Math.round(ONESHOT_PRIX_FCFA / 6) },
+  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly',   credits_per_week: 6,  price_fcfa: 140000, prix_img: 5833 },
   'prd_wdya3v9h': { plan: 'starter', cycle: 'quarterly', credits_per_week: 6,  price_fcfa: 120000, prix_img: 5000 },
-  'prd_34w031':   { plan: 'pro',     cycle: 'monthly',   credits_per_week: 12, price_fcfa: 330000, prix_img: 6875 },
+  'prd_34w031':   { plan: 'pro',     cycle: 'monthly',   credits_per_week: 12, price_fcfa: 260000, prix_img: 5417 },
   'prd_lnp4ax0b': { plan: 'pro',     cycle: 'quarterly', credits_per_week: 12, price_fcfa: 205000, prix_img: 4271 },
-  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly',   credits_per_week: 24, price_fcfa: 600000, prix_img: 6250 },
+  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly',   credits_per_week: 24, price_fcfa: 480000, prix_img: 5000 },
   'prd_dn4fb72l': { plan: 'scale',   cycle: 'quarterly', credits_per_week: 24, price_fcfa: 345000, prix_img: 3594 },
 };
 
 // 'discovery' : libellé conservé uniquement pour d'anciens comptes déjà abonnés (offre retirée de la vente).
-const PLAN_LABELS = { discovery: 'Discovery', starter: 'PERF+', pro: 'GROWTH', scale: 'SCALE' };
+const PLAN_LABELS = { oneshot: 'ONE SHOT', test: 'TEST', discovery: 'Discovery', starter: 'PERF+', pro: 'GROWTH', scale: 'SCALE' };
 
 // ── Séquence email de conversion J1/J5/J12/J21 ─────────────────────────────
 const SEQUENCE_PRICES = { starter: { price: OFFERS.starter.monthly.price, prixImg: OFFERS.starter.monthly.prixImg } }; // PERF+ (id interne starter) mensuel en FCFA, référence pour les prix cités dans les emails
@@ -1029,7 +1036,12 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
       const detailTop = rowY + 45;
       doc.moveTo(50, detailTop - 8).lineTo(545, detailTop - 8).strokeColor('#F0F0F0').stroke();
       doc.fontSize(9).fillColor('#666666').font('Helvetica-Bold').text(isPack ? 'Ce que comprend cet achat :' : 'Ce que couvre cet abonnement :', 50, detailTop);
-      const detailLines = isPack ? [
+      const detailLines = plan === 'oneshot' ? [
+        '6 créatives optimisées conversion : 2 vidéos + 4 images',
+        'Créées à partir d\'une stratégie marketing de votre produit',
+        'Livrées dans AdBoard sous 48 h maximum',
+        'Achat unique, pour 1 produit — sans engagement',
+      ] : isPack ? [
         `${totalImages} images publicitaires incluses (angles et concepts variés)`,
         `Utilisables librement jusqu'à expiration, sur 1 produit`,
         prixImg ? `Prix moyen par créative : ${formatFCFA(prixImg)} FCFA` : null,
@@ -1081,7 +1093,9 @@ async function sendPaymentConfirmationEmail({ email, name, plan, cycle, creditsP
 
   const planLabel = PLAN_LABELS[plan] || plan;
   const cycleLabel = isPack ? 'achat unique' : (cycle === 'quarterly' ? 'trimestriel' : 'mensuel');
-  const ligneImages = isPack
+  const ligneImages = plan === 'oneshot'
+    ? `<p style="margin:4px 0;"><strong>Créatives incluses :</strong> 6 (2 vidéos + 4 images), pour 1 produit</p><p style="margin:4px 0;"><strong>Livraison :</strong> dans AdBoard, sous 48 h maximum</p>`
+    : isPack
     ? `<p style="margin:4px 0;"><strong>Images incluses :</strong> ${totalCredits || 0} au total (utilisables librement jusqu'à expiration)</p>`
     : `<p style="margin:4px 0;"><strong>Images livrées :</strong> ${creditsPerWeek || 0} / semaine</p>`;
   const html = `
@@ -1237,7 +1251,7 @@ async function activateSubscription(userId, planInfo, email, name, phone) {
   const now = new Date();
   // Durée : mensuel = 30 jours, trimestriel = 91 jours (le cycle long est passé d'annuel à trimestriel,
   // même logique de remise). Plus de pack ni de passerelle First Payment → Starter.
-  const dureeJours = cycle === 'quarterly' ? 91 : 30;
+  const dureeJours = planInfo.duree_jours || (cycle === 'quarterly' ? 91 : 30);
   const expiresAt = new Date(now.getTime() + dureeJours * 24 * 60 * 60 * 1000);
   const totalCredits = totalCreditsAchat;
 
