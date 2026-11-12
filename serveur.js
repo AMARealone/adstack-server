@@ -4240,6 +4240,15 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         const _retenus = _am.retenus.length ? _am.retenus : _lstM;
         const _pppBrut = (data.product.prix_par_pays && typeof data.product.prix_par_pays === 'object') ? data.product.prix_par_pays : {};
         const _ppp = {}; _retenus.forEach(m => { const v = String(_pppBrut[m] || '').trim(); if (v) _ppp[m] = v.slice(0, 160); });
+        // Voix en langue locale (option FACULTATIVE du client) : valable seulement pour UN SEUL marché retenu qui a une langue
+        // locale connue. Sinon (ou sans demande) la voix reste dans la langue du marché. Les sous-titres restent dans la langue du marché.
+        const _lgLoc = _retenus.length === 1 ? langueLocaleMarche(_retenus[0]) : null;
+        const _infoM = _retenus.length === 1 ? infoMarche(_retenus[0]) : null;
+        const _langueVoix = (data.product.langue_locale && _lgLoc)
+          ? { active: true, code: _lgLoc.c, nom: _lgLoc.n, marche: _retenus[0], langue_sous_titres: (_infoM && _infoM.l) || 'fr' }
+          : { active: false };
+        if (data.product.langue_locale && !_langueVoix.active) console.log('[Brief] ⚠ voix en langue locale demandée mais ignorée (marchés retenus : ' + _retenus.join(', ') + ')');
+        else if (_langueVoix.active) console.log('[Brief] voix en langue locale : ' + _langueVoix.nom + ' (' + _langueVoix.code + ') — sous-titres : ' + _langueVoix.langue_sous_titres);
         if (_am.ecartes.length) console.log('[Brief] ⚠ marchés incompatibles écartés : ' + _am.ecartes.map(e => e.nom + ' (' + e.raison + ')').join(' ; '));
         const brief = {
           id: data.brief_id || `brief_${Date.now()}`,
@@ -4259,6 +4268,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
             marches_ecartes: _am.ecartes,
             prix_par_pays: _ppp,
             prix_affichable: prixAffichable(_retenus, _ppp, data.product.pricing),
+            langue_voix: _langueVoix,
             promo_ponctuelle: !!data.product.promo_ponctuelle,
             promo: data.product.promo || '',
             cible: data.product.cible,
@@ -8185,6 +8195,25 @@ const MARCHES_INFOS = {
 const MARCHES_ALIAS = { 'senegal':'senegal','sn':'senegal','cote divoire':'cote d ivoire','ci':'cote d ivoire','ivory coast':'cote d ivoire','cotedivoire':'cote d ivoire','burkina':'burkina faso','bf':'burkina faso','guinee conakry':'guinee','guinea':'guinee','congo brazzaville':'congo','republique du congo':'congo','congo kinshasa':'rdc','republique democratique du congo':'rdc','drc':'rdc','cameroon':'cameroun','mauritania':'mauritanie','morocco':'maroc','algeria':'algerie','tunisia':'tunisie','tanzania':'tanzanie','uganda':'ouganda','zambia':'zambie','south africa':'afrique du sud','togo':'togo','benin':'benin','mali':'mali','niger':'niger','ml':'mali','tg':'togo','bj':'benin','ng':'nigeria','gh':'ghana','ke':'kenya','cm':'cameroun','ga':'gabon','ma':'maroc','dz':'algerie','tn':'tunisie','mg':'madagascar','fr':'france','be':'belgique' };
 const _cleMarche = (s) => { const k = String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); return MARCHES_INFOS[k] ? k : (MARCHES_ALIAS[k] || k); };
 const infoMarche = (nom) => MARCHES_INFOS[_cleMarche(nom)] || null;
+
+// ── Langue locale (voix des vidéos) ─────────────────────────────────────────────────────
+// Option FACULTATIVE : le client peut demander que la voix de ses vidéos soit dite dans la langue locale la plus
+// parlée de son marché (UNE seule langue par marché). Sans cette demande, la voix reste dans la langue du marché
+// (MARCHES_INFOS[..].l) ; les sous-titres restent TOUJOURS dans la langue du marché.
+// c = code ISO 639 (2 lettres si elles existent, sinon 3) · n = nom en français. Un marché absent = pas d'option
+// (Cameroun : aucune langue dominante ; France, Belgique et Madagascar : la langue locale est déjà la langue du marché).
+// NB : cette table existe aussi côté AdBoard (Platform.jsx) — toute modification se fait aux deux endroits.
+const MARCHES_LANGUE_LOCALE = {
+  'senegal':{c:'wo',n:'wolof'}, 'mali':{c:'bm',n:'bambara'}, 'cote d ivoire':{c:'dyu',n:'dioula'}, 'burkina faso':{c:'mos',n:'mooré'},
+  'benin':{c:'fon',n:'fon'}, 'togo':{c:'ee',n:'éwé'}, 'niger':{c:'ha',n:'haoussa'}, 'guinee':{c:'ff',n:'pular'},
+  'gabon':{c:'fan',n:'fang'}, 'congo':{c:'ln',n:'lingala'}, 'tchad':{c:'shu',n:'arabe tchadien'}, 'rdc':{c:'ln',n:'lingala'},
+  'burundi':{c:'rn',n:'kirundi'}, 'rwanda':{c:'rw',n:'kinyarwanda'}, 'nigeria':{c:'ha',n:'haoussa'}, 'ghana':{c:'ak',n:'akan (twi)'},
+  'kenya':{c:'sw',n:'swahili'}, 'tanzanie':{c:'sw',n:'swahili'}, 'ouganda':{c:'lg',n:'luganda'}, 'zambie':{c:'bem',n:'bemba'},
+  'afrique du sud':{c:'zu',n:'zoulou'}, 'maroc':{c:'ary',n:'darija marocaine'}, 'algerie':{c:'arq',n:'darija algérienne'},
+  'tunisie':{c:'aeb',n:'arabe tunisien'}, 'mauritanie':{c:'mey',n:'hassanya'},
+};
+const langueLocaleMarche = (nom) => MARCHES_LANGUE_LOCALE[_cleMarche(nom)] || null;
+// L'option n'existe que pour un produit à UN SEUL marché (plusieurs marchés = plusieurs langues : voix dans la langue du marché).
 // Classe de compatibilité : deux marchés de même classe peuvent partager une demande.
 const classeMarche = (nom) => { const i = infoMarche(nom); if (!i) return 'inconnu'; return i.mixte ? 'mixte:' + _cleMarche(nom) : i.l + '|' + i.a; };
 // Raison (en français, pour le client) pour laquelle `nom` ne peut pas être produit avec `ref`.
