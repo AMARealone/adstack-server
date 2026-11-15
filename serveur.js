@@ -68,7 +68,7 @@ try {
 }
 
 const PORT = 3001;
-const PROJECT_ID = 'adstack-ecosystem-api';
+const PROJECT_ID = process.env.PROJECT_ID || 'adstack-ecosystem-api';
 const LOCATION = 'us-central1';
 // ── MODÈLES GEMINI PAR TÂCHE ──────────────────────────────────────────────
 // Chaque tâche a son modèle, réglable par variable d'environnement Render SANS
