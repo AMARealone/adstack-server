@@ -7455,7 +7455,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
         if (idx < 0) { res.writeHead(404); res.end(JSON.stringify({ error: 'Brief not found' })); return; }
         if (!briefs[idx].deliverables) { res.writeHead(400); res.end(JSON.stringify({ error: 'Aucun livrable sauvegardé pour ce ticket' })); return; }
         const creative = briefs[idx].deliverables.creatives?.[index];
-        if (!creative || (!creative.url && !creative.imgB64)) { res.writeHead(400); res.end(JSON.stringify({ error: `Créative ${index} inexistante ou pas encore générée` })); return; }
+        if (!creative || (!creative.url && !creative.imgB64 && !creative.videoUrl)) { res.writeHead(400); res.end(JSON.stringify({ error: `Créative ${index} inexistante ou pas encore générée` })); return; }
 
         const dejaPousses = new Set(briefs[idx].pushed_creative_indices || []);
         const pushResult = await pushDeliverablesToProduct(
@@ -9872,7 +9872,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
       const errText = await rPatch.text();
       console.error('[Deliver] ❌ ÉCHEC PATCH products:', rPatch.status, errText.slice(0,400));
     }
-    const expectedCount = (deliverables.creatives || []).filter(c => c?.imgB64 || c?.url).length;
+    const expectedCount = (deliverables.creatives || []).filter(c => c?.imgB64 || c?.url || c?.videoUrl).length;
     // Cause profonde corrigée ("6 sur 9 considéré comme complet") : expectedCount se basait
     // UNIQUEMENT sur ce qui était sauvegardé, jamais sur ce qui avait été RÉELLEMENT demandé à
     // l'origine — si une sauvegarde a échoué en route (timeout) et que 3 créatives générées
@@ -9897,7 +9897,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
     };
   } catch(e) {
     console.error('[Deliver] Push vers products échoué :', e.message);
-    return { expectedCount: (deliverables.creatives || []).filter(c => c?.imgB64 || c?.url).length, pushedCount: 0, patchOk: false, newlyPushedIndices: [], batchCree: false, error: e.message };
+    return { expectedCount: (deliverables.creatives || []).filter(c => c?.imgB64 || c?.url || c?.videoUrl).length, pushedCount: 0, patchOk: false, newlyPushedIndices: [], batchCree: false, error: e.message };
   }
 }
 
