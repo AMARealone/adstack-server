@@ -3839,6 +3839,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
   }
 
   if (await require('./r2_video')(req, res)) return;
+  if (await require('./video_jobs')(req, res, { getToken, callGeminiPro, MODELES, SA })) return;
   // ── /name-ct-video — Nom, méta-description et balises d'un CT VIDÉO (texte), par Gemini ──
   if (req.method === 'POST' && req.url === '/name-ct-video') {
     let body = '';

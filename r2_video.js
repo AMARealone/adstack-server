@@ -18,7 +18,7 @@ function presign({ method, host, path, accessKey, secret, region, service = 's3'
   return { signature: sig, url: `https://${host}${cpath}?${cq}&X-Amz-Signature=${sig}` }
 }
 
-const TYPES = ['video/mp4', 'video/quicktime', 'video/webm', 'image/jpeg', 'image/png', 'image/webp']
+const TYPES = ['video/mp4', 'video/quicktime', 'video/webm', 'image/jpeg', 'image/png', 'image/webp', 'application/json', 'application/zip']
 const lireCorps = (req) => new Promise((ok, ko) => { let b = ''; req.on('data', (d) => { b += d; if (b.length > 20000) { req.destroy(); ko(new Error('trop gros')) } }); req.on('end', () => ok(b)); req.on('error', ko) })
 const rep = (res, code, o) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)) }
 
