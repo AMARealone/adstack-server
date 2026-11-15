@@ -4235,6 +4235,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         const briefs = await loadBriefs();
         // v5.60 — marchés : le serveur garde la liste et re-vérifie la compatibilité (langue, apparence des personnages).
         // Un marché incompatible avec le groupe principal est écarté et signalé, jamais mélangé dans la même production.
+        if (!data.brief_id) { console.warn('[Brief] ticket refuse : brief_id absent'); res.writeHead(400, {'Content-Type':'application/json'}); res.end(JSON.stringify({ error: 'brief_id requis' })); return; }
         const _lstM = (Array.isArray(data.product.marches) && data.product.marches.length ? data.product.marches : String(data.product.pays || '').split(/[,;/|\n]+/)).map(x => String(x).trim()).filter(Boolean);
         const _am = analyserMarches(_lstM);
         const _retenus = _am.retenus.length ? _am.retenus : _lstM;
