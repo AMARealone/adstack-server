@@ -6457,7 +6457,7 @@ if (req.method === 'POST' && req.url === '/briefs/create') {
       // ── computeCredits() — copie exacte de la logique Platform.jsx ──
       const briefEstActif = (b) => !!b && (b.status === 'pending' || b.status === 'in_production');
       const briefCompteCredits = (b) => briefEstActif(b) || b.status === 'done';
-      const used = allBriefs.filter(briefCompteCredits).reduce((sum, b) => sum + (b.credits_used || 9), 0);
+      const _debutPeriode = sub.started_at ? new Date(sub.started_at).getTime() : 0; const used = allBriefs.filter(briefCompteCredits).filter(b => sub.type === 'pack' || !_debutPeriode || new Date(b.created_at).getTime() >= _debutPeriode - 60000).reduce((sum, b) => sum + (b.credits_used || 9), 0);
       let total;
       if (sub.type === 'pack') {
         total = sub.total_credits || 0;
@@ -6469,7 +6469,7 @@ if (req.method === 'POST' && req.url === '/briefs/create') {
         const msPerDay = 24 * 60 * 60 * 1000;
         const daysElapsed = Math.floor((nowMidnight - startedMidnight) / msPerDay);
         const weeksActive = Math.floor(daysElapsed / 7) + 1;
-        total = weeksActive * sub.credits_per_week;
+        { const _base = ({ test: 12, starter: 24, pro: 48, scale: 96 })[sub.plan] ?? ((sub.credits_per_week || 0) * 4); total = sub.cycle === 'quarterly' ? _base * 3 : _base; }
       }
       const available = Math.max(0, total - used);
 
