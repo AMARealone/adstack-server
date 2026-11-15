@@ -1,3 +1,4 @@
+// v10 : + plan des niveaux de conscience, arrêt réel (/video-jobs/cancel), état de la machine, routes Creative Image v10.
 // Module Render : lance et suit les productions vidéo sur Google Cloud Run (job « video-adstack »),
 // et choisit automatiquement les CT vidéo d'une commande. Accroché dans serveur.js par une seule ligne :
 //   if (await require('./video_jobs')(req, res, { getToken, callGeminiPro, MODELES, SA })) return;
@@ -32,8 +33,25 @@ RÈGLES
 RÉPONSE : uniquement un objet JSON, sans texte autour :
 {"choix":[{"id":"<id exact du CT>","angle":"<titre exact de l'angle servi>","raison":"<2 phrases : pourquoi ce CT pour cet angle, en quoi il diffère des autres>"}]}`
 
+const SYSTEME_PLAN = `Tu es le directeur de création vidéo d'AdStack. Une commande reçoit {{N}} angles marketing ; chaque angle produit 3 créatives : 1 VIDÉO (UGC, Meta Ads) + 2 IMAGES. Tu décides, pour chaque angle :
+(a) son PARCOURS de niveaux de conscience — exactement l'un des deux :
+    "A" = Problem Aware → Solution Aware → Product Aware (le marché ignore encore le problème ou la solution)
+    "B" = Solution Aware → Product Aware → Most Aware (le marché connaît la solution, il faut convertir)
+(b) le NIVEAU porté par la VIDÉO (un des 3 niveaux du parcours ; les 2 images prennent les 2 autres) ;
+(c) le CT vidéo de la galerie qui fait la meilleure vidéo à ce niveau pour cet angle.
+RÈGLES
+1. Sur toute la commande, il faut au moins une créative Solution Aware, une Product Aware et une Most Aware : AU MOINS UN angle suit le parcours B.
+2. Choisis le parcours d'après la synthèse (maturité de la cible, ce qu'elle sait déjà, objections) : ne mets "A" que si une partie réelle de la cible ignore encore le problème ou sa solution.
+3. Le CT vidéo doit être balisé au niveau que porte la vidéo (champ conscience), sinon le plus proche. Les CT choisis sont TOUS DIFFÉRENTS entre eux par la structure et le ressenti (pas la même ouverture, pas la même chute).
+4. Compatibilité produit : le geste du produit doit être montrable à l'écran dans un lieu cohérent ; écarte tout CT dont « lieux_interdits » ou « produit_compatible » contredit le produit.
+5. Durée : préfère des CT de 30 à 50 secondes.
+6. DIVERSITÉ VISUELLE DU LOT (impérative) : pour chaque vidéo, fixe une DIRECTION qui la rend visuellement et techniquement différente des autres vidéos du lot : casting (âge, allure, coiffure — tous de la cible et du pays de la synthèse), lieux (le lieu où le produit sert + les autres lieux de sa journée que le dispositif du CT demande), tenue (ce que cette personne porte vraiment à ce moment, jamais de peignoir en satin ni de cliché publicitaire), lumière (moment de la journée, intérieur/extérieur), cadrage dominant. Deux vidéos ne partagent ni le casting, ni la tenue, ni le lieu principal, ni la lumière. Le choix de CT lui-même doit déjà être divers : formats et dispositifs différents (face caméra, plans de vie, démonstration, extérieur…).
+RÉPONSE : uniquement un objet JSON, sans texte autour :
+{"choix":[{"angle":"<titre exact de l'angle>","parcours":"A"|"B","niveau_video":"Problem Aware|Solution Aware|Product Aware|Most Aware","id":"<id exact du CT>","raison":"<2 phrases : pourquoi ce parcours et ce CT pour cet angle>","direction":{"casting":"…","lieux":"…","tenue":"…","lumiere":"…","cadrage":"…"}}]}`
+
 async function handle(req, res, deps) {
   const url = (req.url || '').split('?')[0]
+  if (url === '/creative-prod-v10' || url === '/creative-qa') return require('./creative_v10')(req, res, deps)
   if (!url.startsWith('/video-jobs/') && url !== '/video/select-cts') return false
   try {
     // ── diagnostic : qui est le compte du serveur, et peut-il lancer le job ? ──
@@ -57,12 +75,23 @@ async function handle(req, res, deps) {
       if (b.angle) env.push({ name: 'ANGLE', value: String(b.angle).slice(0, 300) })
       if (b.consignes) env.push({ name: 'CONSIGNES', value: String(b.consignes).slice(0, 2000) })
       if (b.modele && /^veo-[\w.\-]+$/.test(b.modele)) env.push({ name: 'MODELE', value: b.modele })
+      if (b.niveau && /^(Problem|Solution|Product|Most) Aware$/.test(b.niveau)) env.push({ name: 'NIVEAU', value: b.niveau })
       const r = await api(deps, 'POST', base(deps) + ':run', { overrides: { containerOverrides: [{ env }], taskCount: 1 } })
       if (!r.ok) return rep(res, 502, { error: 'Cloud Run a refusé le lancement : ' + ((r.d.error && r.d.error.message) || r.status), http: r.status }), true
       const nom = (((r.d.metadata || {}).name) || '').split('/').pop() || ''
       recents.set(cle, { t: Date.now(), execution: nom })
       console.log('🎬 VIDEO-JOB lancé : commande ' + cmd + ' slot ' + slot + ' CT ' + ct + ' → ' + nom)
       return rep(res, 200, { execution: nom }), true
+    }
+    // ── arrêt réel d'une vidéo (bouton Annuler de Factory) ──
+    if (req.method === 'POST' && url === '/video-jobs/cancel') {
+      const b = JSON.parse((await lire(req)) || '{}')
+      const ex = String(b.execution || '').replace(/[^\w\-]/g, '')
+      if (!ex) return rep(res, 400, { error: 'execution requise' }), true
+      const r = await api(deps, 'POST', base(deps) + '/executions/' + ex + ':cancel', {})
+      console.log('⏹ VIDEO-JOB arrêté : ' + ex + ' (HTTP ' + r.status + ')')
+      for (const [k, x] of recents) if (x.execution === ex) recents.delete(k)
+      return rep(res, r.ok ? 200 : 502, r.ok ? { ok: true } : { error: (r.d.error && r.d.error.message) || 'HTTP ' + r.status }), true
     }
     // ── avancement d'une vidéo (fichier d'état écrit par la machine sur R2, relayé ici : pas de souci CORS) ──
     if (req.method === 'GET' && url === '/video-jobs/status') {
@@ -72,14 +101,26 @@ async function handle(req, res, deps) {
       try { const r = await fetch(`${PUB()}/ct-video/productions/${cmd}_s${slot}.json?t=${Date.now()}`); if (r.ok) etat = await r.json() } catch (_) { }
       if (etat && ex && etat.execution && etat.execution !== ex) etat = null          // fichier d'une exécution plus ancienne
       if (!etat) etat = { etat: 'demarrage', etape: 'La machine démarre', pct: 1, journal: [] }
-      if (etat.etat !== 'termine' && etat.etat !== 'echec' && ex) {                  // machine morte sans avoir écrit son échec (mémoire, délai)
+      if (etat.etat !== 'termine' && etat.etat !== 'echec' && ex) {                  // état de la machine vu par Cloud Run (au plus toutes les 30 s)
         const v = verifs.get(ex)
         if (!v || Date.now() - v.t > 30000) {
           const r = await api(deps, 'GET', base(deps) + '/executions/' + ex).catch(() => null)
           const d = r && r.ok ? r.d : null
-          verifs.set(ex, { t: Date.now(), mort: !!(d && Number(d.failedCount || 0) > 0 && d.completionTime) })
+          const cond = d && Array.isArray(d.conditions) ? d.conditions : []
+          const att = cond.find((c) => c.state === 'CONDITION_FAILED' || c.state === 'CONDITION_PENDING')
+          verifs.set(ex, { t: Date.now(), d: d ? {
+            en_cours: Number(d.runningCount || 0), echouee: Number(d.failedCount || 0), annulee: Number(d.cancelledCount || 0), reussie: Number(d.succeededCount || 0),
+            fini: !!d.completionTime, cree: d.createTime || null, demarre: d.startTime || null, journal: d.logUri || null,
+            attente: att ? String(att.message || att.type || '').slice(0, 200) : null } : null })
         }
-        if ((verifs.get(ex) || {}).mort) etat = Object.assign({}, etat, { etat: 'echec', erreur: etat.erreur || 'La machine vidéo s\'est arrêtée avant la fin (mémoire ou délai dépassé). Le journal Cloud Run contient la cause.' })
+        const m = (verifs.get(ex) || {}).d
+        if (m) {
+          etat = Object.assign({}, etat, { machine: m })
+          if (m.fini && m.echouee) etat = Object.assign(etat, { etat: 'echec', erreur: etat.erreur || 'La machine vidéo s\'est arrêtée avant la fin (mémoire ou délai dépassé). Journal : ' + (m.journal || 'Cloud Run') })
+          else if (m.fini && m.annulee) etat = Object.assign(etat, { etat: 'echec', erreur: 'Machine arrêtée (annulée).' })
+          else if (m.fini && m.reussie) etat = Object.assign(etat, { etat: 'echec', erreur: 'La machine a terminé sans publier son état : ancien moteur vidéo installé ? La vidéo est peut-être sur R2 (ct-video/productions/). Journal : ' + (m.journal || 'Cloud Run') })
+          else if (etat.etat === 'demarrage') etat = Object.assign(etat, { etape: m.en_cours ? 'Machine démarrée — premier état attendu' : m.attente ? 'En attente de Cloud Run : ' + m.attente : 'Machine en file chez Cloud Run' })
+        }
       }
       return rep(res, 200, etat), true
     }
@@ -98,12 +139,13 @@ async function handle(req, res, deps) {
       if (b.niveaux) parts.push({ type: 'text', text: 'NIVEAU DE CONSCIENCE IMPOSÉ PAR ANGLE :\n' + String(b.niveaux).slice(0, 1500) })
       const f = (v) => (Array.isArray(v) ? v.join(', ') : (v == null ? '' : String(v)))
       parts.push({ type: 'text', text: '━━━ GALERIE DE CT VIDÉO : ' + cts.length + ' ━━━\n' + cts.map((c, i) => (i + 1) + '. id=' + c.id + ' | ' + (c.name || '') + ' | durée ' + (c.duree_s || '?') + ' s | niche ' + f(c.niche) + ' | conscience ' + f(c.awareness) + ' | style ' + f(c.styleTags) + ' | blocs ' + f(c.blocs) + '\n   ' + [c.meta, c.hook && ('HOOK : ' + c.hook), c.chute && ('CHUTE : ' + c.chute), c.produit_compatible && ('PRODUITS OK : ' + f(c.produit_compatible)), c.angles_fit && ('ANGLES : ' + f(c.angles_fit)), c.lieux_interdits && ('LIEUX INTERDITS : ' + f(c.lieux_interdits)), c.epic && ('EPIC : ' + f(c.epic))].filter(Boolean).join(' · ').slice(0, 900)).join('\n') })
-      const raw = await deps.callGeminiPro(SYSTEME_SELECTION.replace('{{N}}', String(n)), parts, 12000, { modele: deps.MODELES.creative, temperature: 0.3, thinkingBudget: 12288, logLabel: 'Choix CT vidéo', timeoutMs: 150000, typeAppel: 'selection_ct_video' })
+      const plan = b.mode === 'plan'
+      const raw = await deps.callGeminiPro((plan ? SYSTEME_PLAN : SYSTEME_SELECTION).replace('{{N}}', String(n)), parts, 12000, { modele: deps.MODELES.creative, temperature: 0.3, thinkingBudget: 12288, logLabel: 'Choix CT vidéo', timeoutMs: 150000, typeAppel: 'selection_ct_video' })
       const txt = String(raw || ''), d = txt.indexOf('{'), e = txt.lastIndexOf('}')
       let choix = []
       try { choix = (JSON.parse(txt.slice(d, e + 1)).choix || []) } catch (_) { }
       const ids = new Set(cts.map((c) => String(c.id))), vus = new Set()
-      choix = choix.filter((c) => c && ids.has(String(c.id)) && !vus.has(String(c.id)) && vus.add(String(c.id))).slice(0, n).map((c) => ({ id: String(c.id), angle: String(c.angle || ''), raison: String(c.raison || '').slice(0, 500) }))
+      choix = choix.filter((c) => c && ids.has(String(c.id)) && !vus.has(String(c.id)) && vus.add(String(c.id))).slice(0, n).map((c) => ({ id: String(c.id), angle: String(c.angle || ''), parcours: String(c.parcours || ''), niveau_video: String(c.niveau_video || ''), raison: String(c.raison || '').slice(0, 500), direction: (c.direction && typeof c.direction === 'object') ? Object.fromEntries(['casting', 'lieux', 'tenue', 'lumiere', 'cadrage'].map((k) => [k, String(c.direction[k] || '').slice(0, 300)])) : null }))
       console.log('🎞 SELECT-CT-VIDEO — ' + choix.map((c) => c.id).join(', ') + ' parmi ' + cts.length)
       return rep(res, 200, { choix, complet: choix.length === n }), true
     }
