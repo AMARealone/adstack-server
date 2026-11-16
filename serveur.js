@@ -1733,6 +1733,314 @@ async function carnetApprentissage() {
   return { genere_le: new Date().toISOString(), nb_produits: prods.length, nb_creatives_chiffrees: creatives.length, creatives_gagnantes: creatives.filter(x => x.statut === 'gagnante'), creatives_candidates: creatives.filter(x => x.statut === 'candidate'), ...agregerApprentissage(creatives), toutes_les_creatives: creatives };
 }
 
+// ══ APPRENTISSAGE PAR CLIENT (appr-client-v1) — 16 nov. 2026 ══
+// BACK-END SEULEMENT : le client ne voit jamais rien de ceci. Chaque client (= espace de travail, products.user_id) a SON carnet, calculé à la demande
+// depuis les données qui existent déjà (products.creatives, products.deliveries) : aucune copie qui puisse se désynchroniser. Ne sont stockés à part
+// (table Supabase learning_events) que les faits qu'on ne peut pas recalculer : les retours qualité et l'historique des chiffres.
+// Hiérarchie respectée : produit > cible > lot > angle > créative. Un angle ne s'exploite que sur SA cible ; un concept (structure/style de CT) se lit sur tout le client.
+// Principe de test : UNE variable à la fois. Angle gagnant → on garde l'angle, on change le concept (nouveau CT). CT gagnant → on garde le concept, on change l'angle.
+const APPR = {
+  gagnante: 120, candidate: 110, perdante: 85,   // mêmes seuils que le carnet global (indice 100 = moyenne de la cible)
+  ratioAngles: 4,                                 // angles repris par lot = ceil(nbAngles / 4) au plus
+  maxReprises: 3,                                 // un angle gagnant est mis au repos après 3 reprises
+  ctSatureDes: 2,                                 // un CT utilisé 2 fois sur le produit est « saturé »
+  conceptMinCrea: 3, conceptMinAngles: 2,         // un concept ne gagne que s'il se répète sur 3 créatives et 2 angles (un gagnant prouve une COMBINAISON)
+  tauxReprisesMin: 0.4, nReprisesMin: 6,          // si les reprises réussissent moins de 40 % (sur ≥ 6), on en reprend moins
+  ttlMs: 60000, ttlGalerieMs: 600000,
+};
+const APPR_DEFAUTS = {
+  produit_deforme: { lib: 'Produit déformé ou étiquette qui fond', consigne: "le produit reste net et identique à la photo : plans où il est grand, immobile, étiquette face caméra ; aucun gros plan en mouvement sur l'étiquette" },
+  produit_double: { lib: 'Élément en double, qui apparaît ou disparaît (bouchon, boîte)', consigne: "aucun changement d'état du produit à l'écran (ouverture, bouchon, rotation) : il est déjà dans son état d'usage dès la première image" },
+  texte_faux: { lib: 'Texte, marque ou orthographe faux', consigne: "aucun texte inventé : marque, prix et offre exactement tels que fournis, orthographe et accents vérifiés" },
+  visage: { lib: 'Visage ou expression bizarre', consigne: "visages calmes et naturels, petites expressions, aucun sourire exagéré ; même personne d'un plan à l'autre" },
+  geste: { lib: 'Geste ou mouvement irréel', consigne: "une seule action lente par plan, gestes simples et réalistes, mains stables" },
+  coupe: { lib: 'Coupe ou transition gênante (fantôme, saut)', consigne: "coupes nettes, cadrage différent d'un plan à l'autre, aucun fondu" },
+  texte_chevauche: { lib: 'Textes ou sous-titres qui se chevauchent ou sortent du cadre', consigne: "un seul texte à la fois par zone, rien dans les marges de sécurité" },
+  voix: { lib: 'Voix, accent ou son', consigne: "voix naturelle, débit calme, accent cohérent avec la cible, aucune voix mécanique" },
+  style: { lib: "Pas dans le ton ou l'univers de la marque", consigne: "respecter le ton et l'univers visuel du client : sobre, crédible, ancré dans le contexte réel de la cible" },
+  hors_sujet: { lib: 'Ne parle pas du bon problème / mauvais angle', consigne: "la première seconde nomme le problème de la cible avec ses mots ; rester strictement sur l'angle imposé" },
+  autre: { lib: 'Autre', consigne: null },
+};
+
+const _apprNorm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+const _apprPoidsFiab = (f) => f === 'solide' ? 1 : f === 'moyenne' ? 0.6 : 0.3;
+const _apprArrondi = (x, d = 2) => Number.isFinite(x) ? Math.round(x * 10 ** d) / 10 ** d : null;
+const _apprH = () => ({ apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' });
+const _apprCache = new Map(); let _apprGal = { t: 0, v: null };
+
+async function apprGalerie() {
+  if (_apprGal.v && Date.now() - _apprGal.t < APPR.ttlGalerieMs) return _apprGal.v;
+  try { const v = await chargerGalerieBalisee(); _apprGal = { t: Date.now(), v }; return v; } catch (_) { return _apprGal.v || { parId: {}, cts: [], total: 0 }; }
+}
+const apprStatutCrea = (s, sur) => {
+  if (!s || !s.chiffre) return 'sans_chiffres';
+  if (!s.comparable || sur < 3) return 'trop_tot';
+  if (s.indice >= APPR.gagnante && s.fiabilite !== 'faible') return 'gagnante';
+  if (s.indice >= APPR.candidate) return 'candidate';
+  if (s.indice < APPR.perdante) return s.fiabilite === 'faible' ? 'perdante_faible' : 'perdante';
+  return 'moyenne';
+};
+const apprMemeCible = (d, cible, sig) => !!d && ((cible && d.cible === cible) || (sig && d.cible_signature && d.cible_signature === sig));
+const apprTags = (galerie, ct) => {
+  const g = ct && galerie && galerie.parId && galerie.parId[ct]; if (!g) return [];
+  const ax = g.axes || {}, t = [];
+  if (ax.structure) t.push('structure:' + String(ax.structure).toLowerCase());
+  if (ax.style) t.push('style:' + String(ax.style).toLowerCase());
+  return t;
+};
+
+// ── 1. Lecture d'un produit : une entrée par (produit, cible) ──────────────────────────────────────────
+function apprGroupes(prod, galerie) {
+  const dels = prod.deliveries || [], crs = prod.creatives || [];
+  const groupes = {};
+  const cleDe = (d, c) => (d && (d.cible_signature || d.cible)) || (c && c.cible) || 'cible inconnue';
+  crs.forEach(c => {
+    if (!c) return;
+    const d = dels.find(x => x.semaine === c.week);
+    const k = cleDe(d, c);
+    const g = groupes[k] = groupes[k] || { productId: prod.id, produit: prod.nom || prod.id, cleCible: k, cible: (d && d.cible) || c.cible || null, cibleSig: (d && d.cible_signature) || null, membres: [], livrees: 0 };
+    g.livrees++;
+    if (c.topPerformer && aDesChiffres(c)) g.membres.push({ c, d });
+  });
+  Object.values(groupes).forEach(g => {
+    g.livraisons = dels.filter(d => apprMemeCible(d, g.cible, g.cibleSig));
+    const sc = scoresTopPerformer(g.membres.map(m => m.c));
+    const classees = classerTopPerformer(g.membres.map(m => m.c));
+    const sur = classees.length, nTiers = Math.max(1, Math.ceil(sur / 3));
+    g.crea = classees.map((c, i) => {
+      const s = sc[c.id], d = (g.membres.find(m => m.c.id === c.id) || {}).d, ct = c.ct || c.ctId || null, st = completerStats(c.tpStats);
+      return { id: c.id, angle: c.angle || null, ct, format: (c.type === 'video' || c.videoUrl) ? 'video' : 'image', niveau: c.niveau || null, lot: c.week || null, rang: i + 1, sur,
+        indice: s.indice, fiabilite: s.fiabilite, comparable: !!s.comparable, dansLeTiers: sur >= 3 && i < nTiers, achats: Number.isFinite(st.achats) ? st.achats : null,
+        statut: apprStatutCrea(s, sur), tags: apprTags(galerie, ct), stats: c.tpStats || null, delivery: d || null };
+    });
+    // angles : un angle gagne quand ses créatives se retrouvent en haut du classement de LA cible, pas sur un coup isolé
+    const parAngle = {};
+    g.crea.filter(x => x.comparable && x.angle).forEach(x => {
+      const a = parAngle[x.angle] = parAngle[x.angle] || { nom: x.angle, n: 0, nTop: 0, somme: 0, poids: 0, achats: 0, cts: new Set(), meilleur: null };
+      if (!a.meilleur || (x.indice || 0) > (a.meilleur.indice || 0)) a.meilleur = x;
+      const w = _apprPoidsFiab(x.fiabilite); a.n++; if (x.dansLeTiers) a.nTop++;
+      a.somme += w * Math.log(Math.max(0.25, Math.min(4, (x.indice || 100) / 100))); a.poids += w; a.achats += x.achats || 0; if (x.ct) a.cts.add(x.ct);
+    });
+    g.angles = Object.values(parAngle).map(a => {
+      const indiceMoyen = a.poids ? Math.round(100 * Math.exp(a.somme / a.poids)) : null;
+      const apparitions = g.livraisons.filter(d => (d.angles || []).some(z => _apprNorm(z.nom) === _apprNorm(a.nom))).length;
+      const gagnant = a.nTop >= 1 && indiceMoyen >= APPR.candidate;
+      const perdant = a.n >= 2 && a.poids >= 1.2 && indiceMoyen < 90 && a.nTop === 0;
+      let dernier = null; for (let i = g.livraisons.length - 1; i >= 0 && !dernier; i--) dernier = (g.livraisons[i].angles || []).find(z => _apprNorm(z.nom) === _apprNorm(a.nom)) || null;
+      // les accroches qui ont marché sont celles du lot où l'angle a eu sa meilleure créative (pas forcément le dernier lot)
+      const dLot = a.meilleur && g.livraisons.find(d => d.semaine === a.meilleur.lot), eLot = dLot && (dLot.angles || []).find(z => _apprNorm(z.nom) === _apprNorm(a.nom));
+      return { nom: a.nom, n: a.n, nTop: a.nTop, indiceMoyen, achats: a.achats, nbCT: a.cts.size, apparitions, reprises: Math.max(0, apparitions - 1),
+        statut: gagnant ? 'gagnant' : perdant ? 'perdant' : 'a_confirmer',
+        confiance: gagnant ? ((a.n >= 2 && a.nTop >= 2 && a.achats >= 50) ? 'confirmé' : 'hypothèse') : null,
+        justification: (dernier && dernier.justification) || '', hooks: (((eLot && eLot.hooks) || (dernier && dernier.hooks)) || []).slice(0, 3) };
+    }).sort((p, q) => (q.indiceMoyen || 0) - (p.indiceMoyen || 0));
+    g.ctGagnants = g.crea.filter(x => (x.statut === 'gagnante' || (x.statut === 'candidate' && x.indice >= 115 && x.fiabilite !== 'faible')) && x.ct)
+      .map(x => ({ ctId: x.ct, format: x.format, indice: x.indice, fiabilite: x.fiabilite, creativeId: x.id, angle: x.angle })).sort((p, q) => q.indice - p.indice);
+    // bilan du ratio : que valent les reprises et les tests ? (rôle décidé à la production, enregistré dans la livraison)
+    const bilan = { exploit: { n: 0, reussites: 0 }, test: { n: 0, reussites: 0 }, ct_gagnant: { n: 0, reussites: 0 } };
+    g.crea.filter(x => x.comparable && x.delivery && x.delivery.plan_apprentissage).forEach(x => {
+      const p = x.delivery.plan_apprentissage, r = ((p.roles || []).find(z => _apprNorm(z.nom) === _apprNorm(x.angle)) || {}).role;
+      const ok = x.statut === 'gagnante' || x.statut === 'candidate';
+      if (p.ctGagnant && p.ctGagnant.ctId && p.ctGagnant.ctId === x.ct) { bilan.ct_gagnant.n++; if (ok) bilan.ct_gagnant.reussites++; return; }
+      const k = r === 'exploit' ? 'exploit' : 'test'; bilan[k].n++; if (ok) bilan[k].reussites++;
+    });
+    g.bilan = bilan;
+    // un CT déjà rejoué sur un nouvel angle sans avoir réussi (ou sans résultat encore) n'est pas reproposé : sa réussite tenait peut-être à l'angle d'origine
+    g.ctRejoues = {};
+    g.livraisons.forEach(d => { const id = d.plan_apprentissage && d.plan_apprentissage.ctGagnant && d.plan_apprentissage.ctGagnant.ctId; if (!id) return;
+      const r = g.crea.filter(x => x.ct === id && x.lot === d.semaine); const ok = r.some(x => x.statut === 'gagnante' || x.statut === 'candidate');
+      const prev = g.ctRejoues[id] || { n: 0, reussi: false }; g.ctRejoues[id] = { n: prev.n + 1, reussi: prev.reussi || ok }; });
+    delete g.membres;
+  });
+  return Object.values(groupes);
+}
+
+// ── 2. Concepts (structure / style de CT) : lus sur TOUT le client, jamais sur une seule créative ──────
+function apprConcepts(groupes) {
+  const m = {};
+  groupes.forEach(g => g.crea.filter(x => x.comparable).forEach(x => x.tags.forEach(t => {
+    const a = m[t] = m[t] || { tag: t, n: 0, nTop: 0, somme: 0, poids: 0, achats: 0, angles: new Set(), produits: new Set() };
+    const w = _apprPoidsFiab(x.fiabilite); a.n++; if (x.dansLeTiers) a.nTop++;
+    a.somme += w * Math.log(Math.max(0.25, Math.min(4, (x.indice || 100) / 100))); a.poids += w; a.achats += x.achats || 0;
+    a.angles.add(g.productId + '|' + g.cleCible + '|' + x.angle); a.produits.add(g.productId);
+  })));
+  return Object.values(m).map(a => {
+    const indice = Math.round(100 * Math.exp(a.somme / a.poids)), partTop = a.nTop / a.n, assez = a.n >= APPR.conceptMinCrea && a.angles.size >= APPR.conceptMinAngles;
+    const statut = assez && indice >= APPR.candidate && partTop >= 0.5 ? 'gagnant' : assez && indice < 90 && partTop <= 0.2 ? 'perdant' : 'a_confirmer';
+    return { tag: a.tag, n: a.n, angles: a.angles.size, produits: a.produits.size, achats: a.achats, indice, partTop: _apprArrondi(partTop), statut };
+  }).sort((p, q) => q.indice - p.indice);
+}
+
+// ── 3. Usage des CT (toutes les livraisons) ──
+function apprUsageCT(products) {
+  const parProduit = {}, client = {};
+  products.forEach(p => { (p.deliveries || []).forEach((d, i) => (d.cts_utilises || []).forEach(ct => {
+    const u = parProduit[p.id] = parProduit[p.id] || {}; u[ct] = (u[ct] || 0) + 1; client[ct] = (client[ct] || 0) + 1;
+  })); });
+  return { parProduit, client };
+}
+
+// ── 4. Retours qualité (table learning_events) ──
+async function apprLireEvenements(filtre) {
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/learning_events?${filtre}`, { headers: _apprH() });
+    if (!r.ok) return { ok: false, lignes: [], erreur: 'HTTP ' + r.status };
+    return { ok: true, lignes: await r.json() };
+  } catch (e) { return { ok: false, lignes: [], erreur: e.message }; }
+}
+async function apprEcrireEvenement(ev) {
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/learning_events`, { method: 'POST', headers: { ..._apprH(), Prefer: 'return=minimal' },
+      body: JSON.stringify({ user_id: ev.user_id || null, product_id: ev.product_id ? String(ev.product_id) : null, cible: ev.cible || null, commande_id: ev.commande_id ? String(ev.commande_id) : null, type: ev.type, payload: ev.payload || {} }) });
+    if (!r.ok) { const t = await r.text(); console.warn('[apprentissage] événement non écrit (HTTP ' + r.status + ') — table learning_events créée ? ' + t.slice(0, 120)); return false; }
+    return true;
+  } catch (e) { console.warn('[apprentissage] événement non écrit : ' + e.message); return false; }
+}
+function apprQualite(retours) {
+  const parCode = {}; let total = 0;
+  retours.filter(e => e.type === 'retour_qualite').forEach(e => {
+    const p = e.payload || {}, grav = Math.max(1, Math.min(3, parseInt(p.gravite, 10) || 2)); total++;
+    (p.codes || []).forEach(c => {
+      if (!APPR_DEFAUTS[c]) return;
+      const a = parCode[c] = parCode[c] || { code: c, n: 0, poids: 0, creatives: new Set(), produits: new Set(), commandes: new Set(), derniere: null };
+      a.n++; a.poids += grav; (p.creative_ids || []).forEach(x => a.creatives.add(x)); if (e.product_id) a.produits.add(e.product_id); if (e.commande_id) a.commandes.add(e.commande_id);
+      if (!a.derniere || e.created_at > a.derniere) a.derniere = e.created_at;
+    });
+  });
+  const liste = Object.values(parCode).map(a => ({ code: a.code, lib: APPR_DEFAUTS[a.code].lib, n: a.n, poids: a.poids, creatives: a.creatives.size, produits: a.produits.size, commandes: [...a.commandes], derniere: a.derniere })).sort((p, q) => q.poids - p.poids);
+  return { total, parCode: liste, consignes: liste.filter(x => APPR_DEFAUTS[x.code].consigne).slice(0, 4).map(x => APPR_DEFAUTS[x.code].consigne) };
+}
+
+// ── 5. Carnet d'un client (tous ses produits) ──
+async function apprCarnetClient(userId, { force = false } = {}) {
+  const k = 'c:' + userId, c0 = _apprCache.get(k);
+  if (!force && c0 && Date.now() - c0.t < APPR.ttlMs) return c0.v;
+  const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?user_id=eq.${encodeURIComponent(userId)}&select=id,nom,creatives,deliveries,marche`, { headers: _apprH() });
+  const prods = await r.json(); if (!Array.isArray(prods)) throw new Error('lecture des produits impossible');
+  const galerie = await apprGalerie();
+  const groupes = prods.flatMap(p => apprGroupes(p, galerie));
+  const ids = prods.map(p => p.id);
+  const ev = ids.length ? await apprLireEvenements(`product_id=in.(${ids.map(encodeURIComponent).join(',')})&order=created_at.desc&limit=1000`) : { ok: true, lignes: [] };
+  const v = { userId, prods, groupes, concepts: apprConcepts(groupes), usage: apprUsageCT(prods), evenements: ev.lignes, tableEvenements: ev.ok, qualite: apprQualite(ev.lignes), galerie };
+  _apprCache.set(k, { t: Date.now(), v }); return v;
+}
+const apprInvalider = (userId) => { if (userId) _apprCache.delete('c:' + userId); else _apprCache.clear(); };
+
+// ── 6. Directives de production : la décision, par le code (jamais laissée au hasard du modèle) ──
+function apprDirectives(carnet, { productId, cibleActuelle, sigActuelle, nbAngles = 4, angleGagnantManuel = null } = {}) {
+  const N = Math.max(1, parseInt(nbAngles, 10) || 4);
+  const g = carnet.groupes.find(x => String(x.productId) === String(productId) && apprMemeCible({ cible: x.cible, cible_signature: x.cibleSig }, cibleActuelle, sigActuelle));
+  const prod = carnet.prods.find(p => String(p.id) === String(productId)) || {};
+  const nbLivrees = (prod.creatives || []).length, nbChiffrees = g ? g.crea.length : 0;
+  // exploiter : angles gagnants de CETTE cible, pas épuisés
+  const gagnants = (g ? g.angles : []).filter(a => a.statut === 'gagnant');
+  const epuises = gagnants.filter(a => a.reprises >= APPR.maxReprises).map(a => ({ nom: a.nom, reprises: a.reprises }));
+  let exploitables = gagnants.filter(a => a.reprises < APPR.maxReprises).sort((p, q) => (q.nTop - p.nTop) || (q.indiceMoyen - p.indiceMoyen))
+    .map(a => ({ nom: a.nom, justification: a.justification, indice: a.indiceMoyen, n: a.n, nTop: a.nTop, confiance: a.confiance, reprises: a.reprises, hooks: a.hooks, source: 'chiffres' }));
+  if (!exploitables.length && angleGagnantManuel && angleGagnantManuel.nom) exploitables = [{ nom: angleGagnantManuel.nom, justification: angleGagnantManuel.justification || '', indice: null, n: 0, nTop: 0, confiance: 'classement manuel', reprises: 0, hooks: [], source: 'manuel' }];
+  const bilan = g ? g.bilan : { exploit: { n: 0, reussites: 0 }, test: { n: 0, reussites: 0 }, ct_gagnant: { n: 0, reussites: 0 } };
+  let k = exploitables.length ? Math.min(exploitables.length, Math.ceil(N / APPR.ratioAngles)) : 0, raison = '';
+  if (k && bilan.exploit.n >= APPR.nReprisesMin && bilan.exploit.reussites / bilan.exploit.n < APPR.tauxReprisesMin) { k = Math.max(0, k - 1); raison = 'les reprises passées ont réussi dans ' + Math.round(100 * bilan.exploit.reussites / bilan.exploit.n) + ' % des cas : une reprise de moins'; }
+  const exploit = exploitables.slice(0, k), T = N - k, V = k ? Math.floor(T / 2) : 0, E = T - V;
+  if (!raison) raison = k ? `${k} angle(s) gagnant(s) repris sur ${N}, le reste testé (${T})` : (nbChiffrees ? 'aucun angle gagnant fiable : tout est test' : 'aucun chiffre sur cette cible : tout est test');
+  const perdants = (g ? g.angles : []).filter(a => a.statut === 'perdant').map(a => ({ nom: a.nom, indice: a.indiceMoyen, n: a.n }));
+  // CT : un gagnant exact au plus par lot (sur un NOUVEL angle) ; saturés ; concepts
+  const usage = (carnet.usage.parProduit[productId]) || {};
+  const ctGagnants = (g ? g.ctGagnants : []).filter(x => (usage[x.ctId] || 0) < APPR.ctSatureDes + 1 && !((g.ctRejoues || {})[x.ctId] && !g.ctRejoues[x.ctId].reussi))
+    .filter((x, i, arr) => arr.findIndex(y => y.ctId === x.ctId) === i);
+  const ctGagnant = T >= 1 && ctGagnants.length ? ctGagnants[0] : null;
+  const ctSatures = Object.entries(usage).filter(([id, n]) => n >= APPR.ctSatureDes && !(ctGagnant && ctGagnant.ctId === id)).map(([id]) => id);
+  const privilegier = carnet.concepts.filter(c => c.statut === 'gagnant').slice(0, 3), eviter = carnet.concepts.filter(c => c.statut === 'perdant').slice(0, 3);
+  const utilises = [...new Set(Object.keys(carnet.usage.client).flatMap(id => apprTags(carnet.galerie, id)))];
+  // qualité du client
+  const qualite = carnet.qualite;
+  const niveau = nbChiffrees >= 6 ? 'exploitable' : nbChiffrees > 0 ? 'faible' : 'aucune';
+  // ── textes injectés dans les agents (vides quand il n'y a rien de mesuré à dire) ──
+  const L = (a) => `« ${a.nom} »`;
+  const blocs = { analyste_nombre: '', analyste_gagnants: '', analyste_apprentissage: '', ct_base: '', ct_famille: '', ct_explore: '', copy: '', image: '', video: '' };
+  if (exploit.length) {
+    blocs.analyste_nombre = `⚠️ NOMBRE D'ANGLES À PRODUIRE POUR CETTE COMMANDE (NON-NÉGOCIABLE) : ${N}\nCette commande porte sur ${N * 3} visuels (3 par angle). Répartition imposée par l'historique MESURÉ de ce client : ${exploit.length} angle(s) GAGNANT(S) repris tel quel (liste ANGLES_GAGNANTS ci-dessous) + ${T} angle(s) NOUVEAU(X) et distincts, construits selon le processus habituel à partir du balayage de marché frais. S2 ne contient que ces ${N} angles au total.\n\n`;
+    blocs.analyste_gagnants = `⚠️ ANGLES_GAGNANTS (mesurés sur les chiffres réels de ce client — la section GESTION DE L'ANGLE GAGNANT de tes instructions s'applique à CHACUN d'eux) :\n` + exploit.map((a, i) => `${i + 1}. Nom : ${a.nom}\n   Justification d'origine : ${a.justification || '(non renseignée)'}\n   Mesure : ${a.indice ? 'indice ' + a.indice + ' (100 = moyenne de la cible), ' + a.n + ' créative(s), ' + a.nTop + ' dans le haut du classement, ' : ''}${a.confiance}${a.reprises ? ' ; déjà repris ' + a.reprises + ' fois' : ''}.`).join('\n') + `\nChacun occupe UN angle de S2, repris tel quel (même nom, même formulation). Ses créatives portent des concepts visuels ENTIÈREMENT NOUVEAUX : on teste si c'est L'ANGLE qui gagne, pas une exécution.\n\n`;
+  }
+  { const P = [];
+    if (nbChiffrees) P.push(`RÉPARTITION DÉCIDÉE : ${k} reprise(s) de gagnant, ${T} test(s) dont ${V} « voisin(s) » (angle neuf qui partage le moteur dominant ou l'ennemi désigné d'un gagnant tout en restant authentiquement distinct) et ${E} exploration(s) pure(s) issue(s) du balayage frais. Les tests sont la majorité : c'est voulu, la plupart ne gagneront pas.`);
+    if (perdants.length) P.push(`ANGLES À NE PAS RECONDUIRE (sous-performance mesurée sur au moins 2 créatives, fiabilité suffisante) : ` + perdants.map(a => `${L(a)} (indice ${a.indice})`).join(' ; ') + `. Ne les reprends pas et n'en construis pas de variante proche, sauf si le balayage frais apporte une donnée nouvelle qui lève la raison de l'échec (dis-le alors dans la justification).`);
+    if (epuises.length) P.push(`ANGLES GAGNANTS MIS AU REPOS CE LOT (déjà repris ${APPR.maxReprises} fois, à laisser souffler) : ` + epuises.map(L).join(' ; ') + `.`);
+    if (P.length) blocs.analyste_apprentissage = `⚠️ APPRENTISSAGE DE CE CLIENT (mesures réelles : sers-t'en pour DÉCIDER, jamais pour recopier ; un angle sans chiffres ou sur peu d'achats n'est ni gagnant ni perdant) :\n` + P.join('\n') + '\n\n'; }
+  { const P = [];
+    if (eviter.length) P.push('Structures/styles qui ont sous-performé chez ce client (≥ 3 créatives, ≥ 2 angles) : ' + eviter.map(c => c.tag + ' (indice ' + c.indice + ')').join(', ') + ' — à éviter sauf nécessité.');
+    if (ctSatures.length) P.push(`CT déjà utilisés ${APPR.ctSatureDes} fois ou plus pour ce produit (saturés, ne pas les reprendre) : ` + ctSatures.slice(0, 12).join(', ') + '.');
+    blocs.ct_base = P.length ? 'APPRENTISSAGE DE CE CLIENT :\n' + P.join('\n') : '';
+    if (privilegier.length) blocs.ct_famille = `CE SLOT EXPLOITE UN CONCEPT QUI GAGNE chez ce client : choisis, parmi les CT proposés, un CT dont la structure ou le style correspond à : ` + privilegier.map(c => `${c.tag} (indice ${c.indice}, ${c.n} créatives, ${c.angles} angles)`).join(' ; ') + `. Ce doit être un CT différent de tous ceux déjà utilisés.`;
+    if (utilises.length) blocs.ct_explore = `CE SLOT EXPLORE : choisis, parmi les CT proposés, un CT dont la structure ET le style n'ont JAMAIS été utilisés pour ce client. Déjà utilisés : ` + utilises.slice(0, 20).join(', ') + `.`; }
+  { const H = exploit.concat(gagnants).filter((a, i, arr) => a.hooks && a.hooks.length && arr.findIndex(y => y.nom === a.nom) === i).slice(0, 2);
+    if (H.length) blocs.copy = `CE QUI A MARCHÉ POUR CE CLIENT (accroches d'angles gagnants — recopie la MÉCANIQUE : type de tension, longueur, façon de s'adresser ; jamais les mots) :\n` + H.map(a => `- ${a.nom} : ` + a.hooks.map(h => '« ' + String(h).slice(0, 140) + ' »').join(' / ')).join('\n') + `\nPour un angle neuf, ne recopie aucune formulation de ces exemples.\n\n`; }
+  if (qualite.consignes.length) { const q = `RETOURS DE CE CLIENT SUR SES PRODUCTIONS PRÉCÉDENTES (à respecter en priorité, ce sont des refus réels) :\n` + qualite.consignes.map(c => '- ' + c).join('\n'); blocs.image = q; blocs.video = q.slice(0, 900); }
+  const resume = [k ? `${k} angle(s) à reprendre` : null, T ? `${T} à tester` : null, ctGagnant ? 'CT gagnant à rejouer sur un nouvel angle' : null, qualite.consignes.length ? qualite.consignes.length + ' consigne(s) qualité du client appliquée(s)' : null].filter(Boolean).join(' · ') || 'Aucune donnée d\'apprentissage pour l\'instant : tout est en test';
+  return { version: 'appr-v1', calcule_le: new Date().toISOString(), nbAngles: N, cible: cibleActuelle || null,
+    donnees: { nbChiffrees, nbLivrees, couverture: nbLivrees ? _apprArrondi(nbChiffrees / nbLivrees) : 0, niveau },
+    ratio: { exploit: k, test: T, voisins: V, exploration: E, raison }, exploit, epuises, perdants, ctGagnant, ctGagnantAlt: ctGagnants.slice(1, 3), ctSatures,
+    concepts: { privilegier, eviter, utilises }, qualite: { total: qualite.total, consignes: qualite.consignes, recurrents: qualite.parCode.slice(0, 5) }, bilan, blocs, resume };
+}
+
+// Appelé par /products/:id/renewal-context : ne casse JAMAIS la route (tout échec = pas d'apprentissage, la production continue comme avant).
+async function apprentissagePourProduit(productId, cibleActuelle, sigActuelle, angleGagnantManuel, nbAngles) {
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${encodeURIComponent(productId)}&select=user_id`, { headers: _apprH() });
+    const userId = ((await r.json())[0] || {}).user_id; if (!userId) return null;
+    const carnet = await apprCarnetClient(userId);
+    return apprDirectives(carnet, { productId, cibleActuelle, sigActuelle, nbAngles, angleGagnantManuel });
+  } catch (e) { console.warn('[apprentissage] directives indisponibles : ' + e.message); return null; }
+}
+
+// ── 7. Vues administrateur ──
+function apprResumeClient(userId, prods, email, nom, nbRetours) {
+  return { user_id: userId, email: email || null, nom: nom || null, nb_retours: nbRetours || 0,
+    produits: prods.map(p => { const crs = p.creatives || [], ch = crs.filter(c => c && c.topPerformer && aDesChiffres(c)).length, dl = (p.deliveries || []); return { id: p.id, nom: p.nom || p.id, nb_lots: dl.length, nb_creatives: crs.length, nb_chiffrees: ch, derniere_livraison: (dl[dl.length - 1] || {}).created_at || null }; }) };
+}
+async function apprListeClients() {
+  const k = 'liste', c0 = _apprCache.get(k); if (c0 && Date.now() - c0.t < APPR.ttlMs) return c0.v;
+  const [rp, rs, re] = await Promise.all([
+    fetch(`${SUPABASE_URL_INT}/rest/v1/products?select=id,nom,user_id,creatives,deliveries`, { headers: _apprH() }),
+    fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?select=user_id,email,nom`, { headers: _apprH() }).catch(() => null),
+    apprLireEvenements('type=eq.retour_qualite&select=user_id,product_id&limit=2000'),
+  ]);
+  const prods = await rp.json(); if (!Array.isArray(prods)) throw new Error('lecture des produits impossible');
+  const subs = rs && rs.ok ? await rs.json().catch(() => []) : [];
+  const parUser = {}; prods.forEach(p => { if (p.user_id) (parUser[p.user_id] = parUser[p.user_id] || []).push(p); });
+  const prodUser = Object.fromEntries(prods.map(p => [String(p.id), p.user_id]));
+  const nbRet = {}; re.lignes.forEach(e => { const u = e.user_id || prodUser[String(e.product_id)]; if (u) nbRet[u] = (nbRet[u] || 0) + 1; });
+  const v = { table_evenements: re.ok, clients: Object.entries(parUser).map(([u, ps]) => { const s = (Array.isArray(subs) ? subs : []).find(x => x.user_id === u) || {}; return apprResumeClient(u, ps, s.email, s.nom, nbRet[u]); }) };
+  v.clients.forEach(c => { c.nb_chiffrees_total = c.produits.reduce((s, p) => s + p.nb_chiffrees, 0); }); v.clients.sort((a, b) => b.nb_chiffrees_total - a.nb_chiffrees_total);
+  _apprCache.set(k, { t: Date.now(), v }); return v;
+}
+async function apprVueClient(userId, nbAngles) {
+  const c = await apprCarnetClient(userId, { force: true });
+  const produits = c.prods.map(p => {
+    const gs = c.groupes.filter(g => String(g.productId) === String(p.id));
+    return { id: p.id, nom: p.nom || p.id, nb_lots: (p.deliveries || []).length, nb_creatives: (p.creatives || []).length,
+      cibles: gs.map(g => ({ cible: g.cible || g.cleCible, nb_chiffrees: g.crea.length, nb_livrees: g.livrees, angles: g.angles.map(a => ({ nom: a.nom, statut: a.statut, confiance: a.confiance, indice: a.indiceMoyen, n: a.n, nTop: a.nTop, reprises: a.reprises, achats: a.achats })),
+        creatives: g.crea.slice(0, 40).map(x => ({ id: x.id, angle: x.angle, ct: x.ct, format: x.format, niveau: x.niveau, indice: x.indice, fiabilite: x.fiabilite, statut: x.statut, rang: x.rang, sur: x.sur, tags: x.tags })),
+        bilan: g.bilan, prochaine_production: apprDirectives(c, { productId: p.id, cibleActuelle: g.cible, sigActuelle: g.cibleSig, nbAngles }) })) };
+  });
+  const usage = Object.entries(c.usage.client).map(([ct, n]) => ({ ct, n, tags: apprTags(c.galerie, ct) })).sort((a, b) => b.n - a.n).slice(0, 40);
+  const retours = c.evenements.filter(e => e.type === 'retour_qualite').slice(0, 60).map(e => ({ id: e.id, date: e.created_at, product_id: e.product_id, commande_id: e.commande_id, ...(e.payload || {}) }));
+  return { user_id: userId, genere_le: new Date().toISOString(), table_evenements: c.tableEvenements, produits, concepts: c.concepts, usage_ct: usage, galerie: { total: c.galerie.total || 0, balises: (c.galerie.cts || []).length }, qualite: { total: c.qualite.total, par_code: c.qualite.parCode, consignes: c.qualite.consignes }, retours, defauts: Object.entries(APPR_DEFAUTS).map(([code, d]) => ({ code, lib: d.lib })) };
+}
+async function apprRecevoirRetour(b) {
+  const codes = (Array.isArray(b.codes) ? b.codes : []).filter(c => APPR_DEFAUTS[c]);
+  if (!b.product_id) throw new Error('product_id requis');
+  if (!codes.length && !String(b.commentaire || '').trim()) throw new Error('indique au moins un défaut ou un commentaire');
+  let userId = b.user_id || null;
+  if (!userId) { try { const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${encodeURIComponent(b.product_id)}&select=user_id`, { headers: _apprH() }); userId = ((await r.json())[0] || {}).user_id || null; } catch (_) {} }
+  const ok = await apprEcrireEvenement({ user_id: userId, product_id: b.product_id, cible: b.cible || null, commande_id: b.commande_id || null, type: 'retour_qualite',
+    payload: { codes, creative_ids: (Array.isArray(b.creative_ids) ? b.creative_ids : []).slice(0, 40), gravite: Math.max(1, Math.min(3, parseInt(b.gravite, 10) || 2)), commentaire: String(b.commentaire || '').slice(0, 1500), source: b.source === 'client' ? 'client' : 'admin', lot: b.lot || null } });
+  apprInvalider(userId); apprInvalider();
+  if (!ok) throw new Error("retour non enregistré : la table learning_events n'existe pas encore (voir le fichier SQL)");
+  return { ok: true };
+}
+// ══ fin APPRENTISSAGE PAR CLIENT ══
+
 const server = http.createServer(async (req, res) => {
   // CORS — Cause profonde corrigée (save-deliverables bloqué à 100% depuis
   // www.adstackofficial.com, "Access-Control-Allow-Origin must not be the wildcard '*' when
@@ -3698,6 +4006,7 @@ HARD LOCKS :
             ? 'NIVEAU DE CONSCIENCE IMPOSÉ : ' + NIVEAU_LIBELLE[niveau] + '. ⚠ Aucun CT de la galerie n\'est balisé à ce niveau : choisis la structure qui s\'en rapproche le plus et signale-le dans ta raison.'
             : 'NIVEAU DE CONSCIENCE IMPOSÉ : ' + NIVEAU_LIBELLE[niveau] + '. Les ' + cts.length + ' CT ci-dessous sont TOUS balisés ' + NIVEAU_LIBELLE[niveau] + ' (filtre vérifié par le code).';
         }
+        if (b.apprentissage && String(b.apprentissage).trim()) b.niveauTexte = (b.niveauTexte ? b.niveauTexte + '\n\n' : '') + String(b.apprentissage).slice(0, 3000); // appr-client-v1
         console.log('\n🎯 SELECT-CT-AGENT — choix de 1 CT parmi ' + cts.length + (niveau ? ' (niveau ' + NIVEAU_LIBELLE[niveau] + (repli ? ' : AUCUN CT BALISÉ, repli sur ' + ctsTous.length : ' : ' + nbBalises + ' balisés sur ' + ctsTous.length) + ')' : '') + ', ' + cts.filter(c => c.b64).length + ' avec image');
         const raw = await callGeminiPro(SELECTION_CT_SYSTEME, construireSelectionCT({ ...b, cts }), 24000, {
           modele: MODELES.creative, temperature: 0.3, thinkingBudget: 16384, logLabel: 'Choix CT', timeoutMs: 150000,
@@ -6016,7 +6325,7 @@ if (req.method === 'POST' && req.url === '/tag-ct-lot') {
 // nouvelle commande ou renouvellement, même cible ou rotation, quels CT éviter, quels angles
 // ne jamais répéter. Recalculé entièrement depuis `deliveries` (source de vérité chronologique)
 // plutôt que depuis `marche.angles`, qui ne reflète plus que le dernier lot en mode remplacement.
-if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/)) {
+if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context(\?.*)?$/)) {
   try {
     const productId = req.url.split('/')[2];
     const SEUIL_ANGLES_AVANT_ROTATION = 18;
@@ -6146,8 +6455,11 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
       (Date.now() - new Date(b.generation_started_at).getTime()) < FENETRE_GENERATION_ACTIVE_MS
     );
 
+    let apprentissage = null; // appr-client-v1
+    try { apprentissage = await apprentissagePourProduit(productId, cibleActuelle, signatureCibleActuelle, angleGagnant, parseInt(new URL(req.url, 'http://x').searchParams.get('nb_angles') || '4', 10)); } catch (_) {}
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
+      apprentissage,
       estRenouvellement: !!product.derniere_synthese,
       syntheseExistante: product.derniere_synthese || null,
       cibleActuelle,
@@ -6215,6 +6527,27 @@ if (req.method === 'GET' && (req.url || '').split('?')[0] === '/learning/winners
   return;
 }
 
+// ── Apprentissage par client — routes administrateur (appr-client-v1) ──
+// GET  /learning/clients                      → liste des clients (administrateur)
+// GET  /learning/client?user_id=…&nb_angles=4 → carnet complet d'un client + plan conseillé de la prochaine production par cible
+// POST /learning/retour                       → un retour qualité sur une livraison (codes de défaut, créatives, gravité, commentaire)
+if ((req.url || '').split('?')[0].startsWith('/learning/') && ['/learning/clients', '/learning/client', '/learning/retour'].includes((req.url || '').split('?')[0])) {
+  (async () => {
+    const J = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(obj, (k, v) => v instanceof Set ? [...v] : v)); };
+    try {
+      if (!(await crmAdminOk(req))) return J(403, { error: "réservé à l'administrateur" });
+      const chemin = (req.url || '').split('?')[0], q = new URL(req.url, 'http://x').searchParams;
+      if (req.method === 'GET' && chemin === '/learning/clients') return J(200, await apprListeClients());
+      if (req.method === 'GET' && chemin === '/learning/client') { if (!q.get('user_id')) return J(400, { error: 'user_id requis' }); return J(200, await apprVueClient(q.get('user_id'), parseInt(q.get('nb_angles') || '4', 10))); }
+      if (req.method === 'POST' && chemin === '/learning/retour') {
+        let body = ''; await new Promise(ok => { req.on('data', c => body += c); req.on('end', ok); });
+        return J(200, await apprRecevoirRetour(JSON.parse(body || '{}')));
+      }
+      return J(405, { error: 'méthode non permise' });
+    } catch (e) { return J(400, { error: e.message }); }
+  })();
+  return;
+}
 // POST /products/:id/mark-top-performer — marque/démarque une créative comme Top Performer
 // depuis la Galerie AdBoard (v5.70 : plus de délai de 7 jours ; chiffres facultatifs).
 if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/mark-top-performer$/)) {
@@ -6240,6 +6573,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/mark-top-perform
         if (statsPropres) n.tpStats = statsPropres;
         return n;
       });
+      apprEcrireEvenement({ product_id: productId, type: 'chiffres', payload: { creative_id: creativeId, value: value !== false, stats: statsPropres || null } }); apprInvalider(); // appr-client-v1
 
       await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, {
         method: 'PATCH',
@@ -6284,6 +6618,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/top-performer-st
         headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
         body: JSON.stringify({ creatives: updated })
       });
+      apprEcrireEvenement({ product_id: productId, type: 'chiffres', payload: { creative_id: creativeId, value: true, stats: propres || null } }); apprInvalider(); // appr-client-v1
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true, stats: propres }));
     } catch(e) {
@@ -8190,6 +8525,7 @@ async function decideBalayage({ productId, isTest, nbAngles, brief, forcer }) {
   if (forcer) return { reutiliser: false, raison: 'balayage forcé' };
   if (isTest) return { reutiliser: false, raison: 'interface de test : balayage toujours refait' };
   if (!productId) return { reutiliser: false, raison: 'produit sans identifiant' };
+  if ((process.env.BALAYAGE_POLITIQUE || 'production') !== 'reutiliser') return { reutiliser: false, raison: 'politique : un balayage de marché neuf à chaque production (BALAYAGE_POLITIQUE=reutiliser pour réutiliser l\'hypothèse stockée)' }; // appr-client-v1
   const H = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` };
   const rp = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${encodeURIComponent(productId)}&select=derniere_synthese,marche,deliveries`, { headers: H });
   const prod = (await rp.json())?.[0];
@@ -10085,7 +10421,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
     // FOIS, plus jamais rafraîchie, peu importe combien de relances suivaient.
     const dejaCreeMemeVersion = livraisonExistante && livraisonExistante.generation_version === generationVersion;
     const dejaCree = dejaCreeMemeVersion;
-    const nouvelleEntreeLivraison = { ticketId, semaine: weekLabel, date: dateLabel, created_at: new Date().toISOString(), cible: cibleCeLot, cible_signature: cibleSignatureCeLot, angles: angleEntries, cts_utilises: ctsUtilisesCeLot, plan_lot: (deliverables.plan_lot || []).slice(0, 40), generation_version: generationVersion };
+    const nouvelleEntreeLivraison = { ticketId, semaine: weekLabel, date: dateLabel, created_at: new Date().toISOString(), cible: cibleCeLot, cible_signature: cibleSignatureCeLot, angles: angleEntries, cts_utilises: ctsUtilisesCeLot, plan_lot: (deliverables.plan_lot || []).slice(0, 40), plan_apprentissage: deliverables.planApprentissage || null, generation_version: generationVersion };
     const deliveriesFinal = dejaCree
       ? existingDeliveries
       : livraisonExistante
