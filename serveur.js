@@ -1515,6 +1515,224 @@ async function findUserByEmail(email) {
 }
 
 // ── HTTP Server ────────────────────────────────
+// ══ TOP PERFORMER — copie exacte de src/topPerformer.js (AdBoard) — tp-v2 ══
+// Top Performer — chiffres fournis par le client + classement automatique (v2, 16 nov. 2026).
+// CE FICHIER EST AUSSI COPIÉ TEL QUEL DANS serveur.js (bloc « TOP PERFORMER »), pour que le
+// classement vu par le client, l'angle gagnant et l'apprentissage du serveur soient toujours identiques.
+// Ne rien importer ici : fonctions pures uniquement.
+//
+// MÉTHODE (recoupée avec la pratique publicitaire : on compare chaque créative aux autres de SON groupe — même produit, même cible —,
+// jamais à un seuil universel ; un ratio observé sur peu d'achats est du bruit, donc il est ramené vers la moyenne du groupe) :
+//   1. Chaque chiffre est comparé à la MÉDIANE du groupe (robuste : une créative extrême ne fausse pas la référence).
+//      ROAS, achats, dépenses, CTR, jours : plus c'est haut, mieux c'est. CPA : plus c'est bas, mieux c'est.
+//   2. Les rapports sont combinés en moyenne géométrique pondérée (ROAS et CPA pèsent le plus : c'est l'efficacité réelle ;
+//      achats et dépenses disent que la diffusion a confiance dans la créative ; jours et CTR sont des signaux secondaires).
+//   3. FIABILITÉ : le résultat est ramené vers « dans la moyenne » quand il repose sur peu d'achats (achats / (achats + 8)).
+//      Un ROAS 4 sur 2 achats compte donc beaucoup moins qu'un ROAS 3 sur 40 achats. Moins de 3 jours de diffusion : fiabilité × 0,7.
+//   4. score = 1 pour la moyenne du groupe, 1,5 = 50 % mieux. « indice » = score × 100.
+
+// Les chiffres que le client peut donner. Tous facultatifs. `sens` : 'haut' = plus c'est grand, mieux c'est.
+const TP_CHAMPS = [
+  { k: 'roas',     label: 'ROAS',          aide: 'ex. 2,8',            unite: '×',  sens: 'haut', poids: 3,   max: 200 },
+  { k: 'cpa',      label: 'CPA',           aide: 'en $ ou €',     unite: '',   sens: 'bas',  poids: 3,   max: 100000000 },
+  { k: 'depenses', label: 'Dépenses',      aide: 'en $ ou €',      unite: '',   sens: 'haut', poids: 0.8, max: 1000000000 },
+  { k: 'jours',    label: 'Jours actifs',  aide: 'ex. 12',             unite: 'j',  sens: 'haut', poids: 0.4, max: 365, entier: true },
+  { k: 'achats',   label: 'Ventes',        aide: 'nombre de ventes',   unite: '',   sens: 'haut', poids: 1,   max: 10000000, entier: true },
+  { k: 'ctr',      label: 'CTR',           aide: 'ex. 1,9',            unite: '%',  sens: 'haut', poids: 0.7, max: 100 },
+];
+
+const K_ACHATS = 8; // nombre d'achats à partir duquel les chiffres pèsent « à moitié »
+
+function _nombre(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/\s/g, '').replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+// Nettoie ce que le client a saisi : ne garde que des nombres valides (> 0 et sous la borne).
+// Renvoie null si rien d'exploitable. Jamais d'erreur : une saisie bancale est simplement ignorée.
+function nettoyerStats(brut) {
+  if (!brut || typeof brut !== 'object') return null;
+  const out = {};
+  for (const ch of TP_CHAMPS) {
+    let n = _nombre(brut[ch.k]);
+    if (n === null || n <= 0 || n > ch.max) continue;
+    if (ch.entier) n = Math.round(n);
+    else n = Math.round(n * 1000) / 1000;
+    out[ch.k] = n;
+  }
+  if (!Object.keys(out).length) return null;
+  return out;
+}
+
+const aDesChiffres = (c) => !!(c && c.tpStats && TP_CHAMPS.some(ch => Number.isFinite(c.tpStats[ch.k])));
+
+const _borne = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+const _mediane = (a) => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+
+// Complète ce qui se déduit des autres chiffres (jamais l'inverse : on n'invente rien d'inconnu).
+// dépenses ÷ CPA = ventes ; dépenses ÷ ventes = CPA. Renvoie une COPIE.
+function completerStats(st) {
+  const s = { ...(st || {}) };
+  if (!Number.isFinite(s.achats) && Number.isFinite(s.depenses) && Number.isFinite(s.cpa) && s.cpa > 0) { s.achats = Math.round(s.depenses / s.cpa); s._achatsDeduits = true; }
+  if (!Number.isFinite(s.cpa) && Number.isFinite(s.depenses) && Number.isFinite(s.achats) && s.achats > 0) s.cpa = Math.round(s.depenses / s.achats * 1000) / 1000;
+  return s;
+}
+
+// Score de chaque créative, PAR RAPPORT aux autres créatives du même groupe (même produit, même cible).
+// Renvoie, par id : { score (1 = moyenne du groupe), indice (100 = moyenne), fiabilite ('solide'|'moyenne'|'faible'), chiffre, nbChiffres }.
+// Une créative sans aucun chiffre n'a pas de score : elle reste au classement manuel (repli).
+function scoresTopPerformer(creatives) {
+  const liste = (creatives || []).filter(Boolean);
+  const stats = {};
+  liste.forEach(c => { stats[c.id] = completerStats(c.tpStats); });
+  // Référence du groupe pour chaque chiffre : médiane, et seulement si au moins 2 créatives le donnent (sinon rien à comparer).
+  const ref = {};
+  for (const ch of TP_CHAMPS) {
+    const vals = liste.map(c => stats[c.id][ch.k]).filter(Number.isFinite);
+    if (vals.length >= 2) ref[ch.k] = _mediane(vals);
+  }
+  const res = {};
+  for (const c of liste) {
+    const st = stats[c.id];
+    let somme = 0, poids = 0, n = 0;
+    for (const ch of TP_CHAMPS) {
+      const v = st[ch.k];
+      if (!Number.isFinite(v)) continue;
+      n++;
+      if (!ref[ch.k]) continue;
+      const ratio = ch.sens === 'haut' ? v / ref[ch.k] : ref[ch.k] / v;
+      somme += ch.poids * Math.log(_borne(ratio, 0.25, 4));
+      poids += ch.poids;
+    }
+    if (!n) { res[c.id] = { score: null, indice: null, fiabilite: null, chiffre: false, nbChiffres: 0 }; continue; }
+    // Fiabilité : combien d'achats reposent derrière ces chiffres (donnés, déduits, ou estimés avec le CPA médian du groupe).
+    const achats = Number.isFinite(st.achats) ? st.achats : (Number.isFinite(st.depenses) && ref.cpa ? st.depenses / ref.cpa : null);
+    let conf = achats === null ? 0.5 : achats / (achats + K_ACHATS);
+    if (Number.isFinite(st.jours) && st.jours < 3) conf *= 0.7;
+    const log = poids ? somme / poids : 0;
+    const score = Math.exp(conf * log);
+    res[c.id] = { score, indice: Math.round(score * 100), fiabilite: conf >= 0.65 ? 'solide' : conf >= 0.4 ? 'moyenne' : 'faible', chiffre: true, nbChiffres: n, comparable: poids > 0 };
+  }
+  return res;
+}
+
+// Classement : d'abord les créatives chiffrées (meilleur score en tête), puis celles sans chiffres,
+// dans l'ordre manuel du client (rang 1 d'abord, sans rang à la fin).
+function classerTopPerformer(creatives) {
+  const liste = [...(creatives || [])];
+  const sc = scoresTopPerformer(liste);
+  const rang = (c) => (c.topPerformerRank ?? Infinity);
+  return liste.sort((a, b) => {
+    const A = sc[a.id], B = sc[b.id];
+    if (A.chiffre !== B.chiffre) return A.chiffre ? -1 : 1;
+    if (A.chiffre && B.chiffre && Math.abs(A.score - B.score) > 1e-9) return B.score - A.score;
+    if (A.chiffre && B.chiffre) {
+      const r = (b.tpStats.roas || 0) - (a.tpStats.roas || 0);
+      if (r) return r;
+      const d = (b.tpStats.depenses || 0) - (a.tpStats.depenses || 0);
+      if (d) return d;
+    }
+    return rang(a) - rang(b);
+  });
+}
+
+// Poids d'une créative marquée dans le calcul de l'angle gagnant (remplace le seul « rang manuel »).
+// Chiffrée : son score (0,3 à 3). Sinon : repli sur le rang manuel (rang 1 = ×2, rang 2 = ×1,5 …), neutre sans rang.
+function multiplicateurTP(c, scores) {
+  const s = scores && scores[c.id];
+  if (s && s.chiffre) return _borne(s.score, 0.3, 3);
+  return c.topPerformerRank ? (1 + 1 / c.topPerformerRank) : 1;
+}
+// ══ fin TOP PERFORMER ══
+
+// ══ APPRENTISSAGE — créatives, angles et concepts gagnants (tp-v2-apprentissage) ══
+// BACK-END SEULEMENT : le client ne voit jamais rien de ceci dans AdBoard (il ne voit que son classement et son angle gagnant).
+// Méthode : le classement de chaque cible (topPerformer.js) donne un indice par créative ; on cherche ensuite ce qui SE RÉPÈTE dans le haut des classements
+// (angle, concept de CT, format) au lieu de couronner une créative isolée. Un motif vu sur peu de créatives ou peu de ventes reste une HYPOTHÈSE à confirmer,
+// pas une règle (un classement sur 2 ou 3 acheteurs est du hasard).
+function ecrireApprentissage(id, snap) {
+  (async () => {
+    try {
+      const { presign } = require('./r2_video');
+      const { R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY } = process.env;
+      if (!R2_ENDPOINT || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) return;
+      const bucket = process.env.R2_BUCKET || 'adstack-images', host = new URL(R2_ENDPOINT).host;
+      const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
+      const { url } = presign({ method: 'PUT', host, path: `/${bucket}/learning/creatives/${id}.json`, accessKey: R2_ACCESS_KEY_ID, secret: R2_SECRET_ACCESS_KEY, region: 'auto', amzDate, expires: 3600 });
+      const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(snap) });
+      if (!r.ok) console.warn('[apprentissage] R2 HTTP ' + r.status);
+    } catch (e) { console.warn('[apprentissage] ' + e.message); }
+  })();
+}
+const _compactApprentissage = (x, max = 20000) => { if (x == null) return null; try { const t = JSON.stringify(x); return t.length <= max ? x : t.slice(0, max); } catch (_) { return null; } };
+
+function agregerApprentissage(creatives) {
+  const comparables = creatives.filter(x => x.comparable && x.sur >= 2);
+  const poidsFiab = (f) => f === 'solide' ? 1 : f === 'moyenne' ? 0.6 : 0.3;
+  const agreger = (cle, extra) => {
+    const m = {};
+    comparables.forEach(x => {
+      const k = cle(x); if (!k) return;
+      const a = m[k] = m[k] || { cle: k, n: 0, nTop: 0, somme: 0, poids: 0, achats: 0, produits: new Set(), cibles: new Set(), ...(extra ? extra(x) : {}) };
+      const w = poidsFiab(x.fiabilite);
+      a.n++; if (x.dansLeTiersSuperieur) a.nTop++;
+      a.somme += w * Math.log(Math.max(0.25, Math.min(4, (x.indice || 100) / 100))); a.poids += w; a.achats += x.achats || 0;
+      a.produits.add(x.productId); a.cibles.add(x.productId + '|' + x.cible);
+    });
+    return Object.values(m).map(a => {
+      const indiceMoyen = Math.round(100 * Math.exp(a.somme / a.poids)), partTop = a.nTop / a.n;
+      const regle = a.n >= 4 && partTop >= 0.5 && indiceMoyen >= 110 && a.cibles.size >= 2 && a.achats >= 50;
+      const tendance = a.n >= 2 && partTop >= 0.5 && indiceMoyen >= 110;
+      return { ...a, produits: a.produits.size, cibles: a.cibles.size, indiceMoyen, partTop: Math.round(partTop * 100) / 100, statut: regle ? 'règle' : tendance ? 'tendance' : 'à confirmer' };
+    }).sort((p, q) => q.indiceMoyen - p.indiceMoyen);
+  };
+  // angle gagnant par (produit, cible) : celui qui met le plus de créatives dans le tiers supérieur, à indice moyen égal le meilleur
+  const parAngle = agreger(x => x.productId + '|' + x.cible + '|' + x.angle, x => ({ produit: x.produit, cible: x.cible, angle: x.angle }));
+  const gagnantsAngle = {};
+  parAngle.forEach(a => { const g = a.produit + '|' + a.cible; if (!gagnantsAngle[g] || a.nTop > gagnantsAngle[g].nTop || (a.nTop === gagnantsAngle[g].nTop && a.indiceMoyen > gagnantsAngle[g].indiceMoyen)) gagnantsAngle[g] = a; });
+  const anglesGagnants = Object.values(gagnantsAngle).filter(a => a.nTop >= 1 && a.indiceMoyen >= 110).map(a => ({ ...a, statut: a.n >= 2 && a.nTop >= 2 && a.achats >= 50 ? 'confirmé' : 'hypothèse' }));
+  return {
+    angles_gagnants: anglesGagnants,
+    concepts_ct: agreger(x => x.ct, x => ({ concept: x.concept })),
+    concepts_balises: agreger(x => x.concept),
+    formats: agreger(x => x.format),
+  };
+}
+
+async function carnetApprentissage() {
+  const H = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` };
+  const prods = await (await fetch(`${SUPABASE_URL_INT}/rest/v1/products?select=id,nom,creatives,deliveries`, { headers: H })).json();
+  if (!Array.isArray(prods)) throw new Error('lecture des produits impossible');
+  let galerie = { parId: {} }; try { galerie = await chargerGalerieBalisee(); } catch (_) {}
+  const creatives = [];
+  for (const p of prods) {
+    const avec = (p.creatives || []).filter(c => c && c.topPerformer && aDesChiffres(c));
+    if (!avec.length) continue;
+    const groupes = {};
+    avec.forEach(c => { const d = (p.deliveries || []).find(x => x.semaine === c.week); const k = (d && (d.cible_signature || d.cible)) || c.cible || 'cible inconnue'; (groupes[k] = groupes[k] || []).push({ c, d }); });
+    for (const [cible, membres] of Object.entries(groupes)) {
+      const sc = scoresTopPerformer(membres.map(m => m.c));
+      const classees = classerTopPerformer(membres.map(m => m.c));
+      const nTiers = Math.max(1, Math.ceil(classees.length / 3));
+      classees.forEach((c, i) => {
+        const s = sc[c.id], d = (membres.find(m => m.c.id === c.id) || {}).d, ct = c.ct || c.ctId || null, g = ct && galerie.parId[ct];
+        const st = completerStats(c.tpStats);
+        creatives.push({ produit: p.nom || p.id, productId: p.id, cible, creativeId: c.id, rang: i + 1, sur: classees.length, dansLeTiersSuperieur: classees.length >= 3 && i < nTiers, indice: s.indice, fiabilite: s.fiabilite, comparable: !!s.comparable, stats: c.tpStats, achats: Number.isFinite(st.achats) ? st.achats : null, angle: c.angle || null, ct, concept: g ? g.concept : null, format: (c.type === 'video' || c.videoUrl) ? 'video' : 'image', lot: c.week || null, hooks: (((d && d.angles) || []).find(a => a.nom === c.angle) || {}).hooks || [], url: c.videoUrl || c.imageUrl || null });
+      });
+    }
+  }
+  const statut = (x) => (!x.comparable || x.sur < 3) ? 'trop tôt (moins de 3 créatives comparables)' : (x.indice >= 120 && x.fiabilite !== 'faible') ? 'gagnante' : x.indice >= 110 ? 'candidate' : x.indice < 85 ? 'perdante' : 'dans la moyenne';
+  creatives.forEach(x => { x.statut = statut(x); });
+  // fiche complète (prompt, script, direction, hooks…) gardée à la livraison : on la joint aux créatives qui comptent
+  const R2_PUB = (process.env.R2_PUBLIC_BASE || 'https://images.adstackofficial.com').replace(/\/$/, '');
+  await Promise.all(creatives.filter(x => x.indice >= 110).slice(0, 60).map(async x => {
+    try { const r = await fetch(`${R2_PUB}/learning/creatives/${x.creativeId}.json`, { signal: AbortSignal.timeout(8000) }); if (r.ok) x.fiche = await r.json(); } catch (_) {}
+  }));
+  creatives.sort((a, b) => (b.indice || 0) - (a.indice || 0));
+  return { genere_le: new Date().toISOString(), nb_produits: prods.length, nb_creatives_chiffrees: creatives.length, creatives_gagnantes: creatives.filter(x => x.statut === 'gagnante'), creatives_candidates: creatives.filter(x => x.statut === 'candidate'), ...agregerApprentissage(creatives), toutes_les_creatives: creatives };
+}
+
 const server = http.createServer(async (req, res) => {
   // CORS — Cause profonde corrigée (save-deliverables bloqué à 100% depuis
   // www.adstackofficial.com, "Access-Control-Allow-Origin must not be the wildcard '*' when
@@ -5757,7 +5975,7 @@ if (req.method === 'POST' && req.url === '/lot/plan-auto') {
       const deliveries = pr.deliveries || [];
       const historique = deliveries.flatMap(d => (d.plan_lot && d.plan_lot.length ? d.plan_lot : (d.cts_utilises || []).map(ct => ({ ctId: ct, format: 'image' }))));
       historique.forEach((h, i) => { const c = gal.parId[h.ctId]; if (c) historique[i] = { ...h, concept: c.concept, axes: c.axes, format: c.format }; });
-      const gagn = (pr.creatives || []).filter(c => c.topPerformer && (c.ct || c.ctId)).map(c => ({ ctId: c.ct || c.ctId }));
+      const gagn = (() => { const parCible = {}; (pr.creatives || []).filter(c => c.topPerformer && (c.ct || c.ctId)).forEach(c => { const d0 = deliveries.find(x => x.semaine === c.week); const k0 = (d0 && (d0.cible_signature || d0.cible)) || c.cible || '?'; (parCible[k0] = parCible[k0] || []).push(c); }); const out = []; Object.values(parCible).forEach(g0 => { const sc0 = scoresTopPerformer(g0); g0.forEach(c => { const s0 = sc0[c.id]; if (!s0 || !s0.chiffre || !s0.comparable || (s0.score >= 1.05 && s0.fiabilite !== 'faible')) out.push({ ctId: c.ct || c.ctId }); }); }); return out; })();
       const r = PLANIF.planifierLot({ taille, angles, galerieCT: gal.cts, historique, ctGagnants: gagn, cible: maturite, hypotheseExiste: !!pr.derniere_synthese });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ...r, diagnostic: diag, maturite, galerie: { total: gal.total, balises: gal.cts.length } }));
@@ -5907,7 +6125,7 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context$/
       const semCible = new Set(deliveriesMemeCible.map(d => d.semaine));
       const tp = creativesTopPerformer.filter(c => semCible.has(c.week) && (c.ct || c.ctId));
       const sc = scoresTopPerformer(tp);
-      ctGagnants = tp.map(c => ({ ctId: c.ct || c.ctId, angle: c.angle || null, score: multiplicateurTP(c, sc) }))
+      ctGagnants = tp.filter(c => { const s2 = sc[c.id]; return !s2 || !s2.chiffre || !s2.comparable || (s2.score >= 1.05 && s2.fiabilite !== 'faible'); }).map(c => ({ ctId: c.ct || c.ctId, angle: c.angle || null, score: multiplicateurTP(c, sc) }))
         .sort((a, b) => b.score - a.score)
         .filter((x, i, arr) => arr.findIndex(y => y.ctId === x.ctId) === i)
         .slice(0, 3);
@@ -5983,103 +6201,19 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/delete-creatives
   return;
 }
 
-// ══ TOP PERFORMER — copie exacte de src/topPerformer.js (AdBoard) ══
-// Top Performer — chiffres fournis par le client + classement automatique.
-// CE FICHIER EST AUSSI COPIÉ TEL QUEL DANS serveur.js (bloc « TOP PERFORMER »), pour que le
-// classement vu par le client et l'angle gagnant calculé par le serveur soient toujours identiques.
-// Ne rien importer ici : fonctions pures uniquement.
 
-// Les chiffres que le client peut donner. Tous facultatifs. `sens` : 'haut' = plus c'est grand, mieux c'est.
-const TP_CHAMPS = [
-  { k: 'roas',     label: 'ROAS',          aide: 'ex. 2,8',            unite: '×',  sens: 'haut', poids: 3,   max: 200 },
-  { k: 'cpa',      label: 'CPA',           aide: 'en $ ou €',     unite: '',   sens: 'bas',  poids: 3,   max: 100000000 },
-  { k: 'depenses', label: 'Dépenses',      aide: 'en $ ou €',      unite: '',   sens: 'haut', poids: 1.5, max: 1000000000 },
-  { k: 'jours',    label: 'Jours actifs',  aide: 'ex. 12',             unite: 'j',  sens: 'haut', poids: 1,   max: 365, entier: true },
-  { k: 'achats',   label: 'Achats',        aide: 'nombre de ventes',   unite: '',   sens: 'haut', poids: 1,   max: 10000000, entier: true },
-  { k: 'ctr',      label: 'CTR',           aide: 'ex. 1,9',            unite: '%',  sens: 'haut', poids: 1,   max: 100 },
-];
 
-function _nombre(v) {
-  if (v === null || v === undefined || v === '') return null;
-  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/\s/g, '').replace(',', '.'));
-  return Number.isFinite(n) ? n : null;
+// GET /learning/winners — carnet d'apprentissage (créatives, angles et concepts gagnants, tous clients). RÉSERVÉ à l'administrateur (session Supabase ou clé du prospecteur). tp-v2-apprentissage
+if (req.method === 'GET' && (req.url || '').split('?')[0] === '/learning/winners') {
+  (async () => {
+    try {
+      if (!(await crmAdminOk(req))) { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'réservé à l\'administrateur' })); return; }
+      const c = await carnetApprentissage();
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(c, (k, v) => v instanceof Set ? [...v] : v, 2));
+    } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message })); }
+  })();
+  return;
 }
-
-// Nettoie ce que le client a saisi : ne garde que des nombres valides (> 0 et sous la borne).
-// Renvoie null si rien d'exploitable. Jamais d'erreur : une saisie bancale est simplement ignorée.
-function nettoyerStats(brut) {
-  if (!brut || typeof brut !== 'object') return null;
-  const out = {};
-  for (const ch of TP_CHAMPS) {
-    let n = _nombre(brut[ch.k]);
-    if (n === null || n <= 0 || n > ch.max) continue;
-    if (ch.entier) n = Math.round(n);
-    else n = Math.round(n * 1000) / 1000;
-    out[ch.k] = n;
-  }
-  if (!Object.keys(out).length) return null;
-  return out;
-}
-
-const aDesChiffres = (c) => !!(c && c.tpStats && TP_CHAMPS.some(ch => Number.isFinite(c.tpStats[ch.k])));
-
-const _borne = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
-
-// Score de chaque créative, PAR RAPPORT aux autres créatives du même groupe (même produit, même cible).
-// Pour chaque chiffre : on compare à la moyenne du groupe (1 = dans la moyenne, 2 = deux fois mieux),
-// à l'envers pour le CPA (plus bas = mieux). Puis moyenne pondérée des chiffres que la créative a donnés.
-// Une créative sans aucun chiffre n'a pas de score : elle reste au classement manuel (repli).
-function scoresTopPerformer(creatives) {
-  const liste = (creatives || []).filter(Boolean);
-  const moyennes = {};
-  for (const ch of TP_CHAMPS) {
-    const vals = liste.map(c => c.tpStats && c.tpStats[ch.k]).filter(Number.isFinite);
-    if (vals.length) moyennes[ch.k] = vals.reduce((a, b) => a + b, 0) / vals.length;
-  }
-  const res = {};
-  for (const c of liste) {
-    let somme = 0, poids = 0, n = 0;
-    for (const ch of TP_CHAMPS) {
-      const v = c.tpStats && c.tpStats[ch.k];
-      if (!Number.isFinite(v) || !moyennes[ch.k]) continue;
-      const ratio = ch.sens === 'haut' ? v / moyennes[ch.k] : moyennes[ch.k] / v;
-      somme += ch.poids * _borne(ratio, 0.25, 3);
-      poids += ch.poids; n++;
-    }
-    res[c.id] = n ? { score: somme / poids, chiffre: true, nbChiffres: n } : { score: null, chiffre: false, nbChiffres: 0 };
-  }
-  return res;
-}
-
-// Classement : d'abord les créatives chiffrées (meilleur score en tête), puis celles sans chiffres,
-// dans l'ordre manuel du client (rang 1 d'abord, sans rang à la fin).
-function classerTopPerformer(creatives) {
-  const liste = [...(creatives || [])];
-  const sc = scoresTopPerformer(liste);
-  const rang = (c) => (c.topPerformerRank ?? Infinity);
-  return liste.sort((a, b) => {
-    const A = sc[a.id], B = sc[b.id];
-    if (A.chiffre !== B.chiffre) return A.chiffre ? -1 : 1;
-    if (A.chiffre && B.chiffre && Math.abs(A.score - B.score) > 1e-9) return B.score - A.score;
-    if (A.chiffre && B.chiffre) {
-      const r = (b.tpStats.roas || 0) - (a.tpStats.roas || 0);
-      if (r) return r;
-      const d = (b.tpStats.depenses || 0) - (a.tpStats.depenses || 0);
-      if (d) return d;
-    }
-    return rang(a) - rang(b);
-  });
-}
-
-// Poids d'une créative marquée dans le calcul de l'angle gagnant (remplace le seul « rang manuel »).
-// Chiffrée : son score (0,3 à 3). Sinon : repli sur le rang manuel (rang 1 = ×2, rang 2 = ×1,5 …), neutre sans rang.
-function multiplicateurTP(c, scores) {
-  const s = scores && scores[c.id];
-  if (s && s.chiffre) return _borne(s.score, 0.3, 3);
-  return c.topPerformerRank ? (1 + 1 / c.topPerformerRank) : 1;
-}
-
-// ══ fin TOP PERFORMER ══
 
 // POST /products/:id/mark-top-performer — marque/démarque une créative comme Top Performer
 // depuis la Galerie AdBoard (v5.70 : plus de délai de 7 jours ; chiffres facultatifs).
@@ -9898,6 +10032,10 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
           // Vidéo 9:16 : AdBoard l'affiche en 4:5 dans la grille (via thumbUrl = affiche) et en 9:16 à l'ouverture.
           ...(c.videoUrl ? { type: 'video', videoUrl: c.videoUrl } : {})
         });
+        try { // tp-v2-apprentissage : fiche complète gardée côté serveur (R2), jamais renvoyée au client
+          const jb = c.job || {};
+          ecrireApprentissage(idCandidat, { id: idCandidat, productId, ticketId, generation: generationVersion, semaine: weekLabel, angle: angleCreative, angle_brut: angleBrutCreative, cible: cibleCeLot, ct: c.ct || null, ct_nom: jb.ctNom || c.ctNom || null, niveau: c.niveau || null, format: c.videoUrl ? 'video' : 'image', raison_ct: c.ctRaison || jb.raison || null, hooks: (((deliverables.copies || [])[c.angleIdx || 0]) || {}).hooks || [], prompt: c.prompt ? String(c.prompt).slice(0, 4000) : null, meta: c.meta ? String(c.meta).slice(0, 1500) : null, qa: _compactApprentissage(c.qa, 6000), video: c.videoUrl ? { direction: _compactApprentissage(jb.direction), execution: _compactApprentissage(jb.execution, 6000), ct_video_url: jb.ctVideoUrl || null, cout_usd: jb.cout_usd != null ? jb.cout_usd : null } : null, cree_le: new Date().toISOString() });
+        } catch (_) {}
         newlyPushedIndices.push(i);
       } catch(eUp) { console.error('[Deliver] Upload créative échoué :', eUp.message); }
     }
