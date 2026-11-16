@@ -22,9 +22,41 @@ const TYPES = ['video/mp4', 'video/quicktime', 'video/webm', 'image/jpeg', 'imag
 const lireCorps = (req) => new Promise((ok, ko) => { let b = ''; req.on('data', (d) => { b += d; if (b.length > 20000) { req.destroy(); ko(new Error('trop gros')) } }); req.on('end', () => ok(b)); req.on('error', ko) })
 const rep = (res, code, o) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)) }
 
+// v11 — TÉLÉCHARGEMENT DIRECT : GET /dl?u=<adresse publique du fichier>&n=<nom du fichier>. Le serveur relaie le fichier avec « Content-Disposition: attachment »
+// et le nom demandé : le navigateur (ordinateur ou mobile) l'enregistre tel quel, sans ouvrir de lien, sans le charger en mémoire, sans CORS, sans zip.
+// Seules les adresses de NOS fichiers sont relayées (Cloudflare R2 public, Supabase Storage) : ce n'est pas un relais ouvert.
+const https = require('https')
+function telechargementDirect(req, res) {
+  return new Promise((ok) => {
+    let u, nom
+    try {
+      const sp = new URL(req.url, 'http://x').searchParams
+      u = new URL(sp.get('u') || '')
+      nom = String(sp.get('n') || 'fichier').replace(/[\\/:*?"<>|\r\n]+/g, '_').trim().slice(0, 120) || 'fichier'
+    } catch (e) { rep(res, 400, { error: 'Adresse illisible' }); return ok(true) }
+    const baseHost = new URL(process.env.R2_PUBLIC_BASE || 'https://images.adstackofficial.com').host
+    const permis = u.protocol === 'https:' && (u.host === baseHost || /\.supabase\.co$/i.test(u.hostname) || /\.r2\.dev$/i.test(u.hostname)) && !u.pathname.includes('..')
+    if (!permis) { rep(res, 400, { error: 'Adresse refusée' }); return ok(true) }
+    const ascii = nom.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '')
+    const rq = https.get(u, { headers: { 'User-Agent': 'adstack-dl' } }, (up) => {
+      if (up.statusCode !== 200) { up.resume(); rep(res, 502, { error: 'Fichier introuvable (' + up.statusCode + ')' }); return ok(true) }
+      const h = { 'Content-Type': up.headers['content-type'] || 'application/octet-stream', 'Content-Disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${enc(nom)}`, 'Cache-Control': 'no-store', 'Access-Control-Expose-Headers': 'Content-Disposition' }
+      if (up.headers['content-length']) h['Content-Length'] = up.headers['content-length']
+      res.writeHead(200, h)
+      up.pipe(res)
+      up.on('end', () => ok(true))
+      up.on('error', () => { try { res.destroy() } catch (e) {} ok(true) })
+    })
+    rq.setTimeout(60000, () => rq.destroy(new Error('délai dépassé')))
+    rq.on('error', (e) => { if (!res.headersSent) rep(res, 502, { error: 'Téléchargement impossible : ' + e.message }); else { try { res.destroy() } catch (e2) {} } ok(true) })
+    res.on('close', () => { try { rq.destroy() } catch (e) {} })
+  })
+}
+
 // Retourne true si la requête a été traitée.
 async function handle(req, res) {
   const url = (req.url || '').split('?')[0]
+  if (req.method === 'GET' && url === '/dl') return telechargementDirect(req, res)
   if (req.method === 'GET' && url === '/r2/ping') {
     return rep(res, 200, { ok: !!(process.env.R2_ENDPOINT && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY), bucket: process.env.R2_BUCKET || 'adstack-images' }), true
   }
