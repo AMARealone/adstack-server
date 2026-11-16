@@ -46,6 +46,60 @@ const rep = (res, code, o) => { res.writeHead(code, { 'Content-Type': 'applicati
 // v11d — « Failed to fetch » sur une production de 12 créatives : les CT sources et les dossiers de tournage (jusqu'à 60 Mo pièce) faisaient dépasser la mémoire et le temps de Render.
 // Le zip ne contient plus que le léger (brief, marché, copies, images, vidéos finales, historiques) ; les gros fichiers sont donnés en LIENS dans le LISEZMOI. DOSSIER_LEGER=0 rend l'ancien comportement.
 const LEGER = process.env.DOSSIER_LEGER !== '0'
+// v11e — ZIP ÉCRIT SUR LE DISQUE, FICHIER PAR FICHIER. Render (512 Mo) a été tué pour mémoire (« Ran out of memory », 16 nov. 16:50) : l'ancien code gardait tous les fichiers puis le zip
+// entier en mémoire. Ici chaque fichier est téléchargé en flux vers un fichier temporaire (CRC calculé au passage), copié par blocs de 1 Mo dans le zip, puis supprimé ;
+// le zip est envoyé à R2 en flux. La mémoire utilisée reste de quelques Mo quelle que soit la taille du dossier.
+const fs = require('fs'), os = require('os'), pathM = require('path'), https = require('https')
+function crcMaj(c, b) { for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 0xff] ^ (c >>> 8); return c }
+class ZipDisque {
+  constructor(file) {
+    this.file = file; this.fd = fs.openSync(file, 'w'); this.off = 0; this.centr = []; this.n = 0
+    const now = new Date(); this.dt = (((now.getFullYear() - 1980) << 25) | ((now.getMonth() + 1) << 21) | (now.getDate() << 16) | (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) >>> 0
+  }
+  _w(b) { let o = 0; while (o < b.length) o += fs.writeSync(this.fd, b, o, b.length - o); this.off += b.length }
+  _entree(nom, crc, taille, copier) {
+    const nomB = Buffer.from(nom, 'utf8'), h = Buffer.alloc(30)
+    h.writeUInt32LE(0x04034b50, 0); h.writeUInt16LE(20, 4); h.writeUInt16LE(0x0800, 6); h.writeUInt16LE(0, 8); h.writeUInt32LE(this.dt, 10); h.writeUInt32LE(crc, 14); h.writeUInt32LE(taille, 18); h.writeUInt32LE(taille, 22); h.writeUInt16LE(nomB.length, 26); h.writeUInt16LE(0, 28)
+    const c = Buffer.alloc(46)
+    c.writeUInt32LE(0x02014b50, 0); c.writeUInt16LE(20, 4); c.writeUInt16LE(20, 6); c.writeUInt16LE(0x0800, 8); c.writeUInt16LE(0, 10); c.writeUInt32LE(this.dt, 12); c.writeUInt32LE(crc, 16); c.writeUInt32LE(taille, 20); c.writeUInt32LE(taille, 24); c.writeUInt16LE(nomB.length, 28); c.writeUInt32LE(this.off, 42)
+    this.centr.push(c, nomB)
+    this._w(h); this._w(nomB); copier(); this.n++
+  }
+  ajouterBuffer(nom, data) { this._entree(nom, (crcMaj(0xffffffff, data) ^ 0xffffffff) >>> 0, data.length, () => this._w(data)) }
+  ajouterFichier(nom, tmp, crc, taille) {
+    this._entree(nom, crc, taille, () => { const fd2 = fs.openSync(tmp, 'r'), bloc = Buffer.alloc(1 << 20); try { let r; while ((r = fs.readSync(fd2, bloc, 0, bloc.length, null)) > 0) this._w(bloc.subarray(0, r)) } finally { fs.closeSync(fd2) } })
+  }
+  fin() {
+    const cd = Buffer.concat(this.centr), e = Buffer.alloc(22), debut = this.off
+    this._w(cd); e.writeUInt32LE(0x06054b50, 0); e.writeUInt16LE(this.n, 8); e.writeUInt16LE(this.n, 10); e.writeUInt32LE(cd.length, 12); e.writeUInt32LE(debut, 16); this._w(e)
+    fs.closeSync(this.fd); return this.off
+  }
+}
+async function telechargerVersFichier(url, tmp, max = 80e6, ms = 120000) {
+  const r = await fetch(url, { signal: AbortSignal.timeout(ms) })
+  if (!r.ok) throw new Error('HTTP ' + r.status)
+  const out = fs.createWriteStream(tmp); let n = 0, c = 0xffffffff
+  try {
+    for await (const ch of r.body) { n += ch.length; if (n > max) throw new Error('trop lourd (> ' + Math.round(max / 1e6) + ' Mo)'); c = crcMaj(c, ch); if (!out.write(ch)) await new Promise((ok) => out.once('drain', ok)) }
+  } catch (e) { out.destroy(); try { fs.unlinkSync(tmp) } catch (_) {} throw e }
+  await new Promise((ok, ko) => { out.on('error', ko); out.end(ok) })
+  return { crc: (c ^ 0xffffffff) >>> 0, taille: n }
+}
+async function versR2Fichier(key, file, type) {
+  const { presign } = require('./r2_video')
+  const { R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY } = process.env
+  if (!R2_ENDPOINT || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) throw new Error('clés Cloudflare absentes côté serveur')
+  const bucket = process.env.R2_BUCKET || 'adstack-images', host = new URL(R2_ENDPOINT).host
+  const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '')
+  const { url } = presign({ method: 'PUT', host, path: `/${bucket}/${key}`, accessKey: R2_ACCESS_KEY_ID, secret: R2_SECRET_ACCESS_KEY, region: 'auto', amzDate, expires: 3600 })
+  const taille = fs.statSync(file).size
+  await new Promise((ok, ko) => {
+    const rq = https.request(url, { method: 'PUT', headers: { 'Content-Type': type, 'Content-Length': taille }, timeout: 300000 }, (rs) => { rs.resume(); rs.on('end', () => (rs.statusCode >= 200 && rs.statusCode < 300) ? ok() : ko(new Error('envoi R2 HTTP ' + rs.statusCode))) })
+    rq.on('error', ko); rq.on('timeout', () => rq.destroy(new Error('envoi R2 trop long')))
+    fs.createReadStream(file).on('error', ko).pipe(rq)
+  })
+  return (process.env.R2_PUBLIC_BASE || 'https://images.adstackofficial.com').replace(/\/$/, '') + '/' + key
+}
 const NIV = { problem: 'Problem Aware', solution: 'Solution Aware', product: 'Product Aware', most: 'Most Aware' }
 const sur = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\-]+/g, '_').replace(/_+/g, '_').slice(0, 40)
 const ext = (u, def) => (String(u || '').split('?')[0].match(/\.(png|jpe?g|webp|mp4|mov|webm|json|zip)$/i) || [, def])[1].toLowerCase()
@@ -57,14 +111,18 @@ module.exports = async function dossier(req, res) {
     const b = JSON.parse((await lire(req)) || '{}')
     const cmd = String(b.commande_id || 'sans_commande').replace(/[^\w\-]/g, '').slice(0, 60)
     const d = b.deliverables || {}, brief = b.brief || {}
-    const F = [], manques = [], liens = []
-    const ajouter = (nom, data) => F.push({ nom, data: Buffer.isBuffer(data) ? data : Buffer.from(typeof data === 'string' ? data : JSON.stringify(data, null, 2), 'utf8') })
+    const manques = [], liens = []
+    const tmpDir = fs.mkdtempSync(pathM.join(os.tmpdir(), 'dossier_')), zFile = pathM.join(tmpDir, 'dossier.zip'), Z = new ZipDisque(zFile)
+    try {
+    const ajouter = (nom, data) => Z.ajouterBuffer(nom, Buffer.isBuffer(data) ? data : Buffer.from(typeof data === 'string' ? data : JSON.stringify(data, null, 2), 'utf8'))
     let poids = 0
     const media = async (nom, url, max, quoi) => {
       if (!url || !/^https:\/\//.test(url)) return false
-      if (poids > (LEGER ? 70e6 : 100e6)) { liens.push(quoi + ' : ' + url + ' (non inclus : dossier déjà lourd)'); return false }
-      try { const buf = await telecharger(url, max); poids += buf.length; ajouter(nom, buf); return true }
+      if (poids > (LEGER ? 110e6 : 150e6)) { liens.push(quoi + ' : ' + url + ' (non inclus : dossier déjà lourd)'); return false }
+      const tmpF = pathM.join(tmpDir, 'f' + Z.n + '_' + Math.random().toString(36).slice(2, 6))
+      try { const r5 = await telechargerVersFichier(url, tmpF, max); poids += r5.taille; Z.ajouterFichier(nom, tmpF, r5.crc, r5.taille); return true }
       catch (e) { manques.push(quoi + ' — ' + e.message + ' — ' + url); return false }
+      finally { try { fs.unlinkSync(tmpF) } catch (_) {} }
     }
     // 1. brief, hypothèse, marché, plan, coûts, journal
     ajouter('01_brief/brief.json', brief)
@@ -109,12 +167,13 @@ module.exports = async function dossier(req, res) {
       '## Coûts', '```json', JSON.stringify(d.couts || {}, null, 2), '```', '',
       liens.length ? '## Liens non inclus\n' + liens.map((x) => '- ' + x).join('\n') : '', manques.length ? '\n## Éléments manquants\n' + manques.map((x) => '- ' + x).join('\n') : '',
       '', '## Contenu', '01 brief · 02 hypothèse et données marché · 03 plan, coûts, journal Factory · 04 ad copies · 05 images (image, CT utilisé, prompt, contrôle qualité) · 06 vidéos (vidéo finale, CT source, historique complet du tournage, dossier de tournage)'].join('\n')
-    F.unshift({ nom: '00_LISEZMOI.md', data: Buffer.from(md, 'utf8') })
-    const z = zip(F)
+    ajouter('00_LISEZMOI.md', md)
+    const nF = Z.n, taille = Z.fin()
     const key = `ct-video/dossiers/${sur(brief.marque || 'production')}_${cmd}_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.zip`
-    const url = await versR2(key, z, 'application/zip')
-    console.log('🗂 DOSSIER COMPLET — ' + F.length + ' fichiers, ' + Math.round(z.length / 1e6) + ' Mo, ' + Math.round((Date.now() - t0) / 1000) + ' s → ' + url)
-    return rep(res, 200, { url, fichiers: F.length, mo: Math.round(z.length / 1e5) / 10, manques, liens }), true
+    const url = await versR2Fichier(key, zFile, 'application/zip')
+    console.log('🗂 DOSSIER COMPLET — ' + nF + ' fichiers, ' + Math.round(taille / 1e6) + ' Mo, ' + Math.round((Date.now() - t0) / 1000) + ' s → ' + url)
+    return rep(res, 200, { url, fichiers: nF, mo: Math.round(taille / 1e5) / 10, manques, liens }), true
+    } finally { try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {} }
   } catch (e) { console.error('✗ dossier', e.message); return rep(res, 500, { error: e.message }), true }
 }
 module.exports.zip = zip
