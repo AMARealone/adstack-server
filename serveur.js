@@ -6529,12 +6529,137 @@ if (req.method === 'GET' && req.url.match(/^\/users\/[^/]+\/products$/)) {
 // POST /manual-deliver — envoi manuel des livrables d'une production vers un compte choisi,
 // indépendamment du ticket/de la commande d'origine. Crée le produit chez le client si besoin
 // (compte sans forfait encore pris — cas explicitement demandé).
+// ── v10c-compte-produit ─────────────────────────────────────────────────────────────────────────────────────────
+// (1) POST /production/compte-produit : crée automatiquement la fiche produit (copie de la fiche officielle de la commande,
+//     avec toutes ses variables) dans le compte choisi, ou la LIE si ce produit y existe déjà (même nom).
+// (2) POST /production/portrait-ensure + GET /production/portrait-status : portrait de la cible garanti (3 essais Gemini, état visible).
+// (3) GET /production/verifier-livraison : relit AdBoard après l'envoi (créatives, ad copies, marché, portrait, statut = compte à rebours).
+if (req.url.split('?')[0].startsWith('/production/') && ['/production/compte-produit', '/production/portrait-ensure', '/production/portrait-status', '/production/verifier-livraison'].includes(req.url.split('?')[0])) {
+  const H10 = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' };
+  const out10 = (c, o) => { res.writeHead(c, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
+  const norm10 = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const lireCorps10 = () => new Promise((ok) => { let b = ''; req.on('data', (c) => b += c); req.on('end', () => ok(b)); });
+  const route10 = req.url.split('?')[0];
+  const q10 = new URL(req.url, 'http://x').searchParams;
+  globalThis.__portraits10 = globalThis.__portraits10 || {};
+  const lirePortrait10 = async (productId) => {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=marche`, { headers: H10 });
+    if (!r.ok) throw new Error('Lecture du produit échouée : HTTP ' + r.status);
+    const m = ((await r.json())[0] || {}).marche || {};
+    return { persona: m.persona || null, url: (m.persona && m.persona.portrait_url) || null };
+  };
+  try {
+    if (route10 === '/production/compte-produit') {
+      const b = JSON.parse((await lireCorps10()) || '{}');
+      if (!b.userId) return out10(400, { error: 'userId requis' });
+      let brief = null;
+      if (b.commandeId) { const bs = await loadBriefs(b.commandeId); brief = bs.find((x) => x.id === b.commandeId) || null; }
+      const offId = brief && brief.product && brief.product.id;
+      const nomProd = (brief && ((brief.product && brief.product.nom) || brief.produit)) || b.nom || 'Produit test';
+      if (offId && brief.client && brief.client.user_id === b.userId) return out10(200, { productId: offId, lie: true, created: false, nom: nomProd, raison: 'compte du client' });
+      const rl = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?user_id=eq.${b.userId}&select=id,nom`, { headers: H10 });
+      if (!rl.ok) throw new Error('Lecture des produits du compte échouée : HTTP ' + rl.status);
+      const liste = await rl.json();
+      const trouve = liste.find((p) => norm10(p.nom) === norm10(nomProd));
+      if (trouve) return out10(200, { productId: trouve.id, lie: true, created: false, nom: trouve.nom });
+      let fiche = {};
+      if (offId) { const ro = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${offId}&select=*`, { headers: H10 }); if (ro.ok) fiche = (await ro.json())[0] || {}; }
+      const copie = { ...fiche };
+      ['id', 'user_id', 'created_at', 'updated_at'].forEach((k) => delete copie[k]);
+      Object.assign(copie, { user_id: b.userId, nom: fiche.nom || nomProd, creatives: [], deliveries: [] });
+      ['marche', 'derniere_synthese'].forEach((k) => { if (k in copie) copie[k] = null; });
+      const rc = await fetch(`${SUPABASE_URL_INT}/rest/v1/products`, { method: 'POST', headers: { ...H10, Prefer: 'return=representation' }, body: JSON.stringify(copie) });
+      const cree = await rc.json().catch(() => null);
+      if (!rc.ok || !cree || !cree[0] || !cree[0].id) throw new Error('Création de la fiche produit échouée : ' + JSON.stringify(cree).slice(0, 240));
+      return out10(200, { productId: cree[0].id, lie: false, created: true, nom: copie.nom, champs: Object.keys(copie).length, copie_officielle: !!offId });
+    }
+    if (route10 === '/production/portrait-ensure') {
+      const b = JSON.parse((await lireCorps10()) || '{}');
+      if (!b.productId && b.commandeId) { const bs0 = await loadBriefs(b.commandeId); const br0 = bs0.find((x) => x.id === b.commandeId); b.productId = br0 && br0.product && br0.product.id; }
+      if (!b.productId) return out10(400, { error: 'productId ou commandeId requis' });
+      const { persona, url } = await lirePortrait10(b.productId);
+      if (!persona || !persona.nom) return out10(200, { etat: 'sans_persona', raison: 'pas de portrait de cible dans les données marché de ce produit' });
+      if (url) return out10(200, { etat: 'pret', url });
+      const st = globalThis.__portraits10[b.productId];
+      if (st && st.etat === 'en_cours' && Date.now() - st.debut < 6 * 60000) return out10(200, { etat: 'en_cours' });
+      globalThis.__portraits10[b.productId] = { etat: 'en_cours', debut: Date.now() };
+      (async () => {
+        let err = '';
+        for (let t = 0; t < 3; t++) {
+          try {
+            const { base64, mime } = await genererPortraitPersona(persona);
+            const slug = (persona.nom || 'persona').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_').slice(0, 30);
+            const url2 = await uploadPortraitPersona(base64, mime, `${slug}_${Date.now()}`);
+            const cur = await lirePortrait10(b.productId);
+            const rm = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${b.productId}&select=marche`, { headers: H10 });
+            const marcheActuel = ((await rm.json())[0] || {}).marche || {};
+            const rp = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${b.productId}`, { method: 'PATCH', headers: { ...H10, Prefer: 'return=minimal' }, body: JSON.stringify({ marche: { ...marcheActuel, persona: { ...(marcheActuel.persona || cur.persona), portrait_url: url2 } } }) });
+            if (!rp.ok) throw new Error('écriture du portrait échouée : HTTP ' + rp.status);
+            globalThis.__portraits10[b.productId] = { etat: 'pret', url: url2 };
+            console.log('[Portrait] ✅ garanti pour ' + b.productId + ' → ' + url2);
+            return;
+          } catch (e) { err = String(e.message || e); console.error('[Portrait] essai ' + (t + 1) + '/3 échoué : ' + err.slice(0, 200)); await new Promise((r) => setTimeout(r, 15000 * (t + 1))); }
+        }
+        globalThis.__portraits10[b.productId] = { etat: 'echec', erreur: err.slice(0, 300) };
+      })();
+      return out10(200, { etat: 'en_cours' });
+    }
+    if (route10 === '/production/portrait-status') {
+      let productId = q10.get('productId');
+      if (!productId && q10.get('commandeId')) { const bs0 = await loadBriefs(q10.get('commandeId')); const br0 = bs0.find((x) => x.id === q10.get('commandeId')); productId = br0 && br0.product && br0.product.id; }
+      if (!productId) return out10(400, { error: 'productId ou commandeId requis' });
+      const { url } = await lirePortrait10(productId);
+      if (url) return out10(200, { etat: 'pret', url });
+      const st = globalThis.__portraits10[productId];
+      return out10(200, st ? { etat: st.etat, erreur: st.erreur || null } : { etat: 'inconnu' });
+    }
+    if (route10 === '/production/verifier-livraison') {
+      const cmd = q10.get('commande'); if (!cmd) return out10(400, { error: 'commande requise' });
+      const bs = await loadBriefs(cmd); const brief = bs.find((x) => x.id === cmd);
+      if (!brief) return out10(404, { error: 'commande introuvable' });
+      const productId = q10.get('product') || (brief.product && brief.product.id);
+      const probleme = [];
+      const dl = brief.deliverables || {};
+      const attCrea = (dl.creatives || []).filter((c) => c && (c.url || c.imgB64 || c.videoUrl)).length;
+      const attVid = (dl.creatives || []).filter((c) => c && c.videoUrl).length;
+      const attCopies = (dl.copies || []).filter(Boolean).length;
+      // statut côté client = ce qui fait disparaître le compte à rebours
+      const rb = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${cmd}&select=status,done_at`, { headers: H10 });
+      const rowB = rb.ok ? ((await rb.json())[0] || {}) : {};
+      const aLeClient = q10.get('client') === '1';
+      let statut = rowB.status || null, repare = false;
+      if (aLeClient && statut !== 'done' && q10.get('reparer') === '1') {
+        const rr = await fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?id=eq.${cmd}`, { method: 'PATCH', headers: { ...H10, Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'done', done_at: new Date().toISOString() }) });
+        if (rr.ok) { statut = 'done'; repare = true; }
+      }
+      if (aLeClient && statut !== 'done') probleme.push('le statut de la commande n\'est pas « livrée » chez le client : le compte à rebours reste affiché');
+      const rp = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}&select=creatives,deliveries,marche`, { headers: H10 });
+      if (!rp.ok) throw new Error('Lecture du produit échouée : HTTP ' + rp.status);
+      const p = (await rp.json())[0];
+      if (!p) throw new Error('produit introuvable');
+      const mesCrea = (p.creatives || []).filter((c) => c.id && c.id.startsWith(cmd + '_'));
+      const nVid = mesCrea.filter((c) => c.type === 'video' || c.videoUrl).length;
+      const livr = (p.deliveries || []).find((d) => d.ticketId === cmd);
+      const nCopies = livr && Array.isArray(livr.angles) ? livr.angles.filter((a) => (a.hooks || []).length && a.description).length : 0;
+      if (mesCrea.length < attCrea) probleme.push(`créatives : ${mesCrea.length}/${attCrea} présentes`);
+      if (nVid < attVid) probleme.push(`vidéos : ${nVid}/${attVid} présentes`);
+      if (nCopies < attCopies) probleme.push(`ad copies : ${nCopies}/${attCopies} complètes`);
+      if (!p.marche) probleme.push('données marché absentes');
+      const sansImage = mesCrea.filter((c) => !(c.imageUrl || c.videoUrl)).length;
+      if (sansImage) probleme.push(`${sansImage} créative(s) sans fichier`);
+      const portrait = !!(p.marche && p.marche.persona && p.marche.persona.portrait_url);
+      return out10(200, { ok: probleme.length === 0, probleme, creatives: mesCrea.length, attendu: attCrea, videos: nVid, copies: nCopies, copiesAttendues: attCopies, marche: !!p.marche, portrait, statut, repare });
+    }
+  } catch (e) { return out10(500, { error: e.message }); }
+}
+// ── fin v10c-compte-produit ─────────────────────────────────────────────────────────────────────────────────────
+
 if (req.method === 'POST' && req.url === '/manual-deliver') {
   let body = '';
   req.on('data', c => body += c);
   req.on('end', async () => {
     try {
-      const { userId, productId, newProductName, deliverables, ticketId } = JSON.parse(body);
+      const { userId, productId, newProductName, deliverables, ticketId, remplacer } = JSON.parse(body); // v10c-remplacer
       if (!userId || !deliverables) { res.writeHead(400); res.end(JSON.stringify({error:'userId et deliverables requis'})); return; }
 
       let targetProductId = productId;
@@ -6568,6 +6693,19 @@ if (req.method === 'POST' && req.url === '/manual-deliver') {
           if (briefTrouve?.generation_version) generationVersion = briefTrouve.generation_version;
         } catch(eVer) { console.warn('[manual-deliver] Lecture generation_version échouée, repli sur 1 :', eVer.message); }
       }
+      // v10c — renvoi : ce qui a changé remplace l'ancien (même id), sinon un renvoi ne mettait rien à jour
+      if (remplacer && ticketId) {
+        const hd = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' };
+        const rl = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${targetProductId}&select=creatives,deliveries`, { headers: hd });
+        if (!rl.ok) throw new Error('Lecture du produit échouée avant remplacement : HTTP ' + rl.status);
+        const row = (await rl.json())[0] || {};
+        const ids = new Set();
+        (deliverables.creatives || []).forEach((c, i) => { if (c && (c.url || c.imgB64 || c.videoUrl)) ids.add(`${ticketId}_g${generationVersion}_${i}`); });
+        const patch = { creatives: (row.creatives || []).filter(c => !ids.has(c.id)) };
+        if (remplacer === 'tout') patch.deliveries = (row.deliveries || []).filter(d => d.ticketId !== ticketId);
+        const rp = await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${targetProductId}`, { method: 'PATCH', headers: hd, body: JSON.stringify(patch) });
+        if (!rp.ok) throw new Error('Remplacement des anciens livrables échoué : HTTP ' + rp.status);
+      }
       const pushResult = await pushDeliverablesToProduct(targetProductId, ticketId || ('manuel-' + Date.now()), deliverables, new Set(), false, null, null, null, generationVersion);
 
       // Cause profonde corrigée (portrait persona jamais généré via "Envoyer à un autre
@@ -6586,8 +6724,9 @@ if (req.method === 'POST' && req.url === '/manual-deliver') {
         type: 'brief',
       });
 
+      if (!pushResult || pushResult.patchOk === false) { res.writeHead(500, {'Content-Type':'application/json'}); res.end(JSON.stringify({ ok: false, error: 'Écriture dans AdBoard échouée' + (pushResult && pushResult.error ? ' : ' + pushResult.error : ''), push: pushResult || null })); return; }
       res.writeHead(200, {'Content-Type':'application/json'});
-      res.end(JSON.stringify({ ok: true, productId: targetProductId }));
+      res.end(JSON.stringify({ ok: true, productId: targetProductId, push: { expectedCount: pushResult.expectedCount, pushedCount: pushResult.pushedCount, adCopiesOk: pushResult.adCopiesOk, adCopiesCount: pushResult.adCopiesCount, adCopiesAttendu: pushResult.adCopiesAttendu, marcheOk: pushResult.marcheOk } }));
     } catch(e) {
       res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
     }
