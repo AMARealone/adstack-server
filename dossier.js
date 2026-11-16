@@ -43,6 +43,9 @@ async function versR2(key, buf, type) {
 }
 const lire = (req, max = 60e6) => new Promise((ok, ko) => { const ch = []; let n = 0; req.on('data', (d) => { n += d.length; if (n > max) { req.destroy(); ko(new Error('corps trop gros')) } else ch.push(d) }); req.on('end', () => ok(Buffer.concat(ch).toString('utf8'))); req.on('error', ko) })
 const rep = (res, code, o) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)) }
+// v11d — « Failed to fetch » sur une production de 12 créatives : les CT sources et les dossiers de tournage (jusqu'à 60 Mo pièce) faisaient dépasser la mémoire et le temps de Render.
+// Le zip ne contient plus que le léger (brief, marché, copies, images, vidéos finales, historiques) ; les gros fichiers sont donnés en LIENS dans le LISEZMOI. DOSSIER_LEGER=0 rend l'ancien comportement.
+const LEGER = process.env.DOSSIER_LEGER !== '0'
 const NIV = { problem: 'Problem Aware', solution: 'Solution Aware', product: 'Product Aware', most: 'Most Aware' }
 const sur = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\-]+/g, '_').replace(/_+/g, '_').slice(0, 40)
 const ext = (u, def) => (String(u || '').split('?')[0].match(/\.(png|jpe?g|webp|mp4|mov|webm|json|zip)$/i) || [, def])[1].toLowerCase()
@@ -59,7 +62,7 @@ module.exports = async function dossier(req, res) {
     let poids = 0
     const media = async (nom, url, max, quoi) => {
       if (!url || !/^https:\/\//.test(url)) return false
-      if (poids > 100e6) { liens.push(quoi + ' : ' + url + ' (non inclus : dossier déjà lourd)'); return false }
+      if (poids > (LEGER ? 70e6 : 100e6)) { liens.push(quoi + ' : ' + url + ' (non inclus : dossier déjà lourd)'); return false }
       try { const buf = await telecharger(url, max); poids += buf.length; ajouter(nom, buf); return true }
       catch (e) { manques.push(quoi + ' — ' + e.message + ' — ' + url); return false }
     }
@@ -85,8 +88,8 @@ module.exports = async function dossier(req, res) {
         if (j.journal && j.journal.length) ajouter(base + '/journal_machine.txt', j.journal.map((x) => typeof x === 'string' ? x : JSON.stringify(x)).join('\n'))
         await media(base + '/video_finale.' + ext(c.videoUrl, 'mp4'), c.videoUrl, 120e6, 'vidéo angle ' + a)
         await media(base + '/historique_production.json', j.historiqueUrl, 60e6, 'historique vidéo angle ' + a)
-        await media(base + '/ct_source.' + ext(j.ctVideoUrl, 'mp4'), j.ctVideoUrl, 60e6, 'CT source vidéo angle ' + a)
-        if (j.dossierUrl) { if (!(await media(base + '/dossier_tournage.zip', j.dossierUrl, 60e6, 'dossier de tournage angle ' + a))) liens.push('dossier de tournage angle ' + a + ' : ' + j.dossierUrl) }
+        if (LEGER) { if (j.ctVideoUrl) liens.push('CT source vidéo angle ' + a + ' : ' + j.ctVideoUrl) } else await media(base + '/ct_source.' + ext(j.ctVideoUrl, 'mp4'), j.ctVideoUrl, 60e6, 'CT source vidéo angle ' + a)
+        if (j.dossierUrl) { if (LEGER) liens.push('dossier de tournage angle ' + a + ' : ' + j.dossierUrl); else if (!(await media(base + '/dossier_tournage.zip', j.dossierUrl, 60e6, 'dossier de tournage angle ' + a))) liens.push('dossier de tournage angle ' + a + ' : ' + j.dossierUrl) }
         lignes.push(`| ${a} | vidéo | ${niv} | ${j.ctNom || c.ct || '—'} | ${j.etat || (c.videoUrl ? 'prête' : '—')} | ${j.cout_usd != null ? Number(j.cout_usd).toFixed(2) + ' $' : '—'} | — |`)
       } else {
         const base = `05_images/angle${a}_${sur(niv)}_${i + 1}`
