@@ -51,6 +51,7 @@ RÉPONSE : uniquement un objet JSON, sans texte autour :
 
 async function handle(req, res, deps) {
   const url = (req.url || '').split('?')[0]
+  if (url === '/production/dossier') return require('./dossier')(req, res)
   if (url === '/creative-prod-v10' || url === '/creative-qa') return require('./creative_v10')(req, res, deps)
   if (!url.startsWith('/video-jobs/') && url !== '/video/select-cts') return false
   try {
