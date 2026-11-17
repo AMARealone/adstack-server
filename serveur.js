@@ -5004,12 +5004,12 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         const _ppp = {}; _retenus.forEach(m => { const v = String(_pppBrut[m] || '').trim(); if (v) _ppp[m] = v.slice(0, 160); });
         // Voix en langue locale (option FACULTATIVE du client) : valable seulement pour UN SEUL marché retenu qui a une langue
         // locale connue. Sinon (ou sans demande) la voix reste dans la langue du marché. Les sous-titres restent dans la langue du marché.
-        const _lgLoc = _retenus.length === 1 ? langueLocaleMarche(_retenus[0]) : null;
+        const _lgLoc = (LANGUE_LOCALE_CLIENT && _retenus.length === 1) ? langueLocaleMarche(_retenus[0]) : null;
         const _infoM = _retenus.length === 1 ? infoMarche(_retenus[0]) : null;
         const _langueVoix = (data.product.langue_locale && _lgLoc)
           ? { active: true, code: _lgLoc.c, nom: _lgLoc.n, marche: _retenus[0], langue_sous_titres: (_infoM && _infoM.l) || 'fr' }
           : { active: false };
-        if (data.product.langue_locale && !_langueVoix.active) console.log('[Brief] ⚠ voix en langue locale demandée mais ignorée (marchés retenus : ' + _retenus.join(', ') + ')');
+        if (data.product.langue_locale && !_langueVoix.active) console.log('[Brief] ⚠ voix en langue locale demandée mais ignorée (' + (LANGUE_LOCALE_CLIENT ? 'marchés retenus : ' + _retenus.join(', ') : 'option coupée') + ')');
         else if (_langueVoix.active) console.log('[Brief] voix en langue locale : ' + _langueVoix.nom + ' (' + _langueVoix.code + ') — sous-titres : ' + _langueVoix.langue_sous_titres);
         if (_am.ecartes.length) console.log('[Brief] ⚠ marchés incompatibles écartés : ' + _am.ecartes.map(e => e.nom + ' (' + e.raison + ')').join(' ; '));
         const brief = {
@@ -9082,6 +9082,9 @@ const MARCHES_LANGUE_LOCALE = {
   'tunisie':{c:'aeb',n:'arabe tunisien'}, 'mauritanie':{c:'mey',n:'hassanya'},
 };
 const langueLocaleMarche = (nom) => MARCHES_LANGUE_LOCALE[_cleMarche(nom)] || null;
+// langue-locale-coupee-v1 — Option RETIRÉE d'AdBoard le 17 nov. 2026 (qualité vidéo à valider d'abord). Coupée ici aussi : aucun brief ne demande plus une voix en langue locale.
+// Pour la rallumer après tests : variable d'environnement LANGUE_LOCALE_CLIENT=1 (Render) ET case rétablie côté AdBoard.
+const LANGUE_LOCALE_CLIENT = process.env.LANGUE_LOCALE_CLIENT === '1';
 // L'option n'existe que pour un produit à UN SEUL marché (plusieurs marchés = plusieurs langues : voix dans la langue du marché).
 // Classe de compatibilité : deux marchés de même classe peuvent partager une demande.
 const classeMarche = (nom) => { const i = infoMarche(nom); if (!i) return 'inconnu'; return i.mixte ? 'mixte:' + _cleMarche(nom) : i.l + '|' + i.a; };
