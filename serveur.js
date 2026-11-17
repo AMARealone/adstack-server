@@ -1753,7 +1753,7 @@ const APPR_DEFAUTS = {
   produit_double: { lib: 'Élément en double, qui apparaît ou disparaît (bouchon, boîte)', consigne: "aucun changement d'état du produit à l'écran (ouverture, bouchon, rotation) : il est déjà dans son état d'usage dès la première image" },
   texte_faux: { lib: 'Texte, marque ou orthographe faux', consigne: "aucun texte inventé : marque, prix et offre exactement tels que fournis, orthographe et accents vérifiés" },
   visage: { lib: 'Visage ou expression bizarre', consigne: "visages calmes et naturels, petites expressions, aucun sourire exagéré ; même personne d'un plan à l'autre" },
-  geste: { lib: 'Geste ou mouvement irréel', consigne: "une seule action lente par plan, gestes simples et réalistes, mains stables" },
+  geste: { lib: 'Geste ou mouvement irréel', consigne: "une seule action lente par plan, gestes simples et réalistes, mains stables ; le produit lui-même bouge peu : tenu, présenté ou incliné doucement, jamais de rotation rapide, de lancer, de lévitation, d'ouverture ou de transformation ; garder un mouvement vivant, mais jamais risqué pour le rendu" }, // geste-produit-v1
   coupe: { lib: 'Coupe ou transition gênante (fantôme, saut)', consigne: "coupes nettes, cadrage différent d'un plan à l'autre, aucun fondu" },
   texte_chevauche: { lib: 'Textes ou sous-titres qui se chevauchent ou sortent du cadre', consigne: "un seul texte à la fois par zone, rien dans les marges de sécurité" },
   voix: { lib: 'Voix, accent ou son', consigne: "voix naturelle, débit calme, accent cohérent avec la cible, aucune voix mécanique" },
