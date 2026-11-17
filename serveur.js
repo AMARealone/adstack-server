@@ -1451,6 +1451,238 @@ async function crmAdminOk(req) {
 }
 
 
+// ── finance-phase1-v1 — pilotage financier automatique, en DOLLARS (bloc inséré dans serveur.js) ──
+// Sources : api_usage_log (Vertex + prospecteur), couts_externes (ScrapeCreators, Vision, SMS, moteur vidéo), transactions (ventes Chariow),
+// finance_couts_fixes (abonnements, au prorata des jours), finance_depenses (ponctuelles). Tables créées par finance_phase1.sql ; tant qu'une table manque, le serveur le dit et continue.
+const FIN_DEFAUTS = { prix_credit_scrapecreators_usd: 0.00188, prix_vision_web_usd: 0.0035, prix_sms_usd: 0.04, commission_chariow_pct: 15 };
+const _finEnTetes = (extra) => Object.assign({ apikey: SUPABASE_SERVICE_KEY, Authorization: 'Bearer ' + SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' }, extra || {});
+const _finRest = (chemin) => SUPABASE_URL_INT + '/rest/v1/' + chemin;
+const _finAvertis = {};
+function _finAvertir(table, code) { if (_finAvertis[table]) return; _finAvertis[table] = true; console.log('   ⚠ finance : table ' + table + ' absente ou illisible (HTTP ' + code + ') — exécuter finance_phase1.sql une fois dans Supabase'); }
+const _finJ = (s) => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) / 86400000;      // numéro de jour (UTC)
+const _finDate = (j) => new Date(j * 86400000).toISOString().slice(0, 10);
+const _finR = (v) => Math.round((Number(v) || 0) * 1e4) / 1e4;
+const _finDateOk = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(_finJ(s)) && _finDate(_finJ(s)) === s;
+
+// Lecture paginée d'une table (1000 lignes par page). Table absente → { absente: true } sans erreur.
+async function _finLire(table, requete, max) {
+  max = max || 50000; const out = [];
+  for (let off = 0; off < max; off += 1000) {
+    let r;
+    try { r = await fetch(_finRest(table + '?' + requete + '&limit=1000&offset=' + off), { headers: _finEnTetes() }); }
+    catch (e) { return { rows: out, absente: out.length === 0, erreur: e.message }; }
+    if (!r.ok) { if (off === 0) { _finAvertir(table, r.status); return { rows: [], absente: true, http: r.status }; } return { rows: out, absente: false, tronque: true }; }
+    const rows = await r.json(); if (!Array.isArray(rows)) break;
+    for (const x of rows) out.push(x);
+    if (rows.length < 1000) return { rows: out, absente: false };
+  }
+  return { rows: out, absente: false, tronque: true };
+}
+
+let _finParamsCache = { t: 0, v: null };
+async function _finParams(force) {
+  if (!force && _finParamsCache.v && Date.now() - _finParamsCache.t < 60000) return _finParamsCache.v;
+  const valeurs = Object.assign({}, FIN_DEFAUTS), source = {};
+  Object.keys(FIN_DEFAUTS).forEach(k => { source[k] = 'défaut'; });
+  const l = await _finLire('finance_parametres', 'select=cle,valeur&order=cle.asc', 1000);
+  (l.rows || []).forEach(r => { if (r.valeur !== null && r.valeur !== undefined && isFinite(Number(r.valeur))) { valeurs[r.cle] = Number(r.valeur); source[r.cle] = 'saisi'; } });
+  _finParamsCache = { t: Date.now(), v: { valeurs, source, table_absente: l.absente } };
+  return _finParamsCache.v;
+}
+let _finTauxCache = { t: 0, v: 0 };
+async function _finTaux(params) {
+  const force = Number(params && params.valeurs && params.valeurs.taux_xof_par_usd);
+  if (force > 0) return { xof_par_usd: force, source: 'saisi' };
+  if (_finTauxCache.v && Date.now() - _finTauxCache.t < 6 * 3600 * 1000) return { xof_par_usd: _finTauxCache.v, source: 'marché' };
+  try {
+    const r = await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json', { signal: AbortSignal.timeout(6000) });
+    const d = await r.json(); const v = d && d.usd && d.usd.xof;
+    if (v > 300 && v < 1200) { _finTauxCache = { t: Date.now(), v }; return { xof_par_usd: v, source: 'marché' }; }
+  } catch (_) { /* repli ci-dessous */ }
+  return { xof_par_usd: _finTauxCache.v || 600, source: _finTauxCache.v ? 'marché (ancien)' : 'repli 600' };
+}
+
+// ── Enregistrement automatique d'un coût hors Vertex. Jamais bloquant : une erreur ici ne casse jamais la génération en cours. ──
+function noterCoutExterne(o) {
+  try {
+    const cout = Number(o && o.cout_usd); if (!(cout > 0)) return;
+    const ligne = { fournisseur: String(o.fournisseur || 'autre').slice(0, 40), origine: String(o.origine || 'autre').slice(0, 20), unites: (o.unites === undefined || o.unites === null) ? null : Number(o.unites),
+      cout_usd: Math.round(cout * 1e6) / 1e6, detail: o.detail ? String(o.detail).slice(0, 300) : null, ref: o.ref ? String(o.ref).slice(0, 200) : null };
+    fetch(_finRest('couts_externes' + (ligne.ref ? '?on_conflict=ref' : '')), { method: 'POST', headers: _finEnTetes({ Prefer: ligne.ref ? 'resolution=merge-duplicates,return=minimal' : 'return=minimal' }), body: JSON.stringify(ligne) })
+      .then(r => { if (!r.ok) _finAvertir('couts_externes', r.status); }).catch(() => {});
+  } catch (e) { /* jamais bloquant */ }
+}
+function _finNoterScrapeCreators(compteur, detail) {
+  (async () => { const cr = compteur && Number(compteur.credits); if (!(cr > 0)) return; const p = await _finParams();
+    noterCoutExterne({ fournisseur: 'scrapecreators', origine: 'factory', unites: cr, cout_usd: cr * p.valeurs.prix_credit_scrapecreators_usd, detail: detail || 'balayage du marché' }); })().catch(() => {});
+}
+function _finNoterVision(origine) {
+  (async () => { const p = await _finParams();
+    noterCoutExterne({ fournisseur: 'google_vision', origine: origine || 'factory', unites: 1, cout_usd: p.valeurs.prix_vision_web_usd, detail: 'recherche inversée de photo · tarif public (Google offre les 1 000 premiers appels du mois)' }); })().catch(() => {});
+}
+function _finNoterSms(recipient, template) {
+  try {
+    if (!recipient || !recipient.cost || !/^(Success|Sent)/i.test(String(recipient.status || ''))) return;
+    const m = String(recipient.cost).match(/^\s*([A-Za-z]{3})\s+([0-9]+(?:\.[0-9]+)?)/); if (!m) return;
+    const dev = m[1].toUpperCase(), mt = parseFloat(m[2]); if (!(mt > 0)) return;
+    (async () => {
+      const p = await _finParams(); let usd, note = '';
+      if (dev === 'USD') usd = mt;
+      else if (dev === 'XOF') usd = mt / (await _finTaux(p)).xof_par_usd;
+      else { usd = p.valeurs.prix_sms_usd; note = ' · devise ' + dev + ' non convertie : tarif moyen appliqué'; }
+      noterCoutExterne({ fournisseur: 'africastalking_sms', origine: 'prospecteur', unites: 1, cout_usd: usd, detail: String(template || 'sms') + ' · ' + recipient.cost + note });
+    })().catch(() => {});
+  } catch (e) { /* jamais bloquant */ }
+}
+// Coût réel de chaque vidéo : le moteur vidéo le renvoie dans job.cout_usd ; relevé à chaque sauvegarde de la commande, une ligne par exécution (la valeur la plus récente remplace la précédente, jamais de doublon).
+function _finNoterVideos(commandeId, d) {
+  try {
+    const lignes = [];
+    ((d && d.creatives) || []).forEach((c, i) => {
+      const j = c && c.job; if (!j || !j.execution) return;
+      const usd = Number(j.cout_usd); if (!(usd > 0)) return;
+      lignes.push({ fournisseur: 'moteur_video', origine: 'factory', unites: 1, cout_usd: Math.round(usd * 1e6) / 1e6, detail: 'commande ' + String(commandeId).slice(0, 8) + ' · créative ' + (i + 1) + ' · ' + (j.etat || '?'), ref: 'video:' + commandeId + ':' + j.execution });
+    });
+    if (!lignes.length) return;
+    fetch(_finRest('couts_externes?on_conflict=ref'), { method: 'POST', headers: _finEnTetes({ Prefer: 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify(lignes) })
+      .then(r => { if (!r.ok) _finAvertir('couts_externes', r.status); }).catch(() => {});
+  } catch (e) { /* jamais bloquant */ }
+}
+
+// Origine d'un appel Vertex (déduite du nom de l'appel ; « autre » liste ce qui reste à classer).
+function _finOrigine(source, type) {
+  source = String(source || ''); type = String(type || '');
+  if (source === 'prospecteur') return 'prospecteur';
+  if (/^demo|_demo$/.test(type) || source === 'demo') return 'adboard';
+  if (/^(fetch_product_info|persona_portrait)$/.test(type)) return 'adboard';
+  if (source === 'production' || source === 'agent_test') return 'factory';
+  if (/^(analyste|trends_|copywriter|creative_|selection_ct|assemblage_|verification_|analyse_photo|background_removal|apparence_cible|lecture_capture|lecture_document|photo|generation_image|aspects)/.test(type)) return 'factory';
+  return 'autre';
+}
+const FIN_ORIGINES = ['factory', 'adboard', 'adstats', 'prospecteur', 'autre'];
+
+// ── Le calcul : revenu net, coûts variables par origine, coûts fixes au prorata, profit, marges, tendance, fuites. ──
+async function calculerFinance(du, au, avecTendance) {
+  const params = await _finParams(), P = params.valeurs, taux = await _finTaux(params), T = taux.xof_par_usd;
+  const jDu = _finJ(du), jAu = _finJ(au), nbJours = jAu - jDu + 1;
+  const fen = 'created_at=gte.' + du + 'T00:00:00Z&created_at=lt.' + _finDate(jAu + 1) + 'T00:00:00Z';
+  const [tx, api, ext, fixes, dep] = await Promise.all([
+    _finLire('transactions', 'select=montant_fcfa,commission_chariow_fcfa,montant_net_fcfa,plan,created_at&' + fen + '&order=created_at.asc'),
+    _finLire('api_usage_log', 'select=source,type_appel,cout_usd,created_at&' + fen + '&order=created_at.asc'),
+    _finLire('couts_externes', 'select=fournisseur,origine,unites,cout_usd,detail,created_at&' + fen + '&order=created_at.asc'),
+    _finLire('finance_couts_fixes', 'select=*&order=id.asc', 1000),
+    _finLire('finance_depenses', 'select=*&date=gte.' + du + '&date=lte.' + au + '&order=date.asc', 5000),
+  ]);
+  const pas = nbJours <= 400 ? 1 : 7, nbSeaux = Math.ceil(nbJours / pas);
+  const serie = []; for (let k = 0; k < nbSeaux; k++) serie.push({ date: _finDate(jDu + k * pas), revenu_net_usd: 0, variable_usd: 0, fixe_usd: 0, ponctuel_usd: 0 });
+  const seau = (iso) => { const k = Math.floor((_finJ(String(iso).slice(0, 10)) - jDu) / pas); return serie[Math.max(0, Math.min(nbSeaux - 1, k))]; };
+
+  // Revenus
+  let brutF = 0, commF = 0, netF = 0; const parPlan = {};
+  tx.rows.forEach(t => {
+    const brut = Number(t.montant_fcfa) || 0;
+    const comm = (t.commission_chariow_fcfa === null || t.commission_chariow_fcfa === undefined) ? brut * P.commission_chariow_pct / 100 : (Number(t.commission_chariow_fcfa) || 0);
+    const net = (t.montant_net_fcfa === null || t.montant_net_fcfa === undefined) ? brut - comm : (Number(t.montant_net_fcfa) || 0);
+    brutF += brut; commF += comm; netF += net;
+    const k = t.plan || 'inconnu'; parPlan[k] = parPlan[k] || { ventes: 0, net_usd: 0 }; parPlan[k].ventes++; parPlan[k].net_usd += net / T;
+    seau(t.created_at).revenu_net_usd += net / T;
+  });
+  const revenu = { brut_usd: _finR(brutF / T), commission_usd: _finR(commF / T), net_usd: _finR(netF / T), nb_ventes: tx.rows.length, net_par_vente_usd: tx.rows.length ? _finR(netF / T / tx.rows.length) : 0,
+    par_plan: Object.keys(parPlan).map(k => ({ plan: k, ventes: parPlan[k].ventes, net_usd: _finR(parPlan[k].net_usd) })).sort((a, b) => b.net_usd - a.net_usd) };
+
+  // Coûts variables
+  const parOrigine = {}; FIN_ORIGINES.forEach(o => { parOrigine[o] = 0; });
+  const parNature = {}, parType = {}, parFournisseur = {}, autreTypes = {}; let variable = 0;
+  api.rows.forEach(r => {
+    const u = Number(r.cout_usd) || 0, o = _finOrigine(r.source, r.type_appel);
+    variable += u; parOrigine[o] += u; seau(r.created_at).variable_usd += u;
+    const n = r.source || 'autre'; parNature[n] = (parNature[n] || 0) + u;
+    const t = r.type_appel || '—'; parType[t] = (parType[t] || 0) + u; if (o === 'autre') autreTypes[t] = (autreTypes[t] || 0) + u;
+  });
+  ext.rows.forEach(r => {
+    const u = Number(r.cout_usd) || 0, o = FIN_ORIGINES.indexOf(r.origine) >= 0 ? r.origine : 'autre';
+    variable += u; parOrigine[o] += u; seau(r.created_at).variable_usd += u;
+    const f = r.fournisseur || 'autre'; parFournisseur[f] = parFournisseur[f] || { usd: 0, unites: 0, appels: 0 }; parFournisseur[f].usd += u; parFournisseur[f].unites += Number(r.unites) || 0; parFournisseur[f].appels++;
+  });
+
+  // Coûts fixes (au prorata des jours : mensuel × 12 / 365 par jour) et dépenses ponctuelles
+  let fixesTotal = 0; const lignesFixes = [], configFixes = [];
+  fixes.rows.forEach(l => {
+    const mt = Number(l.montant) || 0, usdMois = (l.devise === 'XOF' ? mt / T : mt) / (l.periodicite === 'annuel' ? 12 : 1), parJour = usdMois * 12 / 365;
+    const debut = l.date_debut && _finDateOk(l.date_debut) ? _finJ(l.date_debut) : jDu, fin = l.date_fin && _finDateOk(l.date_fin) ? _finJ(l.date_fin) : jAu;
+    const a = Math.max(jDu, debut), b = Math.min(jAu, fin), jours = l.actif ? Math.max(0, b - a + 1) : 0;
+    let sous = 0;
+    if (jours > 0) for (let j = a; j <= b; j++) { sous += parJour; seau(_finDate(j)).fixe_usd += parJour; }
+    fixesTotal += sous;
+    configFixes.push({ id: l.id, nom: l.nom, categorie: l.categorie, montant: Number(l.montant), devise: l.devise, periodicite: l.periodicite, actif: !!l.actif, date_debut: l.date_debut, date_fin: l.date_fin, note: l.note, mensuel_usd: _finR(usdMois) });
+    if (l.actif) lignesFixes.push({ nom: l.nom, mensuel_usd: _finR(usdMois), jours, periode_usd: _finR(sous) });
+  });
+  let ponctuel = 0; const lignesDep = [];
+  dep.rows.forEach(d => {
+    const mt = Number(d.montant) || 0, usd = d.devise === 'XOF' ? mt / (Number(d.taux_xof_par_usd) > 0 ? Number(d.taux_xof_par_usd) : T) : mt;
+    ponctuel += usd; seau(d.date + 'T00:00:00Z').ponctuel_usd += usd;
+    lignesDep.push({ id: d.id, date: d.date, nom: d.nom, categorie: d.categorie, montant: Number(d.montant), devise: d.devise, taux_xof_par_usd: d.taux_xof_par_usd, note: d.note, usd: _finR(usd) });
+  });
+
+  const depenses = variable + fixesTotal + ponctuel, contribution = netF / T - variable, profit = netF / T - depenses;
+  const marge = (v) => (netF > 0 ? Math.round(v / (netF / T) * 1000) / 10 : null);
+  const out = {
+    periode: { du, au, jours: nbJours }, devise: 'USD', taux: { xof_par_usd: Math.round(T * 100) / 100, source: taux.source },
+    revenu,
+    variable: { total_usd: _finR(variable), par_origine: FIN_ORIGINES.map(o => ({ origine: o, usd: _finR(parOrigine[o]) })), par_nature: Object.keys(parNature).map(k => ({ nature: k, usd: _finR(parNature[k]) })).sort((a, b) => b.usd - a.usd),
+      par_type: Object.keys(parType).map(k => ({ type: k, usd: _finR(parType[k]) })).sort((a, b) => b.usd - a.usd).slice(0, 14), types_a_classer: Object.keys(autreTypes).map(k => ({ type: k, usd: _finR(autreTypes[k]) })).sort((a, b) => b.usd - a.usd).slice(0, 10),
+      fournisseurs_externes: Object.keys(parFournisseur).map(k => ({ fournisseur: k, usd: _finR(parFournisseur[k].usd), unites: Math.round(parFournisseur[k].unites * 100) / 100, appels: parFournisseur[k].appels })).sort((a, b) => b.usd - a.usd), par_vente_usd: tx.rows.length ? _finR(variable / tx.rows.length) : null },
+    fixes: { total_usd: _finR(fixesTotal), mensuel_actif_usd: _finR(lignesFixes.reduce((s, x) => s + x.mensuel_usd, 0)), lignes: lignesFixes },
+    ponctuelles: { total_usd: _finR(ponctuel), lignes: lignesDep },
+    resultat: { depenses_usd: _finR(depenses), contribution_usd: _finR(contribution), profit_usd: _finR(profit), marge_contribution_pct: marge(contribution), marge_nette_pct: marge(profit) },
+    config: { fixes: configFixes, parametres: Object.keys(P).map(k => ({ cle: k, valeur: P[k], source: params.source[k] || 'saisi' })) },
+    tables: { transactions: !tx.absente, api_usage_log: !api.absente, couts_externes: !ext.absente, finance_couts_fixes: !fixes.absente, finance_depenses: !dep.absente, finance_parametres: !params.table_absente },
+    tronque: !!(tx.tronque || api.tronque || ext.tronque),
+  };
+  if (avecTendance) {
+    out.tendance = { pas_jours: pas, points: serie.map(s => ({ date: s.date, revenu_net_usd: _finR(s.revenu_net_usd), depenses_usd: _finR(s.variable_usd + s.fixe_usd + s.ponctuel_usd), profit_usd: _finR(s.revenu_net_usd - s.variable_usd - s.fixe_usd - s.ponctuel_usd) })) };
+  }
+  return out;
+}
+
+// Résumé complet + comparaison avec la période précédente de même durée + fuites.
+async function financeResume(du, au) {
+  const cur = await calculerFinance(du, au, true);
+  const n = cur.periode.jours, auPrec = _finDate(_finJ(du) - 1), duPrec = _finDate(_finJ(du) - n);
+  let prec = null; try { prec = await calculerFinance(duPrec, auPrec, false); } catch (e) { prec = null; }
+  const pct = (a, b) => (b > 0 ? Math.round((a - b) / b * 1000) / 10 : null);
+  cur.comparaison = prec ? { du: duPrec, au: auPrec, revenu_net_usd: prec.revenu.net_usd, depenses_usd: prec.resultat.depenses_usd, profit_usd: prec.resultat.profit_usd, variable_usd: prec.variable.total_usd,
+    revenu_net_delta_pct: pct(cur.revenu.net_usd, prec.revenu.net_usd), depenses_delta_pct: pct(cur.resultat.depenses_usd, prec.resultat.depenses_usd), variable_delta_pct: pct(cur.variable.total_usd, prec.variable.total_usd) } : null;
+
+  // Fuites et alertes : règles simples, toutes tirées des chiffres de la période.
+  const f = [], V = cur.variable.total_usd, R = cur.revenu.net_usd, usd = (x) => '$' + (Math.round(x * 100) / 100).toFixed(2);
+  const nat = {}; cur.variable.par_nature.forEach(x => { nat[x.nature] = x.usd; });
+  const manque = Object.keys(cur.tables).filter(k => !cur.tables[k]);
+  if (manque.length) f.push({ niveau: 'critique', titre: 'Tables manquantes : des coûts ne sont pas comptés', detail: manque.join(', ') + ' — exécuter finance_phase1.sql une fois dans Supabase.' });
+  if (cur.resultat.profit_usd < 0) f.push({ niveau: 'critique', titre: 'Profit négatif sur la période', detail: 'Dépenses ' + usd(cur.resultat.depenses_usd) + ' pour un revenu net de ' + usd(R) + ' : perte de ' + usd(-cur.resultat.profit_usd) + '.' });
+  else if (cur.resultat.marge_nette_pct !== null && cur.resultat.marge_nette_pct < 20) f.push({ niveau: 'alerte', titre: 'Marge nette faible', detail: 'Marge nette de ' + cur.resultat.marge_nette_pct + ' % : sous les 20 %.' });
+  if (cur.revenu.nb_ventes === 0 && V > 0.5) f.push({ niveau: 'alerte', titre: 'Dépenses sans aucune vente', detail: usd(V) + ' de coûts variables sur la période, aucune vente enregistrée.' });
+  if (cur.revenu.nb_ventes > 0 && R > 0 && V / R > 0.4) f.push({ niveau: 'alerte', titre: 'Les coûts variables mangent le revenu', detail: 'Coûts variables = ' + Math.round(V / R * 100) + ' % du revenu net (' + usd(cur.variable.par_vente_usd) + ' par vente pour ' + usd(cur.revenu.net_par_vente_usd) + ' net par vente).' });
+  if (V > 1 && (nat.agent_test || 0) / V > 0.25) f.push({ niveau: 'alerte', titre: "Les tests d'agents coûtent cher", detail: usd(nat.agent_test) + ' (' + Math.round(nat.agent_test / V * 100) + ' % des coûts variables) dépensés en tests plutôt qu\'en livrables clients.' });
+  const acq = (nat.demo || 0) + (nat.prospecteur || 0);
+  if (V > 1 && acq / V > 0.4) f.push({ niveau: 'info', titre: "L'acquisition pèse lourd", detail: usd(acq) + ' (' + Math.round(acq / V * 100) + ' % des coûts variables) en démo et prospection.' });
+  const top = cur.variable.par_type[0]; if (top && V > 2 && top.usd / V > 0.4) f.push({ niveau: 'info', titre: 'Un seul poste domine', detail: '« ' + top.type + ' » = ' + usd(top.usd) + ' (' + Math.round(top.usd / V * 100) + ' % des coûts variables).' });
+  if (cur.comparaison && cur.comparaison.variable_delta_pct !== null && cur.comparaison.variable_delta_pct > 50 && V > 2 && !(cur.comparaison.revenu_net_delta_pct !== null && cur.comparaison.revenu_net_delta_pct >= cur.comparaison.variable_delta_pct))
+    f.push({ niveau: 'alerte', titre: 'Les coûts variables montent plus vite que le revenu', detail: 'Coûts variables +' + cur.comparaison.variable_delta_pct + ' % contre la période précédente, revenu ' + (cur.comparaison.revenu_net_delta_pct === null ? 'sans point de comparaison' : (cur.comparaison.revenu_net_delta_pct >= 0 ? '+' : '') + cur.comparaison.revenu_net_delta_pct + ' %') + '.' });
+  if (cur.variable.types_a_classer.length) f.push({ niveau: 'info', titre: "Appels pas encore rattachés à une origine", detail: cur.variable.types_a_classer.slice(0, 4).map(x => x.type + ' ' + usd(x.usd)).join(' · ') + ' — dis-moi à quel outil (Factory, AdBoard, AdStats) ils appartiennent.' });
+  const inactifs = cur.config.fixes.filter(l => !l.actif && l.mensuel_usd > 0);
+  if (inactifs.length) f.push({ niveau: 'info', titre: 'Abonnements prévus, pas encore activés', detail: inactifs.map(l => l.nom + ' (' + usd(l.mensuel_usd) + '/mois)').join(' · ') + ' : à l\'activation, +' + usd(inactifs.reduce((s, l) => s + l.mensuel_usd, 0)) + '/mois de coûts fixes.' });
+  if (cur.taux.source === 'repli 600') f.push({ niveau: 'info', titre: 'Taux FCFA/$ de repli', detail: 'Taux du marché injoignable : 600 FCFA = 1 $ utilisé. Saisis ton taux dans les paramètres pour le figer.' });
+  if (cur.tronque) f.push({ niveau: 'alerte', titre: 'Période trop longue : lecture tronquée', detail: 'Plus de 50 000 lignes : réduis la période pour un chiffre exact.' });
+  cur.fuites = f;
+  cur.couverture = {
+    automatique: ['Vertex AI / Gemini : chaque appel du serveur (Factory, AdBoard)', 'Prospecteur : chaque appel à l\'IA', 'ScrapeCreators : crédits réels de chaque balayage de marché (tarif du pack 25 000 crédits)', 'Google Vision : chaque recherche inversée de photo (tarif public)', "SMS Africa's Talking : coût réel renvoyé par l'opérateur", 'Moteur vidéo : coût réel de chaque vidéo, relevé à la sauvegarde de la commande', 'Ventes Chariow : commission réelle de chaque transaction'],
+    a_saisir: ['Abonnements (ElevenLabs, Claude Pro, Supabase, Render…) : coûts fixes, ci-dessous', 'E-mails Resend : abonnement, à saisir comme coût fixe si payant', 'Dette Google : montant à donner (n\'est pas une dépense de profit)'],
+    notes: ['AdStats (CRM) : aucun appel payant repéré dans le serveur ; si le CRM en fait, ils apparaîtront dans « à classer ».', 'Rémunération du fondateur non comptée dans le profit.', 'Vision : les 1 000 premiers appels du mois sont gratuits chez Google ; ils sont comptés ici au tarif public (léger excès).'],
+  };
+  return cur;
+}
+
 // ── Choix automatique d'UN CT (interface de test de l'agent Creative Image) ──
 // L'agent voit TOUTE la galerie (image + nom + description + balises de chaque CT) et reçoit les mêmes entrées que la création :
 // brief, photo produit, synthèse complète, consigne d'angle / niveau de conscience, assets réels du client.
@@ -3434,6 +3666,81 @@ ${pageText}`;
     return;
   }
 
+  // finance-phase1-v1 — routes ADMINISTRATEUR du pilotage financier (tout en dollars)
+  //   GET  /finance/resume?jours=30 | ?du=AAAA-MM-JJ&au=AAAA-MM-JJ | ?tout=1   → revenu net, coûts variables par origine, coûts fixes au prorata, profit, marges, tendance, fuites
+  //   POST /finance/cout-fixe  {id?, nom, categorie, montant, devise, periodicite, actif, date_debut, date_fin, note} | {id, supprimer:true}
+  //   POST /finance/depense    {id?, date, nom, categorie, montant, devise, taux_xof_par_usd?, note} | {id, supprimer:true}
+  //   POST /finance/parametre  {cle, valeur}  (valeur vide = retour à la valeur par défaut)
+  //   POST /finance/cout-externe {fournisseur, origine, unites, cout_usd, detail, ref}  (pour les scripts du PC et le moteur vidéo)
+  if (['/finance/resume', '/finance/cout-fixe', '/finance/depense', '/finance/parametre', '/finance/cout-externe'].includes((req.url || '').split('?')[0])) {
+    (async () => {
+      const J = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+      try {
+        if (!(await crmAdminOk(req))) return J(403, { error: "réservé à l'administrateur" });
+        const chemin = (req.url || '').split('?')[0], q = new URL(req.url, 'http://x').searchParams;
+        if (req.method === 'GET' && chemin === '/finance/resume') {
+          const aujourdhui = new Date().toISOString().slice(0, 10);
+          let au = q.get('au') || aujourdhui, du = q.get('du');
+          if (!_finDateOk(au)) return J(400, { error: 'au : date AAAA-MM-JJ attendue' });
+          if (_finJ(au) > _finJ(aujourdhui)) au = aujourdhui;
+          if (q.get('tout')) {
+            const r = await Promise.all([_finLire('transactions', 'select=created_at&order=created_at.asc', 1), _finLire('api_usage_log', 'select=created_at&order=created_at.asc', 1), _finLire('couts_externes', 'select=created_at&order=created_at.asc', 1), _finLire('finance_couts_fixes', 'select=date_debut&order=date_debut.asc', 1)]);
+            const dates = []; r.forEach(x => { (x.rows || []).forEach(y => { const d = String(y.created_at || y.date_debut || '').slice(0, 10); if (_finDateOk(d)) dates.push(d); }); });
+            du = dates.length ? dates.sort()[0] : au;
+          } else if (!du) {
+            const n = Math.max(1, Math.min(3650, parseInt(q.get('jours') || '30', 10) || 30)); du = _finDate(_finJ(au) - (n - 1));
+          }
+          if (!_finDateOk(du)) return J(400, { error: 'du : date AAAA-MM-JJ attendue' });
+          if (_finJ(du) > _finJ(au)) return J(400, { error: 'du doit être avant au' });
+          if (_finJ(au) - _finJ(du) > 3650) return J(400, { error: 'période trop longue (10 ans maximum)' });
+          const rep = await financeResume(du, au); rep.genere_a = new Date().toISOString();
+          return J(200, rep);
+        }
+        if (req.method !== 'POST') return J(405, { error: 'méthode non permise' });
+        let body = ''; await new Promise(ok => { req.on('data', c => { if (body.length < 65536) body += c; }); req.on('end', ok); });
+        const b = JSON.parse(body || '{}');
+        const ecrire = async (table, methode, filtre, corps, prefer) => {
+          const r = await fetch(_finRest(table + (filtre || '')), { method: methode, headers: _finEnTetes({ Prefer: prefer || 'return=minimal' }), body: corps === undefined ? undefined : JSON.stringify(corps) });
+          if (!r.ok) { const t = await r.text(); throw new Error('Supabase ' + table + ' HTTP ' + r.status + ' ' + t.slice(0, 160) + (r.status === 404 || /does not exist|schema cache/i.test(t) ? ' — exécute finance_phase1.sql une fois dans Supabase' : '')); }
+        };
+        const txt = (v, n) => String(v === undefined || v === null ? '' : v).trim().slice(0, n);
+        const nombre = (v, nom) => { const x = Number(v); if (!isFinite(x) || x < 0) throw new Error(nom + ' : nombre positif attendu'); return x; };
+        const dateOuNull = (v, nom) => { if (v === undefined || v === null || v === '') return null; if (!_finDateOk(v)) throw new Error(nom + ' : date AAAA-MM-JJ attendue'); return v; };
+        if (chemin === '/finance/cout-fixe') {
+          if (b.supprimer) { if (!b.id) throw new Error('id requis'); await ecrire('finance_couts_fixes', 'DELETE', '?id=eq.' + encodeURIComponent(b.id)); return J(200, { ok: true }); }
+          const l = { nom: txt(b.nom, 120), categorie: txt(b.categorie || 'outil', 30), montant: nombre(b.montant, 'montant'), devise: b.devise === 'XOF' ? 'XOF' : 'USD', periodicite: b.periodicite === 'annuel' ? 'annuel' : 'mensuel', actif: b.actif !== false, date_debut: dateOuNull(b.date_debut, 'date_debut') || new Date().toISOString().slice(0, 10), date_fin: dateOuNull(b.date_fin, 'date_fin'), note: txt(b.note, 400) || null };
+          if (!l.nom) throw new Error('nom requis');
+          if (b.id) await ecrire('finance_couts_fixes', 'PATCH', '?id=eq.' + encodeURIComponent(b.id), l); else await ecrire('finance_couts_fixes', 'POST', '', l);
+          return J(200, { ok: true });
+        }
+        if (chemin === '/finance/depense') {
+          if (b.supprimer) { if (!b.id) throw new Error('id requis'); await ecrire('finance_depenses', 'DELETE', '?id=eq.' + encodeURIComponent(b.id)); return J(200, { ok: true }); }
+          const d = { date: dateOuNull(b.date, 'date') || new Date().toISOString().slice(0, 10), nom: txt(b.nom, 120), categorie: txt(b.categorie || 'autre', 30), montant: nombre(b.montant, 'montant'), devise: b.devise === 'XOF' ? 'XOF' : 'USD', note: txt(b.note, 400) || null };
+          if (!d.nom) throw new Error('nom requis');
+          if (d.devise === 'XOF') d.taux_xof_par_usd = (Number(b.taux_xof_par_usd) > 0) ? Number(b.taux_xof_par_usd) : (await _finTaux(await _finParams())).xof_par_usd; else d.taux_xof_par_usd = null;
+          if (b.id) await ecrire('finance_depenses', 'PATCH', '?id=eq.' + encodeURIComponent(b.id), d); else await ecrire('finance_depenses', 'POST', '', d);
+          return J(200, { ok: true });
+        }
+        if (chemin === '/finance/parametre') {
+          const cle = txt(b.cle, 60);
+          if (!Object.keys(FIN_DEFAUTS).concat(['taux_xof_par_usd']).includes(cle)) throw new Error('paramètre inconnu : ' + cle);
+          if (b.valeur === '' || b.valeur === null || b.valeur === undefined) await ecrire('finance_parametres', 'DELETE', '?cle=eq.' + encodeURIComponent(cle));
+          else await ecrire('finance_parametres', 'POST', '?on_conflict=cle', { cle, valeur: nombre(b.valeur, 'valeur'), updated_at: new Date().toISOString() }, 'resolution=merge-duplicates,return=minimal');
+          _finParamsCache = { t: 0, v: null };
+          return J(200, { ok: true });
+        }
+        if (chemin === '/finance/cout-externe') {
+          const usd = Number(b.cout_usd); if (!(usd > 0)) throw new Error('cout_usd : nombre positif attendu');
+          const ligne = { fournisseur: txt(b.fournisseur || 'autre', 40), origine: txt(b.origine || 'autre', 20), unites: (b.unites === undefined || b.unites === null || b.unites === '') ? null : Number(b.unites), cout_usd: Math.round(usd * 1e6) / 1e6, detail: txt(b.detail, 300) || null, ref: txt(b.ref, 200) || null };
+          if (ligne.ref) await ecrire('couts_externes', 'POST', '?on_conflict=ref', ligne, 'resolution=merge-duplicates,return=minimal'); else await ecrire('couts_externes', 'POST', '', ligne);
+          return J(200, { ok: true });
+        }
+        return J(404, { error: 'route inconnue' });
+      } catch (e) { return J(400, { error: e.message }); }
+    })();
+    return;
+  }
+
   if (req.method === 'POST' && req.url === '/analyste-synthese') {
     let body = '';
     req.on('data', c => body += c);
@@ -3745,7 +4052,7 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
             (st.erreurs || []).slice(0, 6).forEach(er => console.log('   ✗ ' + er));
             if (sc.texte) { donneesBrutes += sc.texte; console.log(`   ✓ ${sc.texte.length} chars de voix du marché ajoutés`); }
             else console.log('   ✗ aucune donnée ScrapeCreators');
-            _statsBalayage.scrapecreators = { requetes: _compteurSC.n, credits: _compteurSC.credits, reddit: st.reddit || 0, tiktok_videos: st.tiktok_videos || 0, tiktok_commentaires: st.tiktok_commentaires || 0, pubs: st.pubs || 0, erreurs: (st.erreurs || []).length };
+            _finNoterScrapeCreators(_compteurSC, 'analyste · balayage du marché'); _statsBalayage.scrapecreators = { requetes: _compteurSC.n, credits: _compteurSC.credits, reddit: st.reddit || 0, tiktok_videos: st.tiktok_videos || 0, tiktok_commentaires: st.tiktok_commentaires || 0, pubs: st.pubs || 0, erreurs: (st.erreurs || []).length };
           } catch (e) { console.log('   ✗ erreur ScrapeCreators :', e.message); }
         }
         } // fin du balayage complet (non exécuté quand l'hypothèse stockée est réutilisée)
@@ -7643,6 +7950,7 @@ if (req.method === 'POST' && req.url === '/send-prospect-sms') {
       const atData = await atRes.json();
       const recipient = atData?.SMSMessageData?.Recipients?.[0];
 
+      _finNoterSms(recipient, template);
       console.log(`[SMS] ${template} → ${toNumber} : ${recipient?.status || 'inconnu'} (${recipient?.cost || '?'})`);
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: recipient?.status === 'Success', status: recipient?.status, cost: recipient?.cost, message_id: recipient?.messageId, short_url: shortUrl }));
@@ -8585,6 +8893,12 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
     return;
   }
 
+  // finance-phase1-v1 — relève le coût réel des vidéos à chaque sauvegarde de la commande (écoute en plus, ne touche pas au flux de la route)
+  if (req.method === 'POST' && /^\/commandes\/[^/]+\/save-deliverables$/.test(req.url || '')) {
+    const _idFin = req.url.split('/')[2]; let _corpsFin = '';
+    req.on('data', c => { if (_corpsFin.length < 40 * 1024 * 1024) _corpsFin += c; });
+    req.on('end', () => { try { _finNoterVideos(_idFin, JSON.parse(_corpsFin)); } catch (_) {} });
+  }
   // POST /commandes/:id/save-deliverables — appelé automatiquement dès qu'une production
   // se termine (si lancée depuis un ticket), pour que "Envoyer au client" trouve toujours
   // les livrables même après avoir quitté la page.
@@ -10338,6 +10652,7 @@ async function chercherMeilleurePhotoProduit(photoBase64, mime) {
       console.warn('[Photo Finder] Vision API a répondu HTTP', r.status, '— API probablement pas activée sur le projet GCP.');
       return null;
     }
+    _finNoterVision('factory');
     const data = await r.json();
     const web = data.responses?.[0]?.webDetection;
     if (!web) { console.log('[Photo Finder] Aucune détection web renvoyée.'); return null; }
