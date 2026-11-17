@@ -26,6 +26,34 @@ const TARIFS = {
 };
 // v5.74 — une analyse identique (meme corps de requete) deja EN COURS, ou finie depuis moins de 3 min, n'est jamais relancee : la 2e requete recoit la meme reponse (double clic, page rechargee, relance du navigateur : ~1 $ chaque fois).
 const _ANALYSTE_DEDUP = new Map();
+// reprise-production-v1 — l'hypothèse payée est GARDÉE par le serveur : si la page de Factory est perdue (onglet mis en veille par Chrome, F5),
+// elle est retrouvée sans rien repayer. Clé = commande + numéro de lot (envoyé par Factory à chaque lancement).
+// Mémoire 24 h + table Supabase lots_hypothese (survit aux redéploiements ; table absente = mémoire seule, sans erreur).
+const _LOTS_HYPO = new Map();
+const _LOT_VALIDITE_MS = 24 * 3600 * 1000;
+let _lotAvertiTable = false;
+const _lotEnTetes = () => ({ apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' });
+const _lotAvertir = (code) => { if (_lotAvertiTable) return; _lotAvertiTable = true; console.log('   ⚠ table lots_hypothese absente ou illisible (HTTP ' + code + ') : hypothèse gardée en mémoire seulement — SQL fourni dans la livraison'); };
+async function _lotLire(cle) {
+  const m = _LOTS_HYPO.get(cle);
+  if (m) { if (!m.fin) return m; if (m.corps && Date.now() - m.fin < _LOT_VALIDITE_MS) return m; _LOTS_HYPO.delete(cle); }
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/lots_hypothese?cle=eq.${encodeURIComponent(cle)}&select=corps,created_at&limit=1`, { headers: _lotEnTetes() });
+    if (!r.ok) { _lotAvertir(r.status); return null; }
+    const rows = await r.json();
+    if (Array.isArray(rows) && rows[0] && rows[0].corps && Date.now() - new Date(rows[0].created_at).getTime() < _LOT_VALIDITE_MS) { const e = { corps: rows[0].corps, fin: Date.now(), p: Promise.resolve({ status: 200, corps: rows[0].corps }) }; _LOTS_HYPO.set(cle, e); return e; }
+  } catch (e) { /* lecture impossible : on continue comme avant */ }
+  return null;
+}
+async function _lotEcrire(cle, commandeId, corps) {
+  for (const [k, v] of _LOTS_HYPO) { if (v.fin && Date.now() - v.fin > _LOT_VALIDITE_MS) _LOTS_HYPO.delete(k); }
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/lots_hypothese?on_conflict=cle`, { method: 'POST', headers: { ..._lotEnTetes(), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ cle, commande_id: String(commandeId), corps, created_at: new Date().toISOString() }) });
+    if (!r.ok) { _lotAvertir(r.status); return; }
+    // ménage : les lots de plus de 3 jours ne servent plus
+    fetch(`${SUPABASE_URL_INT}/rest/v1/lots_hypothese?created_at=lt.${encodeURIComponent(new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString())}`, { method: 'DELETE', headers: { ..._lotEnTetes(), Prefer: 'return=minimal' } }).catch(() => {});
+  } catch (e) { /* écriture impossible : la mémoire garde quand même le lot */ }
+}
 const _COUTS_AGENTS = {};   // depuis le dernier démarrage du serveur
 function agentDeAppel(t) {
   t = String(t || '');
@@ -3384,18 +3412,56 @@ ${pageText}`;
 
 
   // ── Analyste de Marché : recherche multi-sources + synthèse Gemini 2.5 Pro (Sonnet 4.6 non connecté actuellement) ──
+  // reprise-production-v1 — retrouve l'hypothèse déjà payée d'un lot (page de Factory perdue). Ne calcule JAMAIS rien : rend le résultat gardé, attend un calcul en cours, ou répond « absente ».
+  if (req.method === 'POST' && req.url === '/analyste-reprise') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      const rep = (st, o) => { try { res.writeHead(st, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); } catch (_) {} };
+      try {
+        const { commandeId, lotId } = JSON.parse(body || '{}');
+        if (!commandeId || !lotId) return rep(200, { absente: true });
+        const cle = String(commandeId) + ':' + String(lotId);
+        const st = await _lotLire(cle);
+        if (!st) return rep(200, { absente: true });
+        const r = st.corps ? { status: 200, corps: st.corps } : await st.p;
+        if (!r || r.status !== 200) return rep(200, { absente: true, erreur: true });
+        console.log(`♻️  Reprise Factory : hypothèse du lot ${cle} rendue sans rien recalculer.`);
+        let o = {}; try { o = JSON.parse(r.corps); } catch (_) {}
+        return rep(200, { ...o, reprise: true });
+      } catch (e) { return rep(200, { absente: true, erreur: true }); }
+    });
+    return;
+  }
+
   if (req.method === 'POST' && req.url === '/analyste-synthese') {
     let body = '';
     req.on('data', c => body += c);
     req.on('end', async () => {
       const _cleDedup = crypto.createHash('sha256').update(body).digest('hex');
+      // reprise-production-v1 — lot (commande + lancement) : hypothèse déjà calculée ou en cours → la même réponse, aucun coût en plus
+      let _lotCle = null;
+      try {
+        const _b0 = JSON.parse(body);
+        if (_b0 && _b0.commandeId && _b0.lotId && !_b0.isTest) {
+          _lotCle = String(_b0.commandeId) + ':' + String(_b0.lotId);
+          const _st = await _lotLire(_lotCle);
+          if (_st) {
+            const _r = _st.corps ? { status: 200, corps: _st.corps } : await _st.p;
+            console.log(`♻️  Hypothèse de ce lot ${_st.corps ? 'déjà calculée' : 'déjà en cours'} (${_lotCle}) : la même réponse est renvoyée, aucun coût en plus.`);
+            let _out = _r.corps;
+            if (_r.status === 200) { try { _out = JSON.stringify({ ...JSON.parse(_r.corps), reprise: true }); } catch (_) {} }
+            res.writeHead(_r.status, { 'Content-Type': 'application/json' }); res.end(_out); return;
+          }
+        }
+      } catch (_) { /* corps illisible ou lot introuvable : calcul normal */ }
       { const e0 = _ANALYSTE_DEDUP.get(_cleDedup);
         if (e0 && (!e0.fin || Date.now() - e0.fin < 180000)) {
           console.log(`♻️  Analyse identique déjà ${e0.fin ? 'terminée il y a moins de 3 min' : 'en cours'} : pas de nouvelle recherche, la même réponse est renvoyée (aucun coût en plus).`);
           const r0 = await e0.p; res.writeHead(r0.status, { 'Content-Type': 'application/json' }); res.end(r0.corps); return;
         } }
-      let _fin0; const _entree = { fin: 0, p: new Promise(r => { _fin0 = r; }) }; _ANALYSTE_DEDUP.set(_cleDedup, _entree);
-      const finirAnalyse = (status, obj) => { const corps = JSON.stringify(obj); _entree.fin = Date.now(); if (status !== 200) _ANALYSTE_DEDUP.delete(_cleDedup); _fin0({ status, corps }); try { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(corps); } catch (_) {} };
+      let _fin0; const _entree = { fin: 0, p: new Promise(r => { _fin0 = r; }) }; _ANALYSTE_DEDUP.set(_cleDedup, _entree); if (_lotCle) _LOTS_HYPO.set(_lotCle, _entree);
+      const finirAnalyse = (status, obj) => { const corps = JSON.stringify(obj); _entree.fin = Date.now(); if (status !== 200) { _ANALYSTE_DEDUP.delete(_cleDedup); if (_lotCle) _LOTS_HYPO.delete(_lotCle); } else if (_lotCle) { _entree.corps = corps; _lotEcrire(_lotCle, _lotCle.split(':')[0], corps).catch(() => {}); } _fin0({ status, corps }); try { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(corps); } catch (_) {} };
       try {
         const reqBody = JSON.parse(body);
         const { system, parts, maxOutputTokens, brief, isTest } = reqBody;
@@ -8529,6 +8595,11 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
     req.on('end', async () => {
       try {
         const deliverables = JSON.parse(body);
+        // reprise-production-v1 — une sauvegarde entièrement vide (aucune synthèse, plan, créative, ad copy ni donnée marché) n'apporte rien : elle ne doit jamais effacer ce que la commande contient déjà (envoi de secours d'un onglet qui vient de se recharger).
+        { const _d = deliverables || {};
+          const _vide = !_d.synthesis && !_d.marche && !_d.planNiveaux && !(_d.angles || []).length
+            && !(_d.creatives || []).some(c => c && (c.imgB64 || c.url || c.videoUrl || c.job || c.ct)) && !(_d.copies || []).some(Boolean);
+          if (_vide) { console.log(`[Autosave] ⏭ sauvegarde vide ignorée pour ${id} : rien n'est effacé`); res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ ok: true, ignore: true })); return; } }
         // Cause profonde corrigée (statement timeout persistant malgré l'espacement des appels) :
         // passer par saveBriefs() réécrivait TOUTE la ligne (photo_nobg comprise, une image
         // complète qui ne change jamais pendant la génération) à chaque sauvegarde automatique —
