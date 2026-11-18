@@ -2579,7 +2579,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, version: 'v5.75-cible-territoire', balayage: typeof decideBalayage === 'function', scrapecreators_cle: !!SC_KEY }));
+    res.end(JSON.stringify({ ok: true, version: 'v5.76-timing-marche', balayage: typeof decideBalayage === 'function', scrapecreators_cle: !!SC_KEY }));
     return;
   }
 
@@ -3794,6 +3794,8 @@ ${pageText}`;
         } else {
         console.log('\n[0/4] Plan de balayage (point de départ : le problème, pas la marque)...');
         _planBalayage = await planBalayage(brief, produit, marque, pays);
+        const _auj = new Date().toISOString().slice(0, 10);   // timing-marche-v1
+        donneesBrutes += `### DATE DU BALAYAGE : ${_auj}\nChaque donnée ci-dessous porte son âge quand il a pu être lu (« il y a N j », « diffusée depuis N j », une date entre parenthèses). Un élément sans date s'écrit « date inconnue » : il ne prouve jamais un timing.\n\n`;
         console.log(`   → problème : ${_planBalayage.probleme}`);
         console.log(`   → alternatives : ${_planBalayage.alternatives.join(' | ') || 'n/a'} · concurrents : ${_planBalayage.concurrents.join(' | ') || 'n/a'}`);
         if (!SC_KEY) console.log('   ⚠ SOCIAL_MEDIA_SCRAPING_API absente : ScrapeCreators ignoré');
@@ -3809,7 +3811,8 @@ ${pageText}`;
             : '';
       const researchPrompt = `Tu es un analyste de marché senior. Tu mènes une recherche APPROFONDIE et MULTI-SOURCE sur le produit "${produit}" de la marque "${marque}" vendu en ${pays}.${_blocMulti}
 
-${blocProblemePourRecherche(_planBalayage)}OBJECTIF : ramener un MAXIMUM de DATA RÉELLE et de VERBATIMS clients authentiques — pas de paraphrase, pas de généralités. Cite les sources URL précises trouvées et les extraits textuels exacts (entre guillemets quand c\'est un verbatim).
+${blocProblemePourRecherche(_planBalayage)}DATE DU JOUR : ${_auj}. Pour chaque verbatim, avis, article ou fait rapporté, écris sa DATE de publication entre parenthèses quand elle est visible (mois et année au minimum) ; sinon écris « (date inconnue) ». Ne devine jamais une date.
+OBJECTIF : ramener un MAXIMUM de DATA RÉELLE et de VERBATIMS clients authentiques — pas de paraphrase, pas de généralités. Cite les sources URL précises trouvées et les extraits textuels exacts (entre guillemets quand c\'est un verbatim).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DOMAINES À EXPLORER EN PRIORITÉ (utilise site: dans tes recherches Google)
@@ -3905,11 +3908,11 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
           const _pb = (_planBalayage && _planBalayage.probleme) || produit;
           const _alts = (_planBalayage && _planBalayage.alternatives || []).join(' ; ') || 'à identifier toi-même';
           const _concs = (_planBalayage && _planBalayage.concurrents || []).join(' ; ') || 'à identifier toi-même';
-          const _entete = `Tu es un analyste de marché senior. Produit : "${produit}"${marque ? ` (marque "${marque}")` : ''}, vendu en ${pays}. Problème que le produit résout : ${_pb}. Alternatives déjà repérées : ${_alts}. Concurrents déjà repérés : ${_concs}.\nRÈGLES : recherche réellement (plusieurs requêtes Google distinctes, pas de doublon). Cite entre guillemets les phrases exactes trouvées + URL. Ce qui n'est pas trouvé s'écrit [NON TROUVÉ] — ne fabrique jamais. Ce qui est une déduction s'écrit [DÉDUIT]. Donnée brute uniquement, sans synthèse. Écris en français, sois exhaustif et concret (noms propres, prix, lieux, objets, phrases).\n\n`;
+          const _entete = `Tu es un analyste de marché senior. Produit : "${produit}"${marque ? ` (marque "${marque}")` : ''}, vendu en ${pays}. Problème que le produit résout : ${_pb}. Alternatives déjà repérées : ${_alts}. Concurrents déjà repérés : ${_concs}.\nRÈGLES : recherche réellement (plusieurs requêtes Google distinctes, pas de doublon). Cite entre guillemets les phrases exactes trouvées + URL. Ce qui n'est pas trouvé s'écrit [NON TROUVÉ] — ne fabrique jamais. Ce qui est une déduction s'écrit [DÉDUIT]. Donnée brute uniquement, sans synthèse. Écris en français, sois exhaustif et concret (noms propres, prix, lieux, objets, phrases).\nDATE DU JOUR : ${_auj}. Chaque élément rapporté porte sa date de publication entre parenthèses quand elle est visible, sinon « (date inconnue) » ; ne devine jamais une date.\n\n`;
           const _passes = [
-            { nom: 'alternatives', prompt: _entete + `MISSION : FICHES DÉTAILLÉES des ALTERNATIVES et des CONCURRENTS (8 à 12 fiches). Pour CHAQUE alternative ou concurrent (produits, marques, remèdes traditionnels, habitudes comme le café/le thé, médecin/pharmacien, ne rien faire…) : nom exact ; prix réel en devise locale et par jour d'usage ; où on l'achète (quels lieux, quels sites, quels vendeurs) ; la promesse exacte et les mots qu'il emploie ; formats de pub et rituels d'usage ; ce que les gens en disent de bien (verbatims) ; ce que les gens en disent de mal (verbatims) ; ses faiblesses structurelles ; la raison précise pour laquelle un utilisateur l'abandonne ou le garde malgré tout. Cherche aussi : quelles publicités ces concurrents diffusent en ce moment (Meta Ad Library / TikTok) et avec quels angles ; quel angle AUCUN concurrent n'occupe (territoires libres).` },
+            { nom: 'alternatives', prompt: _entete + `MISSION : FICHES DÉTAILLÉES des ALTERNATIVES et des CONCURRENTS (8 à 12 fiches). Pour CHAQUE alternative ou concurrent (produits, marques, remèdes traditionnels, habitudes comme le café/le thé, médecin/pharmacien, ne rien faire…) : nom exact ; prix réel en devise locale et par jour d'usage ; où on l'achète (quels lieux, quels sites, quels vendeurs) ; la promesse exacte et les mots qu'il emploie ; formats de pub et rituels d'usage ; ce que les gens en disent de bien (verbatims) ; ce que les gens en disent de mal (verbatims) ; ses faiblesses structurelles ; la raison précise pour laquelle un utilisateur l'abandonne ou le garde malgré tout. Cherche aussi : quelles publicités ces concurrents diffusent en ce moment (Meta Ad Library / TikTok), avec quels angles, et DEPUIS QUAND chacune tourne quand c'est visible ; quels angles reviennent chez plusieurs concurrents (déjà entendus par le marché) ; quel angle AUCUN concurrent n'occupe (territoires libres).` },
             { nom: 'vie_cible', prompt: _entete + `MISSION : LA VIE RÉELLE DE LA CIBLE du produit en ${pays}, de façon ultra-concrète. Cherche des forums, groupes, vidéos, articles, témoignages, commentaires. Ramène : (1) le profil réel des gens qui ont ce problème (métiers, âges, situation familiale, revenus) avec exemples de personnes réelles qui témoignent ; (2) leur ENTOURAGE : conjoint(e), enfants, parents, collègues, voisins, amis, belle-famille, patron, pharmacien, médecin, marabout/guérisseur, influenceur suivi — pour chaque type de personne : comment elle parle du problème, ce qu'elle conseille, comment elle réagit, quel rôle elle joue dans l'achat ; (3) les LIEUX réels de leur journée (type de logement, quartier-type, transport, lieu de travail, marché, pharmacie, salle, église/mosquée…) avec lumière, bruits, objets visibles ; (4) les OBJETS et marques réellement utilisés au quotidien (téléphone, vêtements, boissons, repas, produits déjà achetés) ; (5) expressions, proverbes, mots d'argot et façons exactes de parler du problème dans la langue locale ; (6) horaires et rythme d'une journée type, avec les moments où le problème frappe le plus.` },
-            { nom: 'signaux', prompt: _entete + `MISSION : SIGNAUX PRÉCOCES (6 à 12 insights que les concurrents n'ont pas encore exploités). Cherche : tendances récentes qui montent (hashtags, sons, formats TikTok/Instagram/YouTube liés au problème), nouveaux comportements de la cible, changements de contexte (prix, loi, saison, événements, usages mobile money/WhatsApp), conversations récentes (3 derniers mois) dans les commentaires et forums où les gens expriment une frustration pour laquelle aucune marque ne répond encore, nouveaux entrants ou produits étrangers en train d'arriver, et croyances qui changent. Pour chaque signal : la preuve (phrase exacte + URL + date si visible), pourquoi c'est encore peu exploité, combien de temps l'avance peut durer.` }
+            { nom: 'signaux', prompt: _entete + `MISSION : SIGNAUX PRÉCOCES (6 à 12 insights que les concurrents n'ont pas encore exploités). Cherche : tendances récentes qui montent (hashtags, sons, formats TikTok/Instagram/YouTube liés au problème), nouveaux comportements de la cible, changements de contexte (prix, loi, saison, événements, usages mobile money/WhatsApp), conversations récentes (3 derniers mois) dans les commentaires et forums où les gens expriment une frustration pour laquelle aucune marque ne répond encore, nouveaux entrants ou produits étrangers en train d'arriver, et croyances qui changent. Pour chaque signal : la preuve (phrase exacte + URL + date), son ÂGE par rapport à la date du jour, classé RÉCENT (moins de 90 jours), INSTALLÉ (plus ancien et toujours présent) ou NON DATÉ ; depuis quand il existe et s'il MONTE ou RETOMBE (ce qui le montre) ; combien de personnes ou de sources différentes le portent ; pourquoi c'est encore peu exploité par les annonceurs ; combien de temps l'avance peut durer et ce qui la fermera. Un sujet apparu il y a moins d'une semaine sans rien derrière est noté « MODE POSSIBLE ».` }
           ];
           if (_suiviCout.usd > COUT_MAX_HYPOTHESE * 0.45) throw new Error(`budget déjà à ${_suiviCout.usd.toFixed(2)} $ avant l'approfondissement : étape sautée`);
           console.log(`\n[1bis] Approfondissement (alternatives · vie de la cible · signaux précoces) — 3 recherches en parallèle... (coût estimé jusqu'ici : ${_suiviCout.usd.toFixed(2)} $)`);
@@ -3975,6 +3978,19 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
             }
           }
           if (!_nTr) console.log('   ✗ aucune requête associée trouvée');
+          for (const termeC of _termes.slice(0, 2)) {   // timing-marche-v1 : l'intérêt monte, tient ou retombe ?
+            try {
+              const rawC = await googleTrends.interestOverTime({ keyword: termeC, geo: geo || '', hl: 'fr', startTime: new Date(Date.now() - 365 * 86400000) });
+              const serie = ((JSON.parse(rawC).default || {}).timelineData || []).map(x => Number((x.value || [])[0]) || 0);
+              if (serie.length < 20) continue;
+              const moy = a => a.reduce((t, x) => t + x, 0) / Math.max(1, a.length), q = Math.floor(serie.length / 4);
+              const rec = moy(serie.slice(-q)), prec = moy(serie.slice(-2 * q, -q)), debut = moy(serie.slice(0, 2 * q));
+              if (rec + prec + debut < 3) continue;
+              const ev = prec > 0 ? (rec / prec - 1) * 100 : 0, sens = ev >= 15 ? 'EN HAUSSE' : ev <= -15 ? 'EN BAISSE' : 'STABLE';
+              donneesBrutes += `### SOURCE — GOOGLE TRENDS · INTÉRÊT DANS LE TEMPS ("${termeC}", ${geo || 'monde'}, 12 derniers mois)\nIndice moyen des 3 derniers mois : ${rec.toFixed(0)} · des 3 mois d'avant : ${prec.toFixed(0)} · du début de la période : ${debut.toFixed(0)} → ${sens} (${ev >= 0 ? '+' : ''}${ev.toFixed(0)} % sur le dernier trimestre).\n\n`;
+              console.log(`   → courbe "${termeC}" : ${sens} (${ev.toFixed(0)} %)`);
+            } catch (eC) { console.log(`   ✗ courbe Trends "${termeC}" :`, String(eC.message).slice(0, 80)); }
+          }
         } catch (e) {
           const hint = e.message.includes('Cannot find module') ? ' — exécute : npm install google-trends-api' : '';
           console.log('   ✗ erreur Trends :', e.message + hint);
@@ -4002,7 +4018,14 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
               console.log(`   → "${ytQuery}" : ${(sD.items || []).length} vidéo(s)`);
             } catch (e) { console.log(`   ✗ requête YouTube "${ytQuery}" :`, e.message); }
           }
-          videos = videos.slice(0, 10);
+          try {   // timing-marche-v1 : ce qui se publie en ce moment sur le problème
+            const sUr = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=4&relevanceLanguage=fr&order=date&publishedAfter=${encodeURIComponent(new Date(Date.now() - 90 * 86400000).toISOString())}&q=${encodeURIComponent(_pbYT)}&key=${YOUTUBE_API_KEY}`;
+            const sDr = await httpsGetJson(sUr);
+            if (sDr.error) throw new Error(sDr.error.message);
+            for (const v of (sDr.items || [])) if (v.id && v.id.videoId && !_vus.has(v.id.videoId)) { _vus.add(v.id.videoId); videos.unshift({ ...v, _req: _pbYT + ' (90 derniers jours)' }); }
+            console.log(`   → vidéos des 90 derniers jours : ${(sDr.items || []).length}`);
+          } catch (e) { console.log('   ✗ requête YouTube récente :', e.message); }
+          videos = videos.slice(0, 12);
           videos.forEach(v => console.log(`      • ${v.snippet.title}`));
           const ytQuery = _reqsYT.join(' | ');
 
@@ -4013,17 +4036,17 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
               const cUrl = `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&order=relevance&maxResults=40&videoId=${v.id.videoId}&key=${YOUTUBE_API_KEY}`;
               const cData = await httpsGetJson(cUrl);
               if (cData.error) throw new Error(cData.error.message);
-              const comments = (cData.items || []).map(c => c.snippet.topLevelComment.snippet.textOriginal).filter(t => t && t.length > 25);
-              if (comments.length) { _okVid++; allComments.push(...comments.map(t => ({ t, v: v.snippet.title }))); }
+              const comments = (cData.items || []).map(c => ({ t: c.snippet.topLevelComment.snippet.textOriginal, d: c.snippet.topLevelComment.snippet.publishedAt })).filter(c => c.t && c.t.length > 25);
+              if (comments.length) { _okVid++; allComments.push(...comments.map(c => ({ t: c.t, d: c.d, v: v.snippet.title }))); }
             } catch (e) {
               console.log(`      ✗ commentaires indisponibles (${v.snippet.title.slice(0,40)}...) :`, String(e.message).slice(0, 60));
             }
           }
           console.log(`   → ${allComments.length} commentaire(s) récupéré(s) sur ${_okVid} vidéo(s)`);
-          if (videos.length) donneesBrutes += `### SOURCE — YOUTUBE (vidéos du sujet : ${videos.map(v => `"${v.snippet.title}" (${v.snippet.channelTitle})`).join(' ; ').slice(0, 1800)})\n\n`;
+          if (videos.length) donneesBrutes += `### SOURCE — YOUTUBE (vidéos du sujet : ${videos.map(v => `"${v.snippet.title}" (${v.snippet.channelTitle}, ${_ageTxt(_ageJ(v.snippet.publishedAt))})`).join(' ; ').slice(0, 1800)})\n\n`;
           if (allComments.length) {
             donneesBrutes += `### SOURCE — YOUTUBE (commentaires, ${_okVid} vidéo(s))\n` +
-              allComments.slice(0, 120).map(c => `- [${c.v.slice(0, 50)}] "${c.t.replace(/\n/g, ' ').slice(0, 300)}"`).join('\n') + '\n\n';
+              allComments.slice(0, 120).map(c => `- [${c.v.slice(0, 50)}, ${_ageTxt(_ageJ(c.d))}] "${c.t.replace(/\n/g, ' ').slice(0, 300)}"`).join('\n') + '\n\n';
           }
         } catch (e) {
           console.log('   ✗ erreur YouTube :', e.message);
@@ -8955,7 +8978,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
 // ═══════════════════════════════════════════════════════════════════════════
 const SC_KEY = process.env.SOCIAL_MEDIA_SCRAPING_API || '';
 const SC_BASE = 'https://api.scrapecreators.com';
-const SC_MAX_REQUETES = parseInt(process.env.SC_MAX_REQUETES || '16', 10);
+const SC_MAX_REQUETES = parseInt(process.env.SC_MAX_REQUETES || '26', 10);
 const BALAYAGE_VALIDITE_JOURS = parseInt(process.env.BALAYAGE_VALIDITE_JOURS || '30', 10);
 
 async function scGet(chemin, params, compteur, timeoutMs = 25000) {
@@ -9054,36 +9077,118 @@ Concurrents directs : ${plan.concurrents.join(', ') || 'n/a'}
 `;
 }
 
-// Balayage ScrapeCreators : voix du marché au niveau du PROBLÈME + pubs natives des alternatives/concurrents.
+// timing-marche-v1 — LE TEMPS DU MARCHÉ. Chaque donnée collectée porte son ÂGE (l'analyste ne peut pas raisonner sur le timing
+// d'un angle avec des données non datées). Les pubs sont lues en DEUX tris : les plus vues (ce qui est prouvé) et les plus récentes
+// (ce qui se teste), puis rangées par FAMILLE D'ANGLE : un modèle étiquette chaque pub, le PROGRAMME compte (annonceurs, âges,
+// variantes) et pose un statut. Repères de lecture, issus des méthodes d'analyse de bibliothèque de pubs : la plupart des pubs sont
+// coupées dans leur première semaine ; une pub encore active après ~4 semaines est payée parce qu'elle rapporte ; au-delà de 2 mois
+// la preuve est forte ; une même accroche chez la majorité des annonceurs est déjà « dans le prix » ; plusieurs annonceurs qui
+// lancent la même porte dans les 2 dernières semaines signalent un déplacement du marché.
+function _ageJ(ts) {   // secondes, millisecondes ou date lisible → âge en jours (null si illisible)
+  if (ts === undefined || ts === null || ts === '') return null;
+  let ms = null;
+  if (typeof ts === 'number' || /^\d+(\.\d+)?$/.test(String(ts))) { const n = Number(ts); ms = n > 1e12 ? n : n * 1000; }
+  else { const d = Date.parse(String(ts)); if (!isNaN(d)) ms = d; }
+  if (!ms || ms < Date.UTC(2005, 0, 1) || ms > Date.now() + 86400000) return null;
+  return Math.max(0, Math.round((Date.now() - ms) / 86400000));
+}
+function _ageTxt(j) { return (j === null || j === undefined) ? 'date inconnue' : j === 0 ? "aujourd'hui" : j < 60 ? `il y a ${j} j` : j < 730 ? `il y a ${Math.round(j / 30)} mois` : `il y a ${Math.round(j / 365)} ans`; }
+
+// Statut d'une famille d'angle, d'après ce que le programme a compté (jamais d'après une impression).
+function _statutFamille(f, nbAnnonceursEchantillon) {
+  if (f.agesConnus === 0) return 'ÂGE INCONNU';
+  const moitie = Math.max(3, Math.ceil(nbAnnonceursEchantillon * 0.5));
+  if ((f.annonceurs >= 4 && f.n60 >= 1) || (f.annonceurs >= moitie && f.n30 >= 2)) return 'SATURÉ';
+  if (f.n30 >= 1) return (f.n14 >= 2 && f.annonceursRecents >= 2) ? 'PROUVÉ, ENCORE RELANCÉ' : 'PROUVÉ';
+  if ((f.n8_29 >= 1 && (f.annonceurs >= 2 || f.variantes >= 3)) || f.n8_29 >= 2 || (f.n14 >= 3 && f.annonceursRecents >= 3)) return 'EN MONTÉE';
+  return 'ESSAI ISOLÉ';
+}
+
+// Carte des angles des pubs : le modèle étiquette, le programme compte.
+async function carteAnglesPubs(liste, plan) {
+  if (!Array.isArray(liste) || liste.length < 4) return '';
+  try {
+    const token = await getToken();
+    const prompt = `Voici ${liste.length} publicités actives sur un marché. Problème de référence : « ${plan.probleme} » (catégorie : ${plan.categorie}).
+Pour CHAQUE publicité, dis à quelle FAMILLE D'ANGLE elle appartient. Une famille = ce que la pub PROMET (le désir ou le problème servi) + la PORTE par laquelle elle entre (un mécanisme, un ennemi, une preuve, l'identité de la personne, l'offre). Deux pubs de la même famille pourraient échanger leur accroche sans que personne le remarque.
+Règles : 3 à 9 familles au total ; nom court (3 à 7 mots) en français ; réutilise EXACTEMENT le même nom pour toutes les pubs d'une même famille ; une pub qui parle d'un autre problème reçoit la famille "HORS SUJET".
+"type" = ce que la pub fait surtout : "promesse" (annonce le résultat), "mecanisme" (explique comment ça marche), "preuve" (témoignage, chiffre, autorité), "identite" (parle de qui est la personne, de ce qu'elle refuse), "offre" (prix, promo, urgence).
+Réponds UNIQUEMENT par un tableau JSON, une entrée par publicité : [{"i":0,"famille":"...","type":"..."}]
+
+` + liste.map((a, i) => `${i}. [${a.page}] ${a.titre ? a.titre + ' — ' : ''}${_coupe(a.corps, 260)}`).join('\n');
+    const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0, maxOutputTokens: 4000, ...reflexion(MODELES.tendances, 0) } };
+    const d = await vertexRequest(token, MODELES.tendances, body, 45000, 'analyste_carte_pubs');
+    const raw = (d.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).filter(Boolean).join('');
+    const m = raw.match(/\[[\s\S]*\]/);
+    if (!m) throw new Error('réponse sans tableau');
+    return _carteDepuisEtiquettes(liste, JSON.parse(m[0]));
+  } catch (e) { console.log('   ✗ carte des angles des pubs ignorée :', e.message); return ''; }
+}
+
+function _carteDepuisEtiquettes(liste, etiquettes) {
+  const fam = new Map(); const TYPES = ['promesse', 'mecanisme', 'preuve', 'identite', 'offre']; const types = {};
+  (Array.isArray(etiquettes) ? etiquettes : []).forEach(e => {
+    const a = liste[Number(e && e.i)]; if (!a) return;
+    const nom = _coupe(String((e && e.famille) || '').trim(), 70); if (!nom || /^hors sujet$/i.test(nom)) return;
+    const cle = nom.toLowerCase();
+    if (!fam.has(cle)) fam.set(cle, { nom, pubs: 0, pages: new Set(), pagesRecentes: new Set(), ages: [], n7: 0, n14: 0, n8_29: 0, n30: 0, n60: 0, variantes: 0, types: {}, ex: [] });
+    const f = fam.get(cle); f.pubs++; f.pages.add(a.page); f.variantes += a.variantes || 1;
+    if (a.jours !== null && a.jours !== undefined) { f.ages.push(a.jours); if (a.jours <= 7) f.n7++; if (a.jours <= 14) { f.n14++; f.pagesRecentes.add(a.page); } if (a.jours >= 8 && a.jours <= 29) f.n8_29++; if (a.jours >= 30) f.n30++; if (a.jours >= 60) f.n60++; }
+    const t = TYPES.includes(String(e.type || '').toLowerCase()) ? String(e.type).toLowerCase() : null;
+    if (t) { f.types[t] = (f.types[t] || 0) + 1; types[t] = (types[t] || 0) + 1; }
+    if (f.ex.length < 2) f.ex.push(_coupe(a.titre || a.corps, 110));
+  });
+  if (!fam.size) return '';
+  const toutes = new Set(); fam.forEach(f => f.pages.forEach(p => toutes.add(p)));
+  const lignes = [...fam.values()].map(f => {
+    f.annonceurs = f.pages.size; f.annonceursRecents = f.pagesRecentes.size; f.agesConnus = f.ages.length;
+    f.statut = _statutFamille(f, toutes.size);
+    const vieux = f.ages.length ? Math.max(...f.ages) : null, jeune = f.ages.length ? Math.min(...f.ages) : null;
+    const typeDom = Object.entries(f.types).sort((x, y) => y[1] - x[1])[0];
+    return { f, txt: `- FAMILLE « ${f.nom} » — STATUT : ${f.statut} · ${f.pubs} pub(s) · ${f.annonceurs} annonceur(s) différent(s)` + (vieux !== null ? ` · la plus ancienne tourne depuis ${vieux} j, la plus récente lancée ${_ageTxt(jeune)}` : ' · âges inconnus') + ` · ${f.n14} lancée(s) dans les 14 derniers jours · ${f.n30} active(s) depuis 30 j ou plus · ${f.variantes} variante(s) au total` + (typeDom ? ` · message surtout de type ${typeDom[0]}` : '') + ` · ex. : ${f.ex.map(x => '« ' + x + ' »').join(' / ')}` };
+  }).sort((x, y) => (y.f.n30 * 10 + y.f.pubs) - (x.f.n30 * 10 + x.f.pubs));
+  const totT = Object.values(types).reduce((s, x) => s + x, 0);
+  const nbPubs = lignes.reduce((s, l) => s + l.f.pubs, 0);
+  return `### CARTE TEMPORELLE DES ANGLES DES PUBS (comptée par le programme sur ${nbPubs} pub(s) active(s) de ${toutes.size} annonceur(s) — un échantillon, pas un recensement)\n`
+    + `Comment lire les statuts : SATURÉ = beaucoup d'annonceurs différents sur la même porte depuis longtemps ; PROUVÉ = au moins une pub payée depuis 30 jours ou plus, place encore peu occupée ; EN MONTÉE = lancements récents qui ont passé leur première semaine ou se multiplient, sans pub ancienne ; ESSAI ISOLÉ = une ou deux pubs très récentes, rien de prouvé. Une famille absente de cette carte n'a aucune pub dans l'échantillon.\n`
+    + lignes.map(l => l.txt).join('\n') + '\n'
+    + (totT ? `TYPES DE MESSAGE DANS L'ÉCHANTILLON : ` + TYPES.filter(t => types[t]).map(t => `${t} ${Math.round(100 * types[t] / totT)} %`).join(' · ') + ` (sert à situer le stade du marché : des promesses seules, des mécanismes, des preuves, ou l'identité).\n` : '') + '\n';
+}
+
+// Balayage ScrapeCreators : voix du marché au niveau du PROBLÈME + pubs natives des alternatives/concurrents, le tout DATÉ.
 async function balayageScrapeCreators(plan, pays, compteur) {
   const stats = { reddit: 0, tiktok_videos: 0, tiktok_commentaires: 0, pubs: 0, erreurs: [] };
   const sections = { reddit: '', tiktok: '', pubs: '' };
   const geo = PAYS_TO_GEO[pays] || '';
 
   const tacheReddit = async () => {
-    const lignes = [];
+    const lignes = [], recentes = [], vus = new Set();
+    const ligne = p => `- [${p.subreddit_name_prefixed || ('r/' + (p.subreddit || '?'))}, ${_ageTxt(_ageJ(p.created_utc || p.created || p.created_at))}] "${_coupe(p.title, 160)}"${p.selftext ? ' — ' + _coupe(p.selftext, 380) : ''} (score ${p.score ?? '?'}, ${p.num_comments ?? '?'} commentaires) ${p.url || ''}`;
     for (const q of plan.reddit.slice(0, 3)) {
       try {
         const j = await scGet('/v1/reddit/search', { query: q, filter: 'posts', sort: 'relevance', timeframe: 'all', trim: 'true' }, compteur);
-        const posts = (j.posts || []).slice(0, 5);
-        posts.forEach(p => {
-          stats.reddit++;
-          lignes.push(`- [${p.subreddit_name_prefixed || ('r/' + (p.subreddit || '?'))}] "${_coupe(p.title, 160)}"${p.selftext ? ' — ' + _coupe(p.selftext, 380) : ''} (score ${p.score ?? '?'}, ${p.num_comments ?? '?'} commentaires) ${p.url || ''}`);
-        });
+        (j.posts || []).slice(0, 5).forEach(p => { const k = p.url || p.title; if (vus.has(k)) return; vus.add(k); stats.reddit++; lignes.push(ligne(p)); });
       } catch (e) { stats.erreurs.push('reddit « ' + q + ' » : ' + e.message); }
+    }
+    for (const q of [...new Set([plan.reddit[0], plan.formulations[0] || plan.probleme].filter(Boolean))].slice(0, 2)) {   // ce qui se dit EN CE MOMENT (30 derniers jours)
+      try {
+        const j = await scGet('/v1/reddit/search', { query: q, filter: 'posts', sort: 'top', timeframe: 'month', trim: 'true' }, compteur);
+        (j.posts || []).slice(0, 5).forEach(p => { const k = p.url || p.title; if (vus.has(k)) return; vus.add(k); stats.reddit++; recentes.push(ligne(p)); });
+      } catch (e) { stats.erreurs.push('reddit récent « ' + q + ' » : ' + e.message); }
     }
     try {
       const qC = plan.formulations[0] || plan.probleme;
       const j = await scGet('/v1/reddit/search', { query: qC, filter: 'comments', sort: 'top', trim: 'true' }, compteur);
-      const liste = (j.comments || j.posts || []).slice(0, 8);
-      liste.forEach(c => {
+      (j.comments || j.posts || []).slice(0, 8).forEach(c => {
         const t = c.body || c.selftext || c.text || c.comment || '';
         if (String(t).length < 25) return;
         stats.reddit++;
-        lignes.push(`- [commentaire ${c.subreddit_name_prefixed || ''}] "${_coupe(t, 380)}" (score ${c.score ?? '?'}) ${c.url || c.permalink || ''}`);
+        lignes.push(`- [commentaire ${c.subreddit_name_prefixed || ''}, ${_ageTxt(_ageJ(c.created_utc || c.created || c.created_at))}] "${_coupe(t, 380)}" (score ${c.score ?? '?'}) ${c.url || c.permalink || ''}`);
       });
     } catch (e) { stats.erreurs.push('reddit commentaires : ' + e.message); }
-    if (lignes.length) sections.reddit = `### SOURCE — SCRAPECREATORS · REDDIT (discussions sur le PROBLÈME : « ${plan.probleme} »)\n` + lignes.join('\n') + '\n\n';
+    if (lignes.length || recentes.length) sections.reddit = `### SOURCE — SCRAPECREATORS · REDDIT (discussions sur le PROBLÈME : « ${plan.probleme} »)\n`
+      + (lignes.length ? `DISCUSSIONS DE FOND (toutes époques, les plus pertinentes) :\n` + lignes.join('\n') + '\n' : '')
+      + (recentes.length ? `DISCUSSIONS DES 30 DERNIERS JOURS (ce qui se dit en ce moment) :\n` + recentes.join('\n') + '\n' : `DISCUSSIONS DES 30 DERNIERS JOURS : aucune trouvée sur ces requêtes.\n`) + '\n';
   };
 
   const tacheTikTok = async () => {
@@ -9102,48 +9207,63 @@ async function balayageScrapeCreators(plan, pays, compteur) {
       stats.tiktok_videos++;
       const pseudo = a.author?.unique_id || '';
       const url = a.share_url || (pseudo && a.aweme_id ? `https://www.tiktok.com/@${pseudo}/video/${a.aweme_id}` : '');
-      lignes.push(`- VIDÉO « ${_coupe(a.desc, 220)} » (${a.statistics?.play_count ?? '?'} vues, ${a.statistics?.comment_count ?? '?'} commentaires) ${url}`);
+      lignes.push(`- VIDÉO (${_ageTxt(_ageJ(a.create_time))}) « ${_coupe(a.desc, 220)} » (${a.statistics?.play_count ?? '?'} vues, ${a.statistics?.comment_count ?? '?'} commentaires) ${url}`);
       if (!url) continue;
       try {
         const j = await scGet('/v1/tiktok/video/comments', { url, trim: 'true' }, compteur);
         const coms = (j.comments || []).filter(c => String(c.text || '').length >= 15)
           .sort((x, y) => (y.digg_count || 0) - (x.digg_count || 0)).slice(0, 8);
-        coms.forEach(c => { nbCom++; lignes.push(`    · commentaire : "${_coupe(c.text, 300)}" (${c.digg_count ?? 0} likes)`); });
+        coms.forEach(c => { nbCom++; lignes.push(`    · commentaire (${_ageTxt(_ageJ(c.create_time))}) : "${_coupe(c.text, 300)}" (${c.digg_count ?? 0} likes)`); });
       } catch (e) { stats.erreurs.push('tiktok commentaires : ' + e.message); }
     }
     stats.tiktok_commentaires = nbCom;
-    if (lignes.length) sections.tiktok = `### SOURCE — SCRAPECREATORS · TIKTOK (vidéos et commentaires sur le problème)\n` + lignes.join('\n') + '\n\n';
+    if (lignes.length) sections.tiktok = `### SOURCE — SCRAPECREATORS · TIKTOK (vidéos et commentaires sur le problème, datés)\n` + lignes.join('\n') + '\n\n';
   };
 
   const tachePubs = async () => {
-    const lignes = [];
-    const vus = new Set();
+    const ads = new Map();
+    const lire = (res, q, tri) => (res || []).slice(0, 12).forEach(ad => {
+      const s = ad.snapshot || {};
+      const corps0 = (s.body && (s.body.text || s.body)) || s.link_description || '';
+      const corps = typeof corps0 === 'string' ? corps0 : JSON.stringify(corps0);
+      if (!corps && !s.title) return;
+      const cle = String(ad.collation_id || ad.ad_archive_id || '') || (String(ad.page_name) + '|' + _coupe(corps, 60));
+      const ex = ads.get(cle);
+      if (ex) { if (!ex.tris.includes(tri)) ex.tris.push(tri); return; }
+      ads.set(cle, { page: _coupe(ad.page_name || '?', 60), q, jours: _ageJ(ad.start_date), variantes: Number(ad.collation_count) || 1, titre: _coupe(s.title || '', 120), corps: _coupe(corps, 420), cta: s.cta_text || '', tris: [tri] });
+    });
     for (const q of plan.ads.slice(0, 3)) {
-      try {
-        let j = await scGet('/v1/facebook/adLibrary/search/ads', { query: q, country: geo || 'ALL', status: 'ACTIVE', sort_by: 'total_impressions', media_type: 'ALL' }, compteur);
-        let res = j.searchResults || [];
-        if (!res.length && geo) {
-          j = await scGet('/v1/facebook/adLibrary/search/ads', { query: q, country: 'ALL', language: 'FR', status: 'ACTIVE', sort_by: 'total_impressions', media_type: 'ALL' }, compteur);
-          res = j.searchResults || [];
-        }
-        res.slice(0, 6).forEach(ad => {
-          const cle = ad.collation_id || ad.ad_archive_id;
-          if (cle && vus.has(cle)) return;
-          if (cle) vus.add(cle);
-          const s = ad.snapshot || {};
-          const corps = (s.body && (s.body.text || s.body)) || s.link_description || '';
-          if (!corps && !s.title) return;
-          const jours = ad.start_date ? Math.max(0, Math.round((Date.now() / 1000 - ad.start_date) / 86400)) : null;
-          stats.pubs++;
-          lignes.push(`- [${ad.page_name || '?'}] (recherche « ${q} »${jours !== null ? ', diffusée depuis ' + jours + ' j' : ''}${ad.collation_count > 1 ? ', ' + ad.collation_count + ' variantes' : ''}) ${s.title ? 'TITRE « ' + _coupe(s.title, 120) + ' » — ' : ''}« ${_coupe(typeof corps === 'string' ? corps : JSON.stringify(corps), 420)} »${s.cta_text ? ' [CTA : ' + s.cta_text + ']' : ''}`);
-        });
-      } catch (e) { stats.erreurs.push('pubs « ' + q + ' » : ' + e.message); }
+      for (const [tri, sort] of [['vues', 'total_impressions'], ['recent', 'relevancy_monthly_grouped']]) {   // les plus vues = ce qui est prouvé ; les plus récentes = ce qui se teste
+        try {
+          let j = await scGet('/v1/facebook/adLibrary/search/ads', { query: q, country: geo || 'ALL', status: 'ACTIVE', sort_by: sort, media_type: 'ALL' }, compteur);
+          let res = j.searchResults || [];
+          if (!res.length && geo) {
+            j = await scGet('/v1/facebook/adLibrary/search/ads', { query: q, country: 'ALL', language: 'FR', status: 'ACTIVE', sort_by: sort, media_type: 'ALL' }, compteur);
+            res = j.searchResults || [];
+          }
+          lire(res, q, tri);
+        } catch (e) { stats.erreurs.push('pubs « ' + q + ' » (' + tri + ') : ' + e.message); }
+      }
     }
-    if (lignes.length) sections.pubs = `### SOURCE — SCRAPECREATORS · BIBLIOTHÈQUE DE PUBS META (pubs actives des alternatives et concurrents, classées par impressions — les plus longtemps diffusées sont les plus rentables)\n` + lignes.join('\n') + '\n\n';
+    const liste = [...ads.values()];
+    stats.pubs = liste.length;
+    if (!liste.length) return;
+    const fmt = a => `- [${a.page}] (recherche « ${a.q} », ${a.jours !== null ? (a.jours <= 7 ? 'lancée il y a ' + a.jours + ' j' : 'diffusée depuis ' + a.jours + ' j') : 'date inconnue'}${a.variantes > 1 ? ', ' + a.variantes + ' variantes' : ''}) ${a.titre ? 'TITRE « ' + a.titre + ' » — ' : ''}« ${a.corps} »${a.cta ? ' [CTA : ' + a.cta + ']' : ''}`;
+    const tri = (f) => liste.filter(f).sort((x, y) => (y.jours || 0) - (x.jours || 0));
+    const prouvees = tri(a => a.jours !== null && a.jours >= 30), montee = tri(a => a.jours !== null && a.jours >= 8 && a.jours <= 29), essais = tri(a => a.jours !== null && a.jours <= 7), sansDate = liste.filter(a => a.jours === null);
+    const annonceurs = new Set(liste.map(a => a.page)).size;
+    let carte = '';
+    try { carte = await carteAnglesPubs(liste, plan); } catch (e) { stats.erreurs.push('carte des angles : ' + e.message); }
+    sections.pubs = carte
+      + `### SOURCE — SCRAPECREATORS · BIBLIOTHÈQUE DE PUBS META (${liste.length} pubs actives de ${annonceurs} annonceur(s), alternatives et concurrents ; lues en deux tris : les plus vues et les plus récentes)\n`
+      + `PUBS PAYÉES DEPUIS 30 JOURS OU PLUS (${prouvees.length}) — elles ont survécu au tri, l'annonceur les garde parce qu'elles rapportent :\n` + (prouvees.map(fmt).join('\n') || '- aucune') + '\n'
+      + `PUBS DE 8 À 29 JOURS (${montee.length}) — elles ont passé leur première semaine :\n` + (montee.map(fmt).join('\n') || '- aucune') + '\n'
+      + `PUBS DE 7 JOURS OU MOINS (${essais.length}) — ce que les annonceurs ESSAIENT en ce moment, rien de prouvé :\n` + (essais.map(fmt).join('\n') || '- aucune') + '\n'
+      + (sansDate.length ? `PUBS SANS DATE LISIBLE (${sansDate.length}) :\n` + sansDate.map(fmt).join('\n') + '\n' : '') + '\n';
   };
 
   await Promise.all([tacheReddit(), tacheTikTok(), tachePubs()]);
-  const texte = [sections.reddit, sections.tiktok, sections.pubs].map(s => s.slice(0, 7000)).join('');
+  const texte = [sections.reddit.slice(0, 8000), sections.tiktok.slice(0, 7000), sections.pubs.slice(0, 16000)].join('');
   return { texte, stats };
 }
 
