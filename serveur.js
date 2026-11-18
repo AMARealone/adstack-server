@@ -5447,6 +5447,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
             garantie: data.product.garantie || '',
             livraison_paiement: data.product.livraison_paiement || '',
             notes: data.product.notes || '',
+            video_action_url: (typeof data.product.video_action_url === 'string' && /^https?:\/\//.test(data.product.video_action_url)) ? data.product.video_action_url : null,
             cible_auto: !!data.product.cible_auto,
             documents: Array.isArray(data.product.documents) ? data.product.documents.filter(d => d && d.url).slice(0, 5).map(d => ({ name: String(d.name || 'document'), url: d.url })) : [],
           },
@@ -5526,6 +5527,10 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
       // v5.61 — les photos du produit sont préparées aspect par aspect (voir preparerPhotosProduit). Plus de recherche
       // d'une « meilleure » image sur le web, plus de choix dans le carrousel. Déjà prêtes (lancées à la réception du
       // brief) → rien à attendre ; sinon on attend au plus 85 s pour rester sous la limite de temps de Render.
+      // enrichi-produit-v1 : ton, taille, délai et fiche d'usage vidéo calculés pendant la préparation des photos (60 s au plus).
+      const _enrichi = (!briefs[idx].product?.enrichi || (briefs[idx].product.enrichi.video_url || null) !== (briefs[idx].product.video_action_url || null))
+        ? Promise.race([enrichirProduit(briefs[idx].product), new Promise(r => setTimeout(() => r(null), 60000))]).catch(e => { console.log('[Enrichi] ' + e.message); return null; })
+        : Promise.resolve(null);
       if (!Array.isArray(briefs[idx].product?.photos_produit)) {
         console.log(`[Photos] commande ${id} : préparation en cours, attente...`);
         await Promise.race([preparationPhotosCommande(id), new Promise(r => setTimeout(r, 85000))]);
@@ -5537,6 +5542,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         }
       }
 
+      { const _e = await _enrichi; if (_e) briefs[idx].product.enrichi = _e; }
       await saveBriefs([briefs[idx]]);
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true, brief: briefs[idx] }));
@@ -10600,6 +10606,100 @@ async function preparerPhotosProduit(product) {
 }
 // Tâche liée à une commande : une seule à la fois par commande, résultat écrit dans la commande (product.photos_produit + photo_nobg).
 const _prepPhotos = new Map();
+// ── enrichi-produit-v1 — ce que le client n'a pas à nous donner, nous le trouvons nous-mêmes ──────────────────
+// Au lancement d'une commande : (1) TON de la marque, déduit du produit et de la promesse (toujours collé au désir ou au problème
+// principal que le produit résout, jamais allusif) ; (2) TAILLE réelle du produit, cherchée sur Google à partir du nom et de la photo ;
+// (3) DÉLAI du résultat, quand il existe ; (4) FICHE D'USAGE tirée de la vidéo du client si elle en a envoyé une.
+// Tout est interne, rien n'est demandé au client. Résultat rangé dans brief.product.enrichi ; absent = jamais inventé.
+function _jsonDeTexte(t) {
+  let s = String(t || '').replace(/```json\s*|```/g, '').trim();
+  try { return JSON.parse(s); } catch (e) {}
+  const a = s.indexOf('{'), b = s.lastIndexOf('}');
+  if (a >= 0 && b > a) { try { return JSON.parse(s.slice(a, b + 1)); } catch (e) {} }
+  return null;
+}
+function _texteGemini(data) {
+  try { return (data.candidates?.[0]?.content?.parts || []).map(x => x.text || '').join('').trim(); } catch (e) { return ''; }
+}
+async function _telechargerVideoClient(urlStr, maxOctets) {
+  try {
+    const u = new URL(urlStr);
+    if (!/^https?:$/.test(u.protocol) || /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.)/i.test(u.hostname)) return null;
+    const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 30000);
+    const r = await fetch(u.href, { signal: ctrl.signal });
+    if (!r.ok) { clearTimeout(tm); return null; }
+    const len = Number(r.headers.get('content-length') || 0);
+    if (len && len > maxOctets) { clearTimeout(tm); return { trop_lourde: true, octets: len }; }
+    const buf = Buffer.from(await r.arrayBuffer()); clearTimeout(tm);
+    if (buf.length > maxOctets) return { trop_lourde: true, octets: buf.length };
+    let mime = (r.headers.get('content-type') || '').split(';')[0].trim();
+    if (!/^video\//.test(mime)) mime = /\.mov(\?|$)/i.test(u.pathname) ? 'video/quicktime' : /\.webm(\?|$)/i.test(u.pathname) ? 'video/webm' : 'video/mp4';
+    return { mimeType: mime, data: buf.toString('base64'), octets: buf.length };
+  } catch (e) { return null; }
+}
+async function enrichirProduit(p) {
+  const sortie = { fait_le: new Date().toISOString(), video_url: p.video_action_url || null };
+  const token = await getToken();
+  let page = '';
+  if (p.lien_page_produit) { try { const r = await fetchPageText(p.lien_page_produit, 0, false); page = String((r && r.text) || '').slice(0, 7000); } catch (e) {} }
+  const parts = [];
+  parts.push({ text:
+`Tu aides une agence de publicité vidéo. Produit : « ${p.nom || ''} ». Ce qu'il fait : ${p.utilite || 'non précisé'}. Cible : ${p.cible || 'non précisée'}. Marché : ${p.pays || 'non précisé'}. Prix : ${p.pricing || 'non précisé'}.
+${page ? 'TEXTE DE SA PAGE DE VENTE :\n' + page + '\n' : ''}
+Réponds en JSON strict, uniquement l'objet :
+{"ton_marque":"2 à 3 phrases. Le ton qui convient à CE produit, déduit du produit, de sa promesse et de la façon dont la page parle. Règles : il parle DIRECTEMENT au problème principal ou au désir principal que le produit résout, jamais par allusion, jamais d'un sujet voisin ou lointain. Exemple de raisonnement (ne le recopie pas) : un produit de performance intime appelle un ton très direct ; un produit de soin qui évite la douleur des alternatives appelle un ton propre, doux, centré sur ce confort. Si tu n'as pas assez d'éléments, écris null.",
+"taille_produit":{"texte":"dimensions réelles du produit ET de son contenant, en cm ou en ml, estimation moyenne (ex : 'flacon de 9 cm de haut, 3 cm de large'). null si introuvable","hauteur_cm":nombre ou null,"largeur_cm":nombre ou null,"repere":"comparaison parlante avec une main d'adulte (ex : 'tient dans la paume'), ou null","fiable":true ou false},
+"delai_resultat":"en combien de temps l'effet est ressenti ou visible, SEULEMENT si la page ou une source le dit. Sinon null"}
+Pour la taille : cherche sur Google le produit exact (nom, marque, fiches des revendeurs) et regarde la photo jointe. Une dimension que tu n'as pas trouvée est null, jamais inventée.` });
+  try {
+    const tel = p.photo_url ? await telechargerImagePourTri(p.photo_url) : null;
+    if (tel) parts.push({ inlineData: { mimeType: tel.mimeType, data: tel.data } });
+  } catch (e) {}
+  try {
+    const body = { contents: [{ role: 'user', parts }], tools: [{ googleSearch: {} }], generationConfig: { temperature: 0.2, maxOutputTokens: 4000 } };
+    const data = await vertexRequestAvecReessai(token, MODELES.documents, body, 60000, 'enrichi_produit');
+    const j = _jsonDeTexte(_texteGemini(data));
+    if (j) {
+      const nul = (v) => (v === null || v === undefined || String(v).toLowerCase() === 'null' || String(v).trim() === '') ? null : v;
+      if (nul(j.ton_marque)) sortie.ton_marque = String(j.ton_marque).trim().slice(0, 600);
+      if (j.taille_produit && typeof j.taille_produit === 'object' && nul(j.taille_produit.texte)) {
+        sortie.taille_produit = { texte: String(j.taille_produit.texte).slice(0, 300), hauteur_cm: Number(j.taille_produit.hauteur_cm) || null, largeur_cm: Number(j.taille_produit.largeur_cm) || null, repere: nul(j.taille_produit.repere) ? String(j.taille_produit.repere).slice(0, 160) : null, fiable: j.taille_produit.fiable === true };
+      }
+      if (nul(j.delai_resultat)) sortie.delai_resultat = String(j.delai_resultat).trim().slice(0, 240);
+    }
+  } catch (e) { console.log('[Enrichi] ton/taille : ' + e.message); }
+  // Fiche d'usage tirée de la vidéo du client (facultative). Gemini REGARDE la vidéo ; la fiche est neutre quant au style de rendu :
+  // l'agent vidéo la traduit ensuite dans le style du CT (photoréaliste, 3D, papier...).
+  if (p.video_action_url) {
+    const v = await _telechargerVideoClient(p.video_action_url, 14 * 1024 * 1024);
+    if (!v) sortie.video_statut = 'illisible';
+    else if (v.trop_lourde) sortie.video_statut = 'trop_lourde';
+    else {
+      try {
+        const body = { contents: [{ role: 'user', parts: [
+          { text:
+`Tu regardes une vidéo où l'on voit « ${p.nom || 'le produit'} » utilisé. Décris précisément, SANS inventer ce qui ne se voit pas, pour que des réalisateurs reproduisent fidèlement l'usage dans n'importe quel style visuel (photoréaliste, 3D, papier...).
+Réponds en JSON strict, uniquement l'objet :
+{"fiche_usage":"5 à 8 phrases : les gestes dans l'ordre, comment le produit est tenu et orienté, où il est posé ou appliqué sur le corps ou dans l'espace, ce que fait l'autre main, la durée des gestes",
+"echelle":"taille du produit par rapport à la main et au corps de la personne, ce qu'on voit réellement",
+"rendu_visible":"ce qui se voit à l'écran quand il agit : texture, mousse, lumière, mouvement, effet immédiat, ou null si rien",
+"a_ne_pas_montrer":"geste ou zone du corps qui paraîtrait faux, gênant ou dangereux si on le montrait mal, ou null",
+"qualite_video":"bonne, moyenne ou mauvaise : la vidéo montre-t-elle clairement l'usage ?"}` },
+          { inlineData: { mimeType: v.mimeType, data: v.data } }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 3000 } };
+        const data = await vertexRequestAvecReessai(token, MODELES.photos, body, 90000, 'enrichi_video');
+        const j = _jsonDeTexte(_texteGemini(data));
+        if (j && j.fiche_usage) {
+          const nul = (x) => (x === null || x === undefined || String(x).toLowerCase() === 'null' || String(x).trim() === '') ? null : String(x).trim().slice(0, 800);
+          sortie.video_usage = { fiche_usage: nul(j.fiche_usage), echelle: nul(j.echelle), rendu_visible: nul(j.rendu_visible), a_ne_pas_montrer: nul(j.a_ne_pas_montrer), qualite: nul(j.qualite_video) };
+          sortie.video_statut = 'lue';
+        } else sortie.video_statut = 'non_exploitable';
+      } catch (e) { console.log('[Enrichi] vidéo : ' + e.message); sortie.video_statut = 'erreur'; }
+    }
+  }
+  console.log('[Enrichi] ' + (p.nom || '?') + ' — ton:' + (sortie.ton_marque ? 'oui' : 'non') + ' taille:' + (sortie.taille_produit ? 'oui' : 'non') + ' délai:' + (sortie.delai_resultat ? 'oui' : 'non') + ' vidéo:' + (sortie.video_statut || 'aucune'));
+  return sortie;
+}
+
 function preparationPhotosCommande(idCommande) {
   if (_prepPhotos.has(idCommande)) return _prepPhotos.get(idCommande);
   const p = (async () => {
