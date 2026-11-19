@@ -75,7 +75,7 @@ async function handle(req, res, deps) {
       if (deja && Date.now() - deja.t < 600000 && !b.forcer) return rep(res, 200, { execution: deja.execution, deja_lance: true }), true
       const env = [{ name: 'COMMANDE_ID', value: cmd }, { name: 'CT_ID', value: ct }, { name: 'SLOT', value: slot }]
       if (b.angle) env.push({ name: 'ANGLE', value: String(b.angle).slice(0, 300) })
-      if (b.consignes) env.push({ name: 'CONSIGNES', value: String(b.consignes).slice(0, 2000) })
+      if (b.consignes) env.push({ name: 'CONSIGNES', value: String(b.consignes).slice(0, 7000) })
       if (b.modele && /^veo-[\w.\-]+$/.test(b.modele)) env.push({ name: 'MODELE', value: b.modele })
       if (b.niveau && /^(Problem|Solution|Product|Most) Aware$/.test(b.niveau)) env.push({ name: 'NIVEAU', value: b.niveau })
       const r = await api(deps, 'POST', base(deps) + ':run', { overrides: { containerOverrides: [{ env }], taskCount: 1 } })

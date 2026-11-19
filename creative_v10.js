@@ -307,7 +307,8 @@ HARD LOCKS :
           '- Couleurs de marque : ' + ((br.couleurs || []).join(', ') || '—'),
           '- Avis réels : ' + (avis.length ? avis.map(a => '« ' + String(a).slice(0, 200) + ' »').join(' ') : 'AUCUN'),
           '- Niveau de conscience voulu : ' + (b.niveau || '—') + ' · Angle : ' + String(b.angle || '').split('*')[0].slice(0, 200),
-        ].join('\n') });
+          b.verite ? '\n' + String(b.verite).slice(0, 3000) : '',
+        ].filter(Boolean).join('\n') });
         const SYS = `Tu es le contrôleur qualité d'une agence de publicités Meta Ads. Tu juges si IMAGE A peut être livrée TELLE QUELLE à un client exigeant qui va la diffuser. Tu es strict mais juste : tu ne refuses que pour un défaut réel et visible.
 DÉFAUTS BLOQUANTS (verdict "corriger") :
 1. produit : le produit montré n'est pas le produit de IMAGE B (forme, couleur, matière, étiquette ou packaging différents ; produit inventé ou en double non prévu ; produit déformé).
@@ -316,9 +317,10 @@ DÉFAUTS BLOQUANTS (verdict "corriger") :
 4. marque : logo différent de IMAGE C ou déformé, nom de marque mal écrit, logo ou marque d'un concurrent visible.
 5. rendu : anatomie déformée (mains, doigts, visage), artefact visible, zone vide ou cassée, format qui n'est pas plein cadre 4:5, bande noire.
 6. structure : la mise en page ne suit pas le prompt (zone manquante, élément clé absent, CTA présent alors que le prompt l'interdit ou absent alors qu'il l'exige).
+7. verite : si une FICHE DE VÉRITÉ DE L'ANGLE est donnée, un texte de IMAGE A la contredit nettement (nie une cause qu'elle reconnaît, promet ce qu'elle exclut, affiche une rareté ou une échéance absente) ; ou un nom de société autre que le nom de marque indiqué est écrit.
 DÉFAUTS MINEURS (n'empêchent pas la livraison) : nuance de couleur, légère différence de position, style typographique.
 Réponds UNIQUEMENT par un objet JSON strict :
-{"verdict":"ok"|"corriger","score":0-10,"defauts":[{"type":"produit|texte|preuve|marque|rendu|structure","gravite":"bloquant|mineur","detail":"phrase courte et précise, en français"}],"consignes_correction":"instructions précises pour corriger les défauts bloquants (ce qu'il faut écrire, retirer, montrer), vide si ok","resume":"une phrase"}`;
+{"verdict":"ok"|"corriger","score":0-10,"defauts":[{"type":"produit|texte|preuve|marque|rendu|structure|verite","gravite":"bloquant|mineur","detail":"phrase courte et précise, en français"}],"consignes_correction":"instructions précises pour corriger les défauts bloquants (ce qu'il faut écrire, retirer, montrer), vide si ok","resume":"une phrase"}`;
         const raw = await callGeminiPro(SYS, parts, 3000, { modele: MODELES.creative, temperature: 0.1, thinkingBudget: 4096, logLabel: 'Contrôle qualité image', timeoutMs: 120000, typeAppel: 'controle_qualite_image' });
         const t = String(raw || ''), i = t.indexOf('{'), j = t.lastIndexOf('}');
         let d = null; try { d = JSON.parse(t.slice(i, j + 1)); } catch (_) { }
