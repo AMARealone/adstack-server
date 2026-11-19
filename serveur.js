@@ -1021,21 +1021,9 @@ function formatFCFA(n) {
 
 // delivery-v1 — MISE EN PAGE COMMUNE DES EMAILS CLIENT (paiement, livraison). Tableaux et styles en ligne : c'est ce que Gmail, Outlook
 // et les applis mobiles affichent de façon fiable. Largeur 560 px, un seul bouton, texte lisible sur téléphone.
+// cycle-client-v1 : signature des liens « ne plus recevoir les lettres » (voir /emails/lettres-stop)
+function signerDesinscription(uid) { return crypto.createHmac('sha256', String(process.env.SEQUENCE_CRON_SECRET || 'adstack')).update('stop:' + uid).digest('hex').slice(0, 24); }
 function echapHtml(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-function cadreEmail({ titre, intro = '', encadre = '', apercu = '', etapes = [], bouton = '', lien = '', pied = '' }) {
-  const etapesHtml = etapes.length ? `<tr><td style="padding:8px 32px 0;"><div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:8px;">Et maintenant</div>${etapes.map((e, i) => `<div style="display:block;padding:6px 0;font-size:14px;color:#374151;"><span style="display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:11px;background:#EEF4FF;color:#2D7FF9;font-weight:700;font-size:12px;margin-right:8px;">${i + 1}</span>${e}</div>`).join('')}</td></tr>` : '';
-  return `<!doctype html><html><body style="margin:0;padding:0;background:#F3F5FA;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F5FA;padding:24px 12px;"><tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#FFFFFF;border-radius:16px;overflow:hidden;font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;color:#1F2937;font-size:15px;line-height:1.6;">
-<tr><td style="padding:24px 32px 0;"><span style="font-size:18px;font-weight:800;color:#111827;letter-spacing:-.01em;">Ad<span style="color:#2D7FF9;">Stack</span></span></td></tr>
-<tr><td style="padding:20px 32px 0;"><h1 style="margin:0 0 14px;font-size:24px;line-height:1.25;color:#111827;">${titre}</h1>${intro}</td></tr>
-${encadre ? `<tr><td style="padding:20px 32px 0;"><div style="background:#F6F9FF;border:1px solid #E1EAFB;border-radius:12px;padding:16px 18px;font-size:14px;color:#374151;">${encadre}</div></td></tr>` : ''}
-${apercu ? `<tr><td style="padding:20px 32px 0;">${apercu}</td></tr>` : ''}
-${etapesHtml}
-${bouton ? `<tr><td style="padding:24px 32px 0;"><a href="${lien}" style="display:block;text-align:center;background:#2D7FF9;color:#FFFFFF;text-decoration:none;font-weight:700;font-size:15px;padding:14px 20px;border-radius:10px;">${bouton}</a></td></tr>` : ''}
-<tr><td style="padding:24px 32px 28px;font-size:12.5px;color:#9CA3AF;">${pied ? pied + '<br>' : ''}Une question ? Écris-nous sur WhatsApp ou depuis AdBoard.<br>AdStack · Dakar, Sénégal</td></tr>
-</table></td></tr></table></body></html>`;
-}
 
 // delivery-v1 (19 nov. 2026) — CE QUE COMPREND L'OFFRE, écrit une seule fois pour la facture ET l'email de paiement.
 // Avant : « X images livrées chaque semaine », « données marché hebdomadaires » — l'offre est mensuelle, en lots de vidéos + images.
@@ -1157,16 +1145,14 @@ async function sendPaymentConfirmationEmail({ email, name, plan, cycle, creditsP
   const cycleLabel = isPack ? 'achat unique' : (cycle === 'quarterly' ? 'abonnement trimestriel' : 'abonnement mensuel');
   const det = detailOffre(plan, isPack, creditsPerWeek, totalCredits);
   const prenom = String(name || '').trim().split(/\s+/)[0] || '';
-  const html = cadreEmail({
+  // cycle-client-v1 : même mise en page « lettre » que tout le programme email client (vouvoiement, l'équipe AdStack signe)
+  const html = require('./cycle_client').lettre({
+    apercu: `${planLabel} est actif. Votre facture est jointe.`, rubrique: 'Paiement',
     titre: 'Paiement confirmé',
-    intro: `<p style="margin:0 0 14px;">Bonjour${prenom ? ' ' + echapHtml(prenom) : ''},</p><p style="margin:0;">Merci pour ${isPack ? 'ton achat' : 'ton abonnement'} <strong>${planLabel}</strong>. Ton paiement est bien reçu et ${isPack ? 'tes créatives sont' : 'ton offre est'} déjà ${isPack ? 'disponibles' : 'active'} dans AdBoard.</p>`,
-    encadre: `<div style="font-size:13px;color:#6B7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">${planLabel} · ${cycleLabel}</div>`
-      + `<div style="font-size:22px;font-weight:700;color:#111827;margin-bottom:12px;">${formatFCFA(priceFcfa)} FCFA</div>`
-      + det.lignes.map(l => `<div style="padding:6px 0;border-top:1px solid #E8EEFB;">✓ ${l}</div>`).join('')
-      + `<div style="padding:6px 0;border-top:1px solid #E8EEFB;color:#6B7280;">${isPack ? 'Valable' : 'Actif'} jusqu'au ${expiresAt.toLocaleDateString('fr-FR')}</div>`,
-    etapes: ['Ouvre AdBoard et ajoute ton produit (photo, prix, cible) s\'il n\'y est pas encore.', 'Clique sur « Demander une production » sur ce produit.', `Tu reçois tes créatives dans AdBoard sous ${String((OFFERS[plan] && OFFERS[plan].monthly.delivery) || '48h').replace(/(\d)h/, '$1 h')}, avec un email quand elles sont prêtes.`],
-    bouton: 'Demander ma première production', lien: 'https://www.adstackofficial.com/adboard/products',
-    pied: 'Ta facture est jointe à cet email.',
+    corps: [`Bonjour${prenom ? ' ' + echapHtml(prenom) : ''},`, `Merci pour ${isPack ? 'votre achat' : 'votre abonnement'} <b>${planLabel}</b>. Votre paiement est bien reçu, et ${isPack ? 'vos créatives sont disponibles' : 'votre offre est active'} dès maintenant dans AdBoard.`],
+    tableau: { titre: `${planLabel} · ${cycleLabel}`, lignes: [['Montant', `${formatFCFA(priceFcfa)} FCFA`], [isPack ? 'Valable jusqu\'au' : 'Actif jusqu\'au', expiresAt.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })]], note: 'Votre facture est jointe à cet email.' },
+    corps2: ['<b>Ce que comprend votre offre :</b>', { liste: det.lignes }, 'Pour lancer votre première production : ajoutez votre produit dans AdBoard (photos, offre, marché), puis touchez « Demander une production ». Vous recevez un email dès que vos créatives sont prêtes.'],
+    bouton: { texte: 'Demander ma première production', lien: 'https://www.adstackofficial.com/adboard/products' },
   });
 
   const payload = {
@@ -1281,29 +1267,38 @@ async function sendDeliverablesReadyEmail({ email, produit, brief }) {
   const titreAngle = a => echapHtml(String(a && typeof a === 'object' ? (a.titre || a.title || '') : (a || '')).split('*')[0].split(/\s[—–-]\s/)[0].replace(/^\s*(angle\s*\d+\s*[:.\-–—]\s*)/i, '').trim().slice(0, 90));
   const angles = (Array.isArray(d.angles) ? d.angles : []).map(titreAngle).filter(Boolean);
   const vignettes = crea.filter(c => c.kind !== 'video' && (c.thumbUrl || c.url)).slice(0, 3).map(c => c.thumbUrl || c.url);
-  const nomProduit = echapHtml(produit || 'ton produit');
+  const nomProduit = echapHtml(produit || 'votre produit');
   const prenom = echapHtml(String((b.client && (b.client.name || b.client.nom)) || '').trim().split(/\s+/)[0] || '');
   const consignes = String((b.product && b.product.notes) || '').trim();
   const total = nbVid + nbImg;
   const resume = [nbVid ? `${nbVid} vidéo${nbVid > 1 ? 's' : ''}` : '', nbImg ? `${nbImg} image${nbImg > 1 ? 's' : ''}` : ''].filter(Boolean).join(' + ');
-  const html = cadreEmail({
-    titre: `Tes créatives pour ${nomProduit} sont prêtes`,
-    intro: `<p style="margin:0;">${prenom ? 'Bonjour ' + prenom + ', t' : 'T'}a production est terminée : ${total ? '<strong>' + resume + '</strong>' : 'tes créatives'}${nbCopies ? ` et <strong>${nbCopies} ad cop${nbCopies > 1 ? 'ies' : 'y'}</strong>` : ''} t'attendent dans AdBoard, prêtes à être lancées.</p>`,
-    encadre: (angles.length ? `<div style="font-weight:700;color:#111827;margin-bottom:6px;">${angles.length} angle${angles.length > 1 ? 's' : ''} marketing testé${angles.length > 1 ? 's' : ''}</div>` + angles.map((a, i) => `<div style="padding:5px 0;border-top:1px solid #E8EEFB;">${i + 1}. ${a}</div>`).join('') : '')
-      + (b.reprise && b.reprise.angle ? `<div style="margin-top:12px;padding-top:10px;border-top:1px solid #E1EAFB;color:#6B7280;"><strong style="color:#374151;">Ta demande :</strong> continuer sur l'angle « ${echapHtml(String(b.reprise.angle).split('*')[0].trim().slice(0, 90))} ». C'est l'angle 1 de ce lot : de nouvelles créatives, dans le même style.</div>` : '')
-      + (consignes ? `<div style="margin-top:12px;padding-top:10px;border-top:1px solid #E1EAFB;color:#6B7280;"><strong style="color:#374151;">Ta consigne, prise en compte :</strong> ${echapHtml(consignes.slice(0, 280))}${consignes.length > 280 ? '…' : ''}</div>` : ''),
-    apercu: vignettes.length ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${vignettes.map(u => `<td width="${Math.floor(100 / vignettes.length)}%" style="padding:0 4px;"><img src="${echapHtml(u)}" alt="" width="100%" style="display:block;width:100%;border-radius:10px;border:1px solid #E5E7EB;"></td>`).join('')}</tr></table>` : '',
-    etapes: ['Ouvre ta galerie et télécharge les créatives.', 'Lance-les en publicité : chaque angle est un test, garde ceux qui performent.', 'Dis-nous ce que tu en penses depuis la galerie : la prochaine production en tient compte.'],
-    bouton: 'Voir mes créatives', lien: 'https://www.adstackofficial.com/adboard/gallery',
+  // cycle-client-v1 : mise en page « lettre », vouvoiement, signée par l'équipe AdStack
+  const lignes = [];
+  if (nbVid) lignes.push(['Vidéos', String(nbVid)]);
+  if (nbImg) lignes.push(['Images', String(nbImg)]);
+  if (nbCopies) lignes.push(['Ad copies', String(nbCopies)]);
+  if (angles.length) lignes.push(['Angles marketing', String(angles.length)]);
+  const suite = [];
+  if (angles.length) suite.push('<b>Les angles de ce lot :</b>', { liste: angles });
+  if (b.reprise && b.reprise.angle) suite.push(`<b>Votre demande :</b> continuer sur l'angle « ${echapHtml(String(b.reprise.angle).split('*')[0].trim().slice(0, 90))} ». C'est l'angle 1 de ce lot : de nouvelles créatives, dans le même style.`);
+  if (consignes) suite.push(`<b>Votre consigne, prise en compte :</b> ${echapHtml(consignes.slice(0, 280))}${consignes.length > 280 ? '…' : ''}`);
+  suite.push('Le bon réflexe : lancez toutes les créatives du lot avec le même budget, puis gardez celles qui vendent. Votre avis dans la galerie guide la prochaine production.');
+  const html = require('./cycle_client').lettre({
+    apercu: `${total ? resume : 'Vos créatives'} pour ${String(produit || 'votre produit').slice(0, 60)}, prêtes à être lancées.`, rubrique: 'Livraison',
+    titre: `Vos créatives pour ${nomProduit} sont prêtes`,
+    corps: [`${prenom ? 'Bonjour ' + prenom + ', v' : 'V'}otre production est terminée. Tout est dans votre galerie AdBoard, prêt à être lancé.`],
+    vignettes,
+    tableau: lignes.length ? { titre: 'Dans ce lot', lignes } : null,
+    corps2: suite,
+    bouton: { texte: 'Voir mes créatives', lien: 'https://www.adstackofficial.com/adboard/gallery' },
   });
-  const subject = `Tes créatives pour ${String(produit || 'ton produit').slice(0, 60)} sont prêtes${total ? ' (' + resume + ')' : ''}`;
-
+  const subject = `Vos créatives pour ${String(produit || 'votre produit').slice(0, 60)} sont prêtes${total ? ' (' + resume + ')' : ''}`;
   try {
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'AdStack <contact@adstackofficial.com>',
+        from: "L'équipe AdStack <bonjour@adstackofficial.com>",
         to: [email],
         subject,
         html,
@@ -1413,8 +1408,8 @@ async function activateSubscription(userId, planInfo, email, name, phone) {
   }
   // Notification push + trace persistante — confirmation abonnement
   notifyUserBoth(userId, {
-    title: '✅ Abonnement confirmé',
-    body: `Ton plan ${PLAN_LABELS[plan] || plan} est actif. Tu peux demander tes visuels dès maintenant.`,
+    title: '✅ Paiement confirmé',
+    body: `Votre offre ${PLAN_LABELS[plan] || plan} est active. Vous pouvez demander votre première production dès maintenant.`,
     url: '/adboard/products',
     type: 'payment',
   }).catch(()=>{});
@@ -6039,24 +6034,8 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
     const subs = await subsRes.json();
     const convertedUserIds = new Set((subs || []).filter(s => s.active).map(s => s.user_id));
 
-    // Rappel de renouvellement — 3 jours avant expiration, 1x max par cycle
-    for (const sub of (subs || [])) {
-      if (!sub.active || !sub.expires_at) continue;
-      const daysLeft = (new Date(sub.expires_at).getTime() - Date.now()) / (24*60*60*1000);
-      if (daysLeft > 0 && daysLeft <= 3) {
-        const reminderKey = `renewal_${sub.expires_at.slice(0,10)}`;
-        const already = await wasSequenceSent(sub.user_id, reminderKey);
-        if (!already) {
-          await notifyUserBoth(sub.user_id, {
-            title: '⏳ Ton abonnement expire bientôt',
-            body: `Ton plan ${PLAN_LABELS[sub.plan] || sub.plan} expire dans ${Math.ceil(daysLeft)} jour(s). Renouvelle pour ne pas perdre tes livraisons.`,
-            url: '/adboard/offers',
-            type: 'warning',
-          });
-          await markSequenceSent(sub.user_id, reminderKey);
-        }
-      }
-    }
+    // (19 nov. 2026) L'ancien rappel « Ton abonnement expire bientôt » est retiré : la fin de forfait est gérée plus bas
+    // (notification à J-3 et le jour même) et par le programme email des clients (bilan à J-5, dernier jour).
 
     const DAY_MS = 24 * 60 * 60 * 1000;
     const SEQUENCE_STEPS = [
@@ -6209,7 +6188,7 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
       }
     }
 
-    // ── Rappel de renouvellement — chaque jour à partir de J-5 avant expiration ──
+    // ── Rappel de renouvellement dans AdBoard — à J-3 et le jour même (plus chaque jour : le bilan et le dernier jour partent par email) ──
     try {
       const subsRes = await fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?active=eq.true&select=user_id,plan,expires_at,started_at`, {
         headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` }
@@ -6220,15 +6199,15 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
         for (const sub of activeSubs) {
           if (!sub.expires_at) continue;
           const daysLeft = Math.ceil((new Date(sub.expires_at).getTime() - Date.now()) / DAY_MS);
-          if (daysLeft < 0 || daysLeft > 5) continue; // fenêtre J-5 à J0 uniquement
+          if (daysLeft !== 3 && daysLeft !== 0) continue; // J-3 et J0 seulement
           const dailyKey = `renewal_reminder_${todayKey}`;
           if (await wasSequenceSent(sub.user_id, dailyKey)) continue;
           const planLabelR = PLAN_LABELS[sub.plan] || sub.plan;
           const body = daysLeft === 0
-            ? `Ton forfait ${planLabelR} expire aujourd'hui — renouvelle pour garder tes productions du mois prochain.`
-            : `Ton forfait ${planLabelR} expire dans ${daysLeft} jour${daysLeft>1?'s':''} — renouvelle pour ne pas interrompre tes productions.`;
+            ? `Votre forfait ${planLabelR} se termine aujourd'hui. Renouvelez-le pour continuer vos productions.`
+            : `Votre forfait ${planLabelR} se termine dans 3 jours. Renouvelez-le pour ne pas interrompre vos productions.`;
           await notifyUserBoth(sub.user_id, {
-            title: daysLeft === 0 ? '⏰ Ton forfait expire aujourd\'hui' : '⏰ Ton forfait expire bientôt',
+            title: daysLeft === 0 ? 'Votre forfait se termine aujourd\'hui' : 'Votre forfait se termine bientôt',
             body,
             url: '/adboard/offers',
             type: 'warning',
@@ -6241,10 +6220,45 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
       console.error('[Sequence] Erreur rappel renouvellement:', e.message);
     }
 
+    // ── cycle-client-v1 : le programme email des CLIENTS (accueil, lettres, 50/75/100 %, bilan, dernier jour, retour) ──
+    try {
+      const CC = require('./cycle_client');
+      const H = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` };
+      const lire = async (chemin) => { const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/${chemin}`, { headers: H }); const j = await r.json(); return Array.isArray(j) ? j : []; };
+      const bilanCC = await CC.traiterCycle({
+        lire, users, offres: OFFERS, labels: PLAN_LABELS,
+        journalDe: (uid) => lire(`email_sequence_log?user_id=eq.${uid}&email_key=like.cc_*&select=email_key,created_at`),
+        marquer: (uid, cle) => markSequenceSent(uid, cle),
+        lienDesinscription: (uid) => `https://adstack-server.onrender.com/emails/lettres-stop?u=${encodeURIComponent(uid)}&s=${signerDesinscription(uid)}`,
+        envoyer: async ({ to, objet, html, texte, cle, userId }) => {
+          const RESEND_KEY = process.env.RESEND_API_KEY; if (!RESEND_KEY) return false;
+          const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from: "L'équipe AdStack <bonjour@adstackofficial.com>", to: [to], reply_to: 'contact@adstackofficial.com', subject: objet, html: injecterUtmDansHtml(html, cle), text: texte,
+              tags: [{ name: 'email_key', value: cle.replace(/[^A-Za-z0-9_-]/g, '_') }, { name: 'user_id', value: userId }] }) });
+          if (!r.ok) console.error('[Cycle client] envoi refusé :', r.status, (await r.text()).slice(0, 200));
+          return r.ok;
+        },
+      });
+      sentCount += bilanCC.envoyes;
+      console.log(`[Cycle client] ${bilanCC.envoyes} email(s) client(s) envoyé(s), ${bilanCC.erreurs} erreur(s)`);
+    } catch (e) { console.error('[Cycle client] Erreur :', e.message); }
+
     console.log(`[Sequence] ✅ Traitement quotidien terminé — ${sentCount} email(s) envoyé(s)`);
   } catch(e) {
     console.error('[Sequence] Erreur cron:', e.message);
   }
+  return;
+}
+
+// cycle-client-v1 — SE DÉSINSCRIRE DES LETTRES (stratégie, coulisses). Les emails liés au forfait (créatives prêtes, fin de
+// forfait, bilan) continuent : ils concernent le service payé. Lien signé : personne ne peut désinscrire quelqu'un d'autre.
+if (req.method === 'GET' && req.url.startsWith('/emails/lettres-stop')) {
+  const u = new URL(req.url, 'http://x');
+  const uid = u.searchParams.get('u') || '', s = u.searchParams.get('s') || '';
+  const ok = uid && s && s === signerDesinscription(uid);
+  if (ok) await markSequenceSent(uid, 'cc_stop').catch(() => {});
+  res.writeHead(ok ? 200 : 400, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AdStack</title></head><body style="margin:0;font-family:-apple-system,Helvetica,Arial,sans-serif;background:#EEECE7;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:20px"><div style="background:#fff;border-radius:8px;padding:32px;max-width:440px;text-align:center"><h1 style="font-size:20px;margin:0 0 10px;color:#12151C">${ok ? 'C\'est noté.' : 'Lien invalide'}</h1><p style="color:#4A4F59;line-height:1.6;margin:0">${ok ? 'Vous ne recevrez plus nos lettres de stratégie et de coulisses. Les emails liés à votre forfait (créatives prêtes, bilan, fin de forfait) continuent.' : 'Ce lien ne fonctionne pas. Écrivez-nous depuis AdBoard.'}</p></div></body></html>`);
   return;
 }
 
@@ -7397,9 +7411,14 @@ if (req.method === 'GET' && req.url === '/crm/clients') {
     const [subsRes, usersRes, briefsRes, txRes] = await Promise.all([
       fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?select=*`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }),
       fetch(`${SUPABASE_URL_INT}/auth/v1/admin/users?per_page=1000`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }),
-      fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?select=user_id,status,credits_used`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }),
+      fetch(`${SUPABASE_URL_INT}/rest/v1/briefs?select=user_id,status,credits_used,created_at`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }),
       fetch(`${SUPABASE_URL_INT}/rest/v1/transactions?select=user_id,montant_fcfa,created_at&order=created_at.asc`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }),
     ]);
+    // cycle-client-v1 — score de santé : créatives livrées, emails ouverts / cliqués sur 30 jours (lectures tolérantes : un échec n'empêche pas la liste)
+    const lireOk = async (chemin) => { try { const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/${chemin}`, { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }); const j = await r.json(); return Array.isArray(j) ? j : []; } catch (_) { return []; } };
+    const depuis30 = new Date(Date.now() - 30 * 86400000).toISOString();
+    const [produitsS, evtsS] = await Promise.all([lireOk('products?select=user_id,id,creatives'), lireOk(`email_events?created_at=gte.${depuis30}&select=user_id,event_type`)]);
+    const CCs = require('./cycle_client');
     const subs = await subsRes.json();
     const usersData = await usersRes.json();
     const users = usersData.users || usersData || [];
@@ -7442,6 +7461,11 @@ if (req.method === 'GET' && req.url === '/crm/clients') {
         total_depense_fcfa: totalDepense,
         nb_achats: mesTx.length,
         premier_achat: mesTx[0]?.created_at || sub.started_at,
+        sante: (() => { try {
+          const etat = CCs.etatClient({ subs: subs.filter(s => s.user_id === sub.user_id), briefs: mesBriefs, produits: produitsS.filter(p => p.user_id === sub.user_id), journal: [], offres: OFFERS, labels: PLAN_LABELS });
+          const ev = evtsS.filter(e => e.user_id === sub.user_id);
+          return CCs.scoreSante(etat, { clics30: ev.filter(e => e.event_type === 'clicked').length, ouvertures30: ev.filter(e => e.event_type === 'opened').length });
+        } catch (_) { return null; } })(),
       };
     }).sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
 
@@ -8740,8 +8764,8 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
       const userId = briefs[idx].client?.user_id;
       if (userId) {
         notifyUserBoth(userId, {
-          title: '🎉 Tes créatives sont prêtes',
-          body: `Les vidéos et images pour ${briefs[idx].product?.nom || 'ton produit'} sont livrées — va les récupérer sur AdBoard.`,
+          title: '🎉 Vos créatives sont prêtes',
+          body: `Les vidéos et images pour ${briefs[idx].product?.nom || 'votre produit'} sont livrées. Elles vous attendent dans votre galerie.`,
           url: '/adboard/gallery',
           type: 'brief',
         }).catch(()=>{});
