@@ -85,6 +85,23 @@ async function handle(req, res, deps) {
       console.log('🎬 VIDEO-JOB lancé : commande ' + cmd + ' slot ' + slot + ' CT ' + ct + ' → ' + nom)
       return rep(res, 200, { execution: nom }), true
     }
+    // ── analyse-ct-v1 : analyse automatique d'un CT vidéo à l'import (même machine que le moteur, MODE=analyse_ct, rien n'est produit) ──
+    if (req.method === 'POST' && url === '/video-jobs/analyse-ct') {
+      const b = JSON.parse((await lire(req)) || '{}')
+      const ct = String(b.ct_id || ''), video = String(b.video_url || '')
+      if (!/^vct_[A-Za-z0-9_\-]{4,60}$/.test(ct)) return rep(res, 400, { error: 'ct_id invalide' }), true
+      if (!/^https:\/\/[^\s"']{8,600}$/.test(video)) return rep(res, 400, { error: 'video_url invalide' }), true
+      const cle = 'analyse|' + ct, deja = recents.get(cle)
+      if (deja && Date.now() - deja.t < 600000 && !b.forcer) return rep(res, 200, { execution: deja.execution, deja_lance: true }), true
+      const env = [{ name: 'MODE', value: 'analyse_ct' }, { name: 'CT_ID', value: ct }, { name: 'VIDEO_URL', value: video }, { name: 'COMMANDE_ID', value: 'analyse-' + ct.slice(4, 30) }]
+      if (b.nom) env.push({ name: 'NOM', value: String(b.nom).slice(0, 120) })
+      const r = await api(deps, 'POST', base(deps) + ':run', { overrides: { containerOverrides: [{ env }], taskCount: 1 } })
+      if (!r.ok) return rep(res, 502, { error: 'Cloud Run a refusé le lancement : ' + ((r.d.error && r.d.error.message) || r.status), http: r.status }), true
+      const nom = (((r.d.metadata || {}).name) || '').split('/').pop() || ''
+      recents.set(cle, { t: Date.now(), execution: nom })
+      console.log('🔎 ANALYSE CT lancée : ' + ct + ' → ' + nom)
+      return rep(res, 200, { execution: nom, etat_url: PUB() + '/ct-video/analyses-import/' + ct + '.json' }), true
+    }
     // ── arrêt réel d'une vidéo (bouton Annuler de Factory) ──
     if (req.method === 'POST' && url === '/video-jobs/cancel') {
       const b = JSON.parse((await lire(req)) || '{}')
