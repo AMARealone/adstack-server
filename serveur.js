@@ -5172,6 +5172,8 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
 
   if (await require('./r2_video')(req, res)) return;
   if (await require('./video_jobs')(req, res, { getToken, callGeminiPro, MODELES, SA, vertexRequestGlobalAvecReessai, preparerImageProduitPourCreative, aspectsDisponibles, LIBELLE_ASPECT })) return;
+  // auto-prod-v1 : production automatique (ouvrier cloud), dossiers complets conservés — un module absent ne bloque jamais le serveur
+  if ((req.url || '').startsWith('/auto/')) { try { if (await require('./auto_prod').routes(req, res, depsAutoProd())) return; } catch (e) { console.error('[Auto-prod] module indisponible :', e.message); res.writeHead(503, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'production automatique indisponible' })); return; } }
   // ── /name-ct-video — Nom, méta-description et balises d'un CT VIDÉO (texte), par Gemini ──
   if (req.method === 'POST' && req.url === '/name-ct-video') {
     let body = '';
@@ -5821,8 +5823,16 @@ if (req.method === 'POST' && req.url === '/create-checkout') {
   req.on('data', d => body += d);
   req.on('end', async () => {
     try {
-      const { product_id, email, user_id, plan } = JSON.parse(body);
+      let { product_id, email, user_id, plan } = JSON.parse(body);
       if (!CHARIOW_KEY) { res.writeHead(500); res.end(JSON.stringify({error:'CHARIOW_KEY manquante'})); return; }
+      // tarif-protege-v1 : un produit « tarif d'origine » n'est ouvert qu'au client dont le prix est encore garanti ; sinon, l'offre au prix en vigueur
+      if (PLAN_MAP[product_id] && PLAN_MAP[product_id].tarif_protege) {
+        const tp = user_id ? await tarifProtege(user_id) : { concerne: false };
+        if (!(tp.concerne && tp.protege && tp.checkout_id === product_id)) {
+          const pl = PLAN_MAP[product_id].plan;
+          product_id = (String((OFFERS[pl] && OFFERS[pl].monthly.checkout) || '').match(/prd_[a-z0-9]+/i) || [product_id])[0];
+        }
+      }
       const r = await fetch('https://api.chariow.com/v1/checkout', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${CHARIOW_KEY}`, 'Content-Type': 'application/json' },
@@ -5934,8 +5944,11 @@ if (req.method === 'GET' && req.url.startsWith('/cron/check-pending')) {
   res.writeHead(200, {'Content-Type':'application/json'});
   res.end(JSON.stringify({ ok: true, message: 'Vérification pending en cours' }));
 
+  // auto-prod-v1 : le calendrier par offre (12 h / 36 h en 48 h, 6 h / 18 h en 24 h) remplace les deux anciens rappels fixes (12 h et 18 h).
+  let autoOk = false;
+  try { await require('./auto_prod').cron(depsAutoProd()); autoOk = true; } catch (e) { console.error('[Auto-prod] cron :', e.message); }
   try {
-    const briefs = await loadBriefs();
+    const briefs = autoOk ? [] : await loadBriefs();   // anciens rappels : seulement en secours si le module est absent
     const seuil = Date.now() - 12 * 60 * 60 * 1000;
     const aAlerter = briefs.filter(b =>
       b.status === 'pending' && !b.pending_alert_sent && new Date(b.created_at).getTime() <= seuil
@@ -6517,10 +6530,13 @@ if (req.method === 'POST' && req.url === '/chat') {
 
       // ava-v2 (19 nov. 2026) — CE QUE LA MARQUE NOUS A DIT : ses avis sur les créatives (« Mon avis ») et ses remarques générales.
       // Lus avec SA connexion (jeton envoyé par AdBoard) : jamais les avis d'un autre compte.
-      let avisTxt = 'Aucun avis donné pour l\'instant.';
+      let avisTxt = 'Aucun avis donné pour l\'instant.', tarifTxt = '';
       try {
         const meAva = await avisIdentifier(req);
         if (meAva) {
+          // tarif-protege-v1 : Ava connaît le tarif garanti de CE client et la date à laquelle le prix en vigueur s'applique
+          const tpA = await tarifProtege(meAva.id);
+          if (tpA.concerne) tarifTxt = `TARIF GARANTI DE CE CLIENT : il nous a rejoints à ${tpA.prix_entree.toLocaleString('fr-FR')} FCFA par mois pour ${tpA.nom}. Ce prix est garanti jusqu'au ${new Date(tpA.date_hausse).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })} ; ensuite ${tpA.nom} passe à ${tpA.prix_actuel.toLocaleString('fr-FR')} FCFA. ${tpA.protege ? 'Son prochain renouvellement est encore à son tarif garanti (bouton « Renouveler à mon tarif garanti » dans l\'onglet Forfait).' : 'Son prochain renouvellement sera au prix en vigueur.'} Si on lui demande pourquoi : nous relevons nos standards (créatives plus abouties, suivi plus proche, plus de puissance de frappe par marque) et travaillons avec moins de marques, mieux ; son tarif d'entrée a été garanti parce qu'il était là avant. Dis-le simplement, sans t'excuser.\n\n`;
           const liste = (await avisLister(meAva.id)).slice(0, 15);
           const VERD = { excellente: 'adore', a_affiner: 'à affiner', a_retravailler: 'pas convaincu' };
           const nomP = Object.fromEntries((products || []).map(p => [p.id, p.nom]));
@@ -6600,7 +6616,7 @@ SI LA PERSONNE EST FRUSTRÉE OU DÉÇUE : 1) reconnais sincèrement ce qu'elle r
 la prochaine production corrige le tir, lancer une nouvelle production sur un angle qu'elle aime, voir le Suivi, ou WhatsApp
 si c'est bloquant). Jamais de langue de bois, jamais de promesse qu'on ne peut pas tenir.
 
-PRIX ET DEVISES : le prix d'un produit s'écrit TOUJOURS tel que la marque l'a donné, dans SA devise (un produit à 100 000 GNF
+${tarifTxt}PRIX ET DEVISES : le prix d'un produit s'écrit TOUJOURS tel que la marque l'a donné, dans SA devise (un produit à 100 000 GNF
 reste en GNF). Ne convertis jamais un prix de produit en FCFA. Seuls les prix des offres AdStack suivent OFFRES ci-dessus.
 
 TU ES
@@ -7825,6 +7841,16 @@ if (req.method === 'POST' && req.url.split('?')[0] === '/briefs/cancel') {
       return J(200, { ok: true });
     } catch (e) { console.error('[Briefs/cancel]', e.message); return J(500, { error: 'reseau' }); }
   });
+  return;
+}
+
+// tarif-protege-v1 — le tarif garanti du client connecté (lu par AdBoard : annonce de la hausse, renouvellement au prix d'entrée)
+if (req.method === 'GET' && req.url.split('?')[0] === '/tarif/protege') {
+  (async () => {
+    const J = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
+    try { const me = await teamAuthUser(req); if (!me) return J(401, { error: 'connexion_requise' }); return J(200, await tarifProtege(me.id)); }
+    catch (e) { return J(200, { concerne: false }); }
+  })();
   return;
 }
 
@@ -11698,7 +11724,57 @@ function appliquerOffres(j) {
     po.prix_img = Math.round(po.price_fcfa / (po.total_credits || 6));
     if (txt(os.nom, 30)) PLAN_LABELS.oneshot = txt(os.nom, 30);
   }
+  // tarif-protege-v1 : produits Chariow « tarif d'origine » (un par ancien prix) — leur paiement active la même offre, au prix d'entrée du client
+  const tp = j.tarifs_proteges;
+  if (tp && typeof tp === 'object') {
+    TARIFS_PROTEGES.duree_jours = num(tp.duree_jours, 30, 365) || 60;
+    for (const plan of ['starter', 'pro', 'scale']) {
+      TARIFS_PROTEGES[plan] = {};
+      for (const [prixTxt, lien] of Object.entries(tp[plan] && typeof tp[plan] === 'object' ? tp[plan] : {})) {
+        const prix = num(prixTxt, 10000, 50000000), id = (String(lien || '').match(/prd_[a-z0-9]+/i) || [])[0];
+        if (!prix) continue;
+        TARIFS_PROTEGES[plan][prix] = id || null;
+        if (id && !(PLAN_MAP[id] && !PLAN_MAP[id].tarif_protege)) PLAN_MAP[id] = { plan, cycle: 'monthly', credits_per_week: Math.round((OFFERS[plan].creativesPerMonth || 24) / 4), price_fcfa: prix, prix_img: Math.round(prix / (OFFERS[plan].creativesPerMonth || 24)), tarif_protege: true };
+      }
+    }
+  }
   return n;
+}
+// auto-prod-v1 : ce que le module de production automatique reçoit du serveur
+function depsAutoProd() {
+  return { SB: SUPABASE_URL_INT, ANON: SUPABASE_ANON_KEY_INT, entetes: () => ({ apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }),
+    OFFERS, PORT, SA, getToken, loadBriefs, saveBriefs, notifierAdmin, notifyUserBoth, adminOk: crmAdminOk, ADMIN_EMAIL, ADMIN_USER_ID: process.env.ADMIN_USER_ID || '' };
+}
+// tarif-protege-v1 (19 nov. 2026) — LE PRIX D'ENTRÉE D'UN CLIENT EST GARANTI 2 MOIS. Décision du fondateur : les prix montent régulièrement,
+// mais un client ne découvre jamais une hausse du jour au lendemain. Son 1er et son 2e mois sont au prix auquel il est entré ; à partir du
+// 3e mois, le prix en vigueur s'applique, et AdBoard le lui annonce dès maintenant avec la date. Calculé depuis ses paiements réels.
+const TARIFS_PROTEGES = { duree_jours: 60, starter: {}, pro: {}, scale: {} };
+async function tarifProtege(userId) {
+  const rien = { concerne: false };
+  try {
+    const H = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` };
+    const [rs, rt] = await Promise.all([
+      fetch(`${SUPABASE_URL_INT}/rest/v1/subscriptions?user_id=eq.${encodeURIComponent(userId)}&select=*&order=started_at.desc&limit=1`, { headers: H }),
+      fetch(`${SUPABASE_URL_INT}/rest/v1/transactions?user_id=eq.${encodeURIComponent(userId)}&select=plan,montant_fcfa,created_at&order=created_at.asc&limit=200`, { headers: H }),
+    ]);
+    const sub = ((await rs.json()) || [])[0], txs = rt.ok ? await rt.json() : [];
+    if (!sub || sub.type === 'pack' || !OFFERS[sub.plan]) return rien;
+    const prixActuel = OFFERS[sub.plan].monthly.price;
+    // la série de paiements en cours sur CETTE offre (une coupure de plus de 50 jours remet le compteur à zéro)
+    const P = (Array.isArray(txs) ? txs : []).filter(t => t.plan === sub.plan && t.montant_fcfa > 0);
+    if (!P.length) return rien;
+    let debut = P.length - 1;
+    while (debut > 0 && new Date(P[debut].created_at) - new Date(P[debut - 1].created_at) < 50 * 864e5) debut--;
+    const serie = P.slice(debut), prixEntree = serie[0].montant_fcfa, dernier = serie[serie.length - 1];
+    if (prixEntree >= prixActuel || dernier.montant_fcfa >= prixActuel) return rien;
+    const finAbo = sub.expires_at ? new Date(sub.expires_at).getTime() : Date.now();
+    const moisGarantis = Math.max(1, Math.round(TARIFS_PROTEGES.duree_jours / 30));
+    const protege = serie.length < moisGarantis;                       // le prochain paiement est-il encore au prix d'entrée ?
+    const dateHausse = new Date(finAbo + (protege ? (moisGarantis - serie.length) * 30 * 864e5 : 0));
+    return { concerne: true, plan: sub.plan, nom: OFFERS[sub.plan].name, prix_entree: prixEntree, prix_actuel: prixActuel, protege,
+      paiements: serie.length, mois_garantis: moisGarantis, date_hausse: dateHausse.toISOString(), jours_avant_hausse: Math.max(0, Math.ceil((dateHausse.getTime() - Date.now()) / 864e5)),
+      checkout_id: protege ? ((TARIFS_PROTEGES[sub.plan] || {})[prixEntree] || null) : null };
+  } catch (e) { console.warn('[Tarif protégé]', e.message); return rien; }
 }
 async function chargerOffres() {
   try {
