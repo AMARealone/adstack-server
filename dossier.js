@@ -118,7 +118,7 @@ module.exports = async function dossier(req, res) {
     let poids = 0
     const media = async (nom, url, max, quoi) => {
       if (!url || !/^https:\/\//.test(url)) return false
-      if (poids > (LEGER ? 110e6 : 150e6)) { liens.push(quoi + ' : ' + url + ' (non inclus : dossier déjà lourd)'); return false }
+      if (poids > (LEGER ? 200e6 : 250e6)) { liens.push(quoi + ' : ' + url + ' (non inclus : dossier déjà lourd)'); return false }
       const tmpF = pathM.join(tmpDir, 'f' + Z.n + '_' + Math.random().toString(36).slice(2, 6))
       try { const r5 = await telechargerVersFichier(url, tmpF, max); poids += r5.taille; Z.ajouterFichier(nom, tmpF, r5.crc, r5.taille); return true }
       catch (e) { manques.push(quoi + ' — ' + e.message + ' — ' + url); return false }
@@ -131,6 +131,7 @@ module.exports = async function dossier(req, res) {
     ajouter('02_hypothese_marche/angles_retenus.json', d.angles || [])
     ajouter('03_plan/plan_niveaux_de_conscience.json', d.planNiveaux || null)
     ajouter('03_plan/couts.json', d.couts || null)
+    if (d.verites || d.marque_affichee != null) ajouter('03_plan/fiches_de_verite.json', { marque_affichee: d.marque_affichee ?? null, verites: d.verites || null })
     ajouter('03_plan/journal_factory.txt', (b.journal || []).join('\n') || '(vide)')
     // 2. ad copies
     ;(d.copies || []).forEach((c, a) => { if (c) ajouter(`04_ad_copies/angle${a + 1}.md`, '# Angle ' + (a + 1) + ' — ' + String((d.angles || [])[a] || '').split('*')[0] + '\n\n## 5 hooks\n' + (c.hooks || []).map((h, i) => (i + 1) + '. ' + h).join('\n') + '\n\n## Description\n' + (c.description || '')) })
@@ -146,7 +147,9 @@ module.exports = async function dossier(req, res) {
         if (j.journal && j.journal.length) ajouter(base + '/journal_machine.txt', j.journal.map((x) => typeof x === 'string' ? x : JSON.stringify(x)).join('\n'))
         await media(base + '/video_finale.' + ext(c.videoUrl, 'mp4'), c.videoUrl, 120e6, 'vidéo angle ' + a)
         await media(base + '/historique_production.json', j.historiqueUrl, 60e6, 'historique vidéo angle ' + a)
-        if (LEGER) { if (j.ctVideoUrl) liens.push('CT source vidéo angle ' + a + ' : ' + j.ctVideoUrl) } else await media(base + '/ct_source.' + ext(j.ctVideoUrl, 'mp4'), j.ctVideoUrl, 60e6, 'CT source vidéo angle ' + a)
+        // v11f — la vidéo source du CT est TOUJOURS dans le dossier, à côté de la vidéo livrée (comparaison image par image). Le zip s'écrit sur le disque
+        // depuis la v11e : la mémoire n'est plus le problème. Si elle ne passe pas (trop lourde, lien mort), son lien est donné dans le LISEZMOI.
+        if (!(await media(base + '/ct_source.' + ext(j.ctVideoUrl, 'mp4'), j.ctVideoUrl, 80e6, 'CT source vidéo angle ' + a)) && j.ctVideoUrl) liens.push('CT source vidéo angle ' + a + ' : ' + j.ctVideoUrl)
         if (j.dossierUrl) { if (LEGER) liens.push('dossier de tournage angle ' + a + ' : ' + j.dossierUrl); else if (!(await media(base + '/dossier_tournage.zip', j.dossierUrl, 60e6, 'dossier de tournage angle ' + a))) liens.push('dossier de tournage angle ' + a + ' : ' + j.dossierUrl) }
         lignes.push(`| ${a} | vidéo | ${niv} | ${j.ctNom || c.ct || '—'} | ${j.etat || (c.videoUrl ? 'prête' : '—')} | ${j.cout_usd != null ? Number(j.cout_usd).toFixed(2) + ' $' : '—'} | — |`)
       } else {

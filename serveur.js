@@ -195,24 +195,24 @@ const OFFERS = {
   starter: {
     id: 'starter', name: 'PERF+',
     tagline: 'Automatiser la production de vos créatives, tout en améliorant vos performances publicitaires.',
-    imagesPerWeek: 6, batchesPerWeek: 1, creativesPerMonth: 24, videosPerMonth: 8, imagesPerMonth: 16, produitsPerWeek: '1',
-    garantie: 'Performance en 45 jours',
-    // prixImg = prix moyen par créative (vidéos + images), arrondi
-    monthly: { price: 140000, prixImg: 5833, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
+    imagesPerWeek: 6, batchesPerWeek: 1, lotsPerMonth: 4, creativesPerMonth: 24, videosPerMonth: 8, imagesPerMonth: 16, produits: 4, membres: '2',
+    garantie: 'Performance en 60 jours',
+    // prixImg = prix moyen par créative (vidéos + images), arrondi — grille du 19 nov. 2026
+    monthly: { price: 250000, prixImg: 10417, delivery: '48h', checkout: 'https://shop.adstackofficial.com/prd_ljowq8/checkout' },
   },
   pro: {
     id: 'pro', name: 'GROWTH', best: true,
-    tagline: 'Accélérer la production et la croissance de votre marque, sans la prise de tête de gérer une équipe.',
-    imagesPerWeek: 12, batchesPerWeek: 2, creativesPerMonth: 48, videosPerMonth: 16, imagesPerMonth: 32, produitsPerWeek: "jusqu'à 2",
-    garantie: 'Croissance en 45 jours',
-    monthly: { price: 260000, prixImg: 5417, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
+    tagline: 'Accélérer la production créative et la croissance de votre marque, sans la prise de tête de gérer une équipe.',
+    imagesPerWeek: 12, batchesPerWeek: 2, lotsPerMonth: 8, creativesPerMonth: 48, videosPerMonth: 16, imagesPerMonth: 32, produits: 8, membres: '5',
+    garantie: 'Croissance en 60 jours',
+    monthly: { price: 480000, prixImg: 10000, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_34w031/checkout' },
   },
   scale: {
     id: 'scale', name: 'SCALE',
     tagline: 'Exploiter plusieurs marchés avec des langues et cultures différentes, sans exploser vos coûts ni augmenter la complexité.',
-    imagesPerWeek: 24, batchesPerWeek: 4, creativesPerMonth: 96, videosPerMonth: 32, imagesPerMonth: 64, produitsPerWeek: "jusqu'à 4",
-    garantie: 'Scaling en 45 jours',
-    monthly: { price: 480000, prixImg: 5000, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
+    imagesPerWeek: 24, batchesPerWeek: 4, lotsPerMonth: 16, creativesPerMonth: 96, videosPerMonth: 32, imagesPerMonth: 64, produits: 16, membres: '+10',
+    garantie: 'Scaling en 60 jours', prioritaire: true,
+    monthly: { price: 920000, prixImg: 9583, delivery: '24h', checkout: 'https://shop.adstackofficial.com/prd_9fi79y/checkout' },
   },
 };
 
@@ -223,7 +223,7 @@ const OFFERS = {
 function formatOffresPourPrompt(currency, currencyRate) {
   const fmt = (fcfa) => fcfa.toLocaleString('fr-FR') + ' FCFA';
   const { starter, pro, scale } = OFFERS;
-  const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (abonnement mensuel, résiliable à tout moment) · ${o.creativesPerMonth} créatives/mois (${o.videosPerMonth} vidéos + ${o.imagesPerMonth} images, ${o.batchesPerWeek} ${o.batchesPerWeek > 1 ? 'lots' : 'lot'}/semaine) · ${o.produitsPerWeek} produit${o.produitsPerWeek === '1' ? '' : 's'} couvert${o.produitsPerWeek === '1' ? '' : 's'}/semaine · stratégie marketing (recherche marché, concurrents, cible), ad copies, apprentissage continu et accès à AdBoard inclus · production en ${o.monthly.delivery} max après demande · garantie ${o.garantie}`;
+  const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (abonnement mensuel, résiliable à tout moment) · ${o.creativesPerMonth} créatives/mois (jusqu'à ${o.lotsPerMonth} lots de 2 vidéos + 4 images) · jusqu'à ${o.produits} produits · ${o.membres} membres d'équipe sur AdBoard · stratégie marketing (recherche marché, concurrents, cible), ad copies, données marché et accès à AdBoard inclus · production en ${o.monthly.delivery} max après demande${o.prioritaire ? ' + file prioritaire' : ''} · garantie ${o.garantie}`;
   // Offre de départ sans abonnement (affichée sous les offres sur la page de vente) : ONE SHOT.
   const depart = `ONE SHOT (pour ceux qui ne sont pas prêts pour un abonnement) : ${fmt(ONESHOT_PRIX_FCFA)}, une seule fois, 1 produit — 6 créatives (2 vidéos + 4 images) optimisées conversion à partir d'une stratégie marketing, reçues dans AdBoard sous 48h maximum. Sans Ad Copies. Lien : https://shop.adstackofficial.com/${ONESHOT_PRODUCT_ID}/checkout`;
   return [ligne(starter), ligne(pro), ligne(scale), depart].join('\n');
@@ -801,17 +801,21 @@ const SUPABASE_ANON_KEY_INT = process.env.SUPABASE_ANON_KEY || '';
 // Factures PDF / emails de confirmation / colonne montant_fcfa : les valeurs sont maintenant bien en FCFA.
 // ONE SHOT : 6 créatives (2 vidéos + 4 images) pour 1 produit, achat unique, livrées dans AdBoard sous 48h. Vendu par lien Chariow direct
 // (page de vente + envoi au prospect), jamais dans AdBoard. Le prix se change ici (ou via la variable d'environnement ONESHOT_PRIX_FCFA).
-const ONESHOT_PRODUCT_ID = process.env.ONESHOT_PRODUCT_ID || 'prd_y6lv33mv';
-const ONESHOT_PRIX_FCFA = parseInt(process.env.ONESHOT_PRIX_FCFA, 10) || 50000;
+// 19 nov. 2026 : le ONE SHOT (75 000 FCFA) prend le produit Chariow de l'ancienne offre TEST, qui n'est plus vendue.
+// Valeurs écrites en dur exprès : d'anciennes variables d'environnement Render (ONESHOT_PRODUCT_ID, ONESHOT_PRIX_FCFA) pointent peut-être
+// encore sur l'ancien produit à 50 000 FCFA ; elles ne doivent plus décider des crédits d'un paiement.
+const ONESHOT_PRODUCT_ID = 'prd_yslvdsuz';
+const ONESHOT_PRIX_FCFA = 75000;
+const ONESHOT_ANCIEN_ID = 'prd_y6lv33mv';   // ancien ONE SHOT à 50 000 FCFA, gardé pour les achats déjà faits
 const PLAN_MAP = {
-  // TEST (75 000 FCFA, 12 créatives/mois) et ONE SHOT (achat unique) — ajoutés le 8 nov. 2026. Grille alignée sur la page de vente et AdBoard.
-  'prd_yslvdsuz': { plan: 'test',    cycle: 'monthly',   credits_per_week: 3,  price_fcfa: 75000,  prix_img: 6250 },
+  // Grille du 19 nov. 2026 : ONE SHOT 75 000 (achat unique, 6 créatives) · PERF+ 250 000 · GROWTH 480 000 · SCALE 920 000 FCFA/mois.
   [ONESHOT_PRODUCT_ID]: { plan: 'oneshot', cycle: 'monthly', type: 'pack', total_credits: 6, duree_jours: 60, price_fcfa: ONESHOT_PRIX_FCFA, prix_img: Math.round(ONESHOT_PRIX_FCFA / 6) },
-  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly',   credits_per_week: 6,  price_fcfa: 140000, prix_img: 5833 },
+  [ONESHOT_ANCIEN_ID]: { plan: 'oneshot', cycle: 'monthly', type: 'pack', total_credits: 6, duree_jours: 60, price_fcfa: 50000, prix_img: 8333 },
+  'prd_ljowq8':   { plan: 'starter', cycle: 'monthly',   credits_per_week: 6,  price_fcfa: 250000, prix_img: 10417 },
   'prd_wdya3v9h': { plan: 'starter', cycle: 'quarterly', credits_per_week: 6,  price_fcfa: 120000, prix_img: 5000 },
-  'prd_34w031':   { plan: 'pro',     cycle: 'monthly',   credits_per_week: 12, price_fcfa: 260000, prix_img: 5417 },
+  'prd_34w031':   { plan: 'pro',     cycle: 'monthly',   credits_per_week: 12, price_fcfa: 480000, prix_img: 10000 },
   'prd_lnp4ax0b': { plan: 'pro',     cycle: 'quarterly', credits_per_week: 12, price_fcfa: 205000, prix_img: 4271 },
-  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly',   credits_per_week: 24, price_fcfa: 480000, prix_img: 5000 },
+  'prd_9fi79y':   { plan: 'scale',   cycle: 'monthly',   credits_per_week: 24, price_fcfa: 920000, prix_img: 9583 },
   'prd_dn4fb72l': { plan: 'scale',   cycle: 'quarterly', credits_per_week: 24, price_fcfa: 345000, prix_img: 3594 },
 };
 
@@ -1013,6 +1017,48 @@ function formatFCFA(n) {
   return Math.round(n).toLocaleString('en-US').replace(/,/g, '.');
 }
 
+// delivery-v1 — MISE EN PAGE COMMUNE DES EMAILS CLIENT (paiement, livraison). Tableaux et styles en ligne : c'est ce que Gmail, Outlook
+// et les applis mobiles affichent de façon fiable. Largeur 560 px, un seul bouton, texte lisible sur téléphone.
+function echapHtml(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function cadreEmail({ titre, intro = '', encadre = '', apercu = '', etapes = [], bouton = '', lien = '', pied = '' }) {
+  const etapesHtml = etapes.length ? `<tr><td style="padding:8px 32px 0;"><div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:8px;">Et maintenant</div>${etapes.map((e, i) => `<div style="display:block;padding:6px 0;font-size:14px;color:#374151;"><span style="display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:11px;background:#EEF4FF;color:#2D7FF9;font-weight:700;font-size:12px;margin-right:8px;">${i + 1}</span>${e}</div>`).join('')}</td></tr>` : '';
+  return `<!doctype html><html><body style="margin:0;padding:0;background:#F3F5FA;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F5FA;padding:24px 12px;"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#FFFFFF;border-radius:16px;overflow:hidden;font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;color:#1F2937;font-size:15px;line-height:1.6;">
+<tr><td style="padding:24px 32px 0;"><span style="font-size:18px;font-weight:800;color:#111827;letter-spacing:-.01em;">Ad<span style="color:#2D7FF9;">Stack</span></span></td></tr>
+<tr><td style="padding:20px 32px 0;"><h1 style="margin:0 0 14px;font-size:24px;line-height:1.25;color:#111827;">${titre}</h1>${intro}</td></tr>
+${encadre ? `<tr><td style="padding:20px 32px 0;"><div style="background:#F6F9FF;border:1px solid #E1EAFB;border-radius:12px;padding:16px 18px;font-size:14px;color:#374151;">${encadre}</div></td></tr>` : ''}
+${apercu ? `<tr><td style="padding:20px 32px 0;">${apercu}</td></tr>` : ''}
+${etapesHtml}
+${bouton ? `<tr><td style="padding:24px 32px 0;"><a href="${lien}" style="display:block;text-align:center;background:#2D7FF9;color:#FFFFFF;text-decoration:none;font-weight:700;font-size:15px;padding:14px 20px;border-radius:10px;">${bouton}</a></td></tr>` : ''}
+<tr><td style="padding:24px 32px 28px;font-size:12.5px;color:#9CA3AF;">${pied ? pied + '<br>' : ''}Une question ? Écris-nous sur WhatsApp ou depuis AdBoard.<br>AdStack · Dakar, Sénégal</td></tr>
+</table></td></tr></table></body></html>`;
+}
+
+// delivery-v1 (19 nov. 2026) — CE QUE COMPREND L'OFFRE, écrit une seule fois pour la facture ET l'email de paiement.
+// Avant : « X images livrées chaque semaine », « données marché hebdomadaires » — l'offre est mensuelle, en lots de vidéos + images.
+function detailOffre(plan, isPack, creditsPerWeek, totalCredits) {
+  if (plan === 'oneshot') return {
+    resume: '6 créatives (2 vidéos + 4 images) pour 1 produit',
+    lignes: ['6 créatives optimisées conversion : 2 vidéos + 4 images', 'Créées à partir d\'une stratégie marketing de votre produit', 'Reçues dans AdBoard sous 48 h maximum', 'Achat unique, pour 1 produit, sans engagement'],
+  };
+  if (isPack) return { resume: `${totalCredits || 0} créatives`, lignes: [`${totalCredits || 0} créatives publicitaires incluses`, 'Utilisables jusqu\'à expiration, sur 1 produit'] };
+  const o = OFFERS[plan];
+  const parMois = o ? o.creativesPerMonth : (creditsPerWeek || 0) * 4;
+  const lots = o ? o.lotsPerMonth : Math.round(parMois / 6);
+  const lignes = [
+    `${parMois} créatives par mois : jusqu'à ${lots} lots de 2 vidéos + 4 images`,
+    'Stratégie marketing : recherche sur le marché, les concurrents et la cible',
+  ];
+  if (o) {
+    lignes.push('Ad copies et données marché pour chaque lot');
+    lignes.push(`Jusqu'à ${o.produits} produits · ${o.membres} membres d'équipe sur AdBoard`);
+    lignes.push(`Production en ${o.monthly.delivery} après chaque demande${o.prioritaire ? ', file prioritaire' : ''}`);
+    lignes.push(`Garantie : ${o.garantie}`);
+  }
+  return { resume: `${parMois} créatives par mois (jusqu'à ${lots} lots)`, lignes };
+}
+
 function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, cycle, creditsPerWeek, totalCredits, isPack, prixImg, priceFcfa, paymentDate, expiresAt }) {
   return new Promise((resolve, reject) => {
     try {
@@ -1052,7 +1098,7 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
       // Table row
       const rowY = tableTop + 32;
       doc.fontSize(11).fillColor('#111111').font('Helvetica-Bold').text(PLAN_LABELS[plan] || plan, 50, rowY);
-      doc.fontSize(9).fillColor('#888888').font('Helvetica').text(isPack ? `${cycleLabel} — sans engagement` : `${cycleLabel} — livraisons hebdomadaires`, 50, rowY + 15);
+      doc.fontSize(9).fillColor('#888888').font('Helvetica').text(isPack ? `${cycleLabel} — sans engagement` : `${cycleLabel} — résiliable à tout moment`, 50, rowY + 15);
       doc.fontSize(10).fillColor('#333333').text(
         `${paymentDate.toLocaleDateString('fr-FR')} → ${expiresAt.toLocaleDateString('fr-FR')}`, 320, rowY
       );
@@ -1064,22 +1110,8 @@ function generateInvoicePDF({ invoiceNumber, customerEmail, customerName, plan, 
       const detailTop = rowY + 45;
       doc.moveTo(50, detailTop - 8).lineTo(545, detailTop - 8).strokeColor('#F0F0F0').stroke();
       doc.fontSize(9).fillColor('#666666').font('Helvetica-Bold').text(isPack ? 'Ce que comprend cet achat :' : 'Ce que couvre cet abonnement :', 50, detailTop);
-      const detailLines = plan === 'oneshot' ? [
-        '6 créatives optimisées conversion : 2 vidéos + 4 images',
-        'Créées à partir d\'une stratégie marketing de votre produit',
-        'Livrées dans AdBoard sous 48 h maximum',
-        'Achat unique, pour 1 produit — sans engagement',
-      ] : isPack ? [
-        `${totalImages} images publicitaires incluses (angles et concepts variés)`,
-        `Utilisables librement jusqu'à expiration, sur 1 produit`,
-        prixImg ? `Prix moyen par créative : ${formatFCFA(prixImg)} FCFA` : null,
-        'Analyse de marché (cibles, concurrents, tendances)',
-      ].filter(Boolean) : [
-        `${creditsPerWeek || 0} images publicitaires livrées chaque semaine`,
-        `Soit environ ${weeksInPeriod} semaine${weeksInPeriod>1?'s':''} sur cette période — ${totalImages} images au total`,
-        prixImg ? `Prix moyen par créative : ${formatFCFA(prixImg)} FCFA` : null,
-        'Données marché hebdomadaires (cibles, concurrents, tendances)',
-      ].filter(Boolean);
+      const detailLines = detailOffre(plan, isPack, creditsPerWeek, totalCredits).lignes.slice();
+      if (prixImg && plan !== 'oneshot') detailLines.push(`Prix moyen par créative : ${formatFCFA(prixImg)} FCFA`);
       doc.fontSize(9).fillColor('#444444').font('Helvetica');
       detailLines.forEach((line, i) => {
         doc.text(`•  ${line}`, 50, detailTop + 16 + (i * 14));
@@ -1120,32 +1152,25 @@ async function sendPaymentConfirmationEmail({ email, name, plan, cycle, creditsP
   }
 
   const planLabel = PLAN_LABELS[plan] || plan;
-  const cycleLabel = isPack ? 'achat unique' : (cycle === 'quarterly' ? 'trimestriel' : 'mensuel');
-  const ligneImages = plan === 'oneshot'
-    ? `<p style="margin:4px 0;"><strong>Créatives incluses :</strong> 6 (2 vidéos + 4 images), pour 1 produit</p><p style="margin:4px 0;"><strong>Livraison :</strong> dans AdBoard, sous 48 h maximum</p>`
-    : isPack
-    ? `<p style="margin:4px 0;"><strong>Images incluses :</strong> ${totalCredits || 0} au total (utilisables librement jusqu'à expiration)</p>`
-    : `<p style="margin:4px 0;"><strong>Images livrées :</strong> ${creditsPerWeek || 0} / semaine</p>`;
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;">
-      <h2 style="color:#5B8DEF;">Paiement confirmé ✅</h2>
-      <p>Bonjour${name ? ' ' + name : ''},</p>
-      <p>Merci pour ${isPack ? 'ton achat' : 'ton abonnement'} <strong>${planLabel}</strong> (${cycleLabel}) ! Ton paiement a bien été reçu.</p>
-      <div style="background:#F5F8FF;border-radius:10px;padding:16px 20px;margin:20px 0;">
-        <p style="margin:4px 0;"><strong>Offre :</strong> ${planLabel} — ${cycleLabel}</p>
-        ${ligneImages}
-        <p style="margin:4px 0;"><strong>Montant :</strong> ${formatFCFA(priceFcfa)} FCFA</p>
-        <p style="margin:4px 0;"><strong>Valide jusqu'au :</strong> ${expiresAt.toLocaleDateString('fr-FR')}</p>
-      </div>
-      <p>Ta facture détaillée est jointe à cet email. Tu peux dès maintenant demander tes premiers visuels depuis <a href="https://adstackofficial.com/adboard/products">AdBoard</a>.</p>
-      <p style="color:#999;font-size:12px;margin-top:30px;">AdStack — Dakar, Sénégal</p>
-    </div>
-  `;
+  const cycleLabel = isPack ? 'achat unique' : (cycle === 'quarterly' ? 'abonnement trimestriel' : 'abonnement mensuel');
+  const det = detailOffre(plan, isPack, creditsPerWeek, totalCredits);
+  const prenom = String(name || '').trim().split(/\s+/)[0] || '';
+  const html = cadreEmail({
+    titre: 'Paiement confirmé',
+    intro: `<p style="margin:0 0 14px;">Bonjour${prenom ? ' ' + echapHtml(prenom) : ''},</p><p style="margin:0;">Merci pour ${isPack ? 'ton achat' : 'ton abonnement'} <strong>${planLabel}</strong>. Ton paiement est bien reçu et ${isPack ? 'tes créatives sont' : 'ton offre est'} déjà ${isPack ? 'disponibles' : 'active'} dans AdBoard.</p>`,
+    encadre: `<div style="font-size:13px;color:#6B7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">${planLabel} · ${cycleLabel}</div>`
+      + `<div style="font-size:22px;font-weight:700;color:#111827;margin-bottom:12px;">${formatFCFA(priceFcfa)} FCFA</div>`
+      + det.lignes.map(l => `<div style="padding:6px 0;border-top:1px solid #E8EEFB;">✓ ${l}</div>`).join('')
+      + `<div style="padding:6px 0;border-top:1px solid #E8EEFB;color:#6B7280;">${isPack ? 'Valable' : 'Actif'} jusqu'au ${expiresAt.toLocaleDateString('fr-FR')}</div>`,
+    etapes: ['Ouvre AdBoard et ajoute ton produit (photo, prix, cible) s\'il n\'y est pas encore.', 'Clique sur « Demander une production » sur ce produit.', `Tu reçois tes créatives dans AdBoard sous ${plan === 'oneshot' || plan === 'starter' ? '48 h' : '24 h'}, avec un email quand elles sont prêtes.`],
+    bouton: 'Demander ma première production', lien: 'https://www.adstackofficial.com/adboard/products',
+    pied: 'Ta facture est jointe à cet email.',
+  });
 
   const payload = {
     from: 'AdStack <factures@adstackofficial.com>',
     to: [email],
-    subject: `✅ Paiement confirmé — Abonnement ${planLabel}`,
+    subject: isPack ? `Paiement confirmé — ${planLabel} (${det.resume})` : `Paiement confirmé — ${planLabel}, ${det.resume}`,
     html,
   };
   if (pdfBuffer) {
@@ -1240,15 +1265,35 @@ async function notifierAdmin(sujet, html) {
 // Email client — livrables prêts, en complément du push déjà existant (au cas où il ne soit
 // pas activé ou pas vu). Lit le template depuis la table `templates` (éditable dans le CRM,
 // section Templates → Livraison) plutôt qu'un texte en dur — modifiable sans redéploiement.
-async function sendDeliverablesReadyEmail({ email, produit }) {
+// delivery-v1 (19 nov. 2026) — l'email dit CE QUI est livré : combien de vidéos et d'images, sur quels angles, un aperçu des images,
+// et ce que le client avait demandé (ses consignes). Avant : un nom de produit et un lien. Il ne dépend plus d'un modèle en base :
+// son contenu vient de la livraison elle-même.
+async function sendDeliverablesReadyEmail({ email, produit, brief }) {
   const RESEND_KEY = process.env.RESEND_API_KEY;
   if (!RESEND_KEY) { console.warn('[Email] RESEND_API_KEY manquante — email livrables non envoyé'); return; }
-  const tpl = await chargerTemplate('email_livrables_prets');
-  if (!tpl) { console.warn('[Email] Template email_livrables_prets introuvable en base — email non envoyé'); return; }
-
-  const variables = { produit, lien: 'https://www.adstackofficial.com/adboard/gallery' };
-  const html = `<div style="font-family:-apple-system,Arial,sans-serif;max-width:520px;margin:0 auto;color:#222;font-size:15px;line-height:1.65;">${interpoler(tpl.contenu, variables)}</div>`;
-  const subject = interpoler(tpl.sujet, variables);
+  const b = brief || {}, d = b.deliverables || {};
+  const crea = (Array.isArray(d.creatives) ? d.creatives : []).filter(Boolean);
+  const nbVid = crea.filter(c => c.kind === 'video' && c.videoUrl).length;
+  const nbImg = crea.filter(c => c.kind !== 'video' && (c.url || c.thumbUrl)).length;
+  const nbCopies = (Array.isArray(d.copies) ? d.copies : []).filter(Boolean).length;
+  const titreAngle = a => echapHtml(String(a && typeof a === 'object' ? (a.titre || a.title || '') : (a || '')).split('*')[0].split(/\s[—–-]\s/)[0].replace(/^\s*(angle\s*\d+\s*[:.\-–—]\s*)/i, '').trim().slice(0, 90));
+  const angles = (Array.isArray(d.angles) ? d.angles : []).map(titreAngle).filter(Boolean);
+  const vignettes = crea.filter(c => c.kind !== 'video' && (c.thumbUrl || c.url)).slice(0, 3).map(c => c.thumbUrl || c.url);
+  const nomProduit = echapHtml(produit || 'ton produit');
+  const prenom = echapHtml(String((b.client && (b.client.name || b.client.nom)) || '').trim().split(/\s+/)[0] || '');
+  const consignes = String((b.product && b.product.notes) || '').trim();
+  const total = nbVid + nbImg;
+  const resume = [nbVid ? `${nbVid} vidéo${nbVid > 1 ? 's' : ''}` : '', nbImg ? `${nbImg} image${nbImg > 1 ? 's' : ''}` : ''].filter(Boolean).join(' + ');
+  const html = cadreEmail({
+    titre: `Tes créatives pour ${nomProduit} sont prêtes`,
+    intro: `<p style="margin:0;">${prenom ? 'Bonjour ' + prenom + ', t' : 'T'}a production est terminée : ${total ? '<strong>' + resume + '</strong>' : 'tes créatives'}${nbCopies ? ` et <strong>${nbCopies} ad cop${nbCopies > 1 ? 'ies' : 'y'}</strong>` : ''} t'attendent dans AdBoard, prêtes à être lancées.</p>`,
+    encadre: (angles.length ? `<div style="font-weight:700;color:#111827;margin-bottom:6px;">${angles.length} angle${angles.length > 1 ? 's' : ''} marketing testé${angles.length > 1 ? 's' : ''}</div>` + angles.map((a, i) => `<div style="padding:5px 0;border-top:1px solid #E8EEFB;">${i + 1}. ${a}</div>`).join('') : '')
+      + (consignes ? `<div style="margin-top:12px;padding-top:10px;border-top:1px solid #E1EAFB;color:#6B7280;"><strong style="color:#374151;">Ta consigne, prise en compte :</strong> ${echapHtml(consignes.slice(0, 280))}${consignes.length > 280 ? '…' : ''}</div>` : ''),
+    apercu: vignettes.length ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${vignettes.map(u => `<td width="${Math.floor(100 / vignettes.length)}%" style="padding:0 4px;"><img src="${echapHtml(u)}" alt="" width="100%" style="display:block;width:100%;border-radius:10px;border:1px solid #E5E7EB;"></td>`).join('')}</tr></table>` : '',
+    etapes: ['Ouvre ta galerie et télécharge les créatives.', 'Lance-les en publicité : chaque angle est un test, garde ceux qui performent.', 'Dis-nous ce que tu en penses depuis la galerie : la prochaine production en tient compte.'],
+    bouton: 'Voir mes créatives', lien: 'https://www.adstackofficial.com/adboard/gallery',
+  });
+  const subject = `Tes créatives pour ${String(produit || 'ton produit').slice(0, 60)} sont prêtes${total ? ' (' + resume + ')' : ''}`;
 
   try {
     const r = await fetch('https://api.resend.com/emails', {
@@ -2579,7 +2624,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, version: 'v5.76-timing-marche', balayage: typeof decideBalayage === 'function', scrapecreators_cle: !!SC_KEY }));
+    res.end(JSON.stringify({ ok: true, version: 'v5.75-cible-territoire', balayage: typeof decideBalayage === 'function', scrapecreators_cle: !!SC_KEY }));
     return;
   }
 
@@ -3794,8 +3839,6 @@ ${pageText}`;
         } else {
         console.log('\n[0/4] Plan de balayage (point de départ : le problème, pas la marque)...');
         _planBalayage = await planBalayage(brief, produit, marque, pays);
-        const _auj = new Date().toISOString().slice(0, 10);   // timing-marche-v1
-        donneesBrutes += `### DATE DU BALAYAGE : ${_auj}\nChaque donnée ci-dessous porte son âge quand il a pu être lu (« il y a N j », « diffusée depuis N j », une date entre parenthèses). Un élément sans date s'écrit « date inconnue » : il ne prouve jamais un timing.\n\n`;
         console.log(`   → problème : ${_planBalayage.probleme}`);
         console.log(`   → alternatives : ${_planBalayage.alternatives.join(' | ') || 'n/a'} · concurrents : ${_planBalayage.concurrents.join(' | ') || 'n/a'}`);
         if (!SC_KEY) console.log('   ⚠ SOCIAL_MEDIA_SCRAPING_API absente : ScrapeCreators ignoré');
@@ -3811,8 +3854,7 @@ ${pageText}`;
             : '';
       const researchPrompt = `Tu es un analyste de marché senior. Tu mènes une recherche APPROFONDIE et MULTI-SOURCE sur le produit "${produit}" de la marque "${marque}" vendu en ${pays}.${_blocMulti}
 
-${blocProblemePourRecherche(_planBalayage)}DATE DU JOUR : ${_auj}. Pour chaque verbatim, avis, article ou fait rapporté, écris sa DATE de publication entre parenthèses quand elle est visible (mois et année au minimum) ; sinon écris « (date inconnue) ». Ne devine jamais une date.
-OBJECTIF : ramener un MAXIMUM de DATA RÉELLE et de VERBATIMS clients authentiques — pas de paraphrase, pas de généralités. Cite les sources URL précises trouvées et les extraits textuels exacts (entre guillemets quand c\'est un verbatim).
+${blocProblemePourRecherche(_planBalayage)}OBJECTIF : ramener un MAXIMUM de DATA RÉELLE et de VERBATIMS clients authentiques — pas de paraphrase, pas de généralités. Cite les sources URL précises trouvées et les extraits textuels exacts (entre guillemets quand c\'est un verbatim).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DOMAINES À EXPLORER EN PRIORITÉ (utilise site: dans tes recherches Google)
@@ -3908,11 +3950,11 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
           const _pb = (_planBalayage && _planBalayage.probleme) || produit;
           const _alts = (_planBalayage && _planBalayage.alternatives || []).join(' ; ') || 'à identifier toi-même';
           const _concs = (_planBalayage && _planBalayage.concurrents || []).join(' ; ') || 'à identifier toi-même';
-          const _entete = `Tu es un analyste de marché senior. Produit : "${produit}"${marque ? ` (marque "${marque}")` : ''}, vendu en ${pays}. Problème que le produit résout : ${_pb}. Alternatives déjà repérées : ${_alts}. Concurrents déjà repérés : ${_concs}.\nRÈGLES : recherche réellement (plusieurs requêtes Google distinctes, pas de doublon). Cite entre guillemets les phrases exactes trouvées + URL. Ce qui n'est pas trouvé s'écrit [NON TROUVÉ] — ne fabrique jamais. Ce qui est une déduction s'écrit [DÉDUIT]. Donnée brute uniquement, sans synthèse. Écris en français, sois exhaustif et concret (noms propres, prix, lieux, objets, phrases).\nDATE DU JOUR : ${_auj}. Chaque élément rapporté porte sa date de publication entre parenthèses quand elle est visible, sinon « (date inconnue) » ; ne devine jamais une date.\n\n`;
+          const _entete = `Tu es un analyste de marché senior. Produit : "${produit}"${marque ? ` (marque "${marque}")` : ''}, vendu en ${pays}. Problème que le produit résout : ${_pb}. Alternatives déjà repérées : ${_alts}. Concurrents déjà repérés : ${_concs}.\nRÈGLES : recherche réellement (plusieurs requêtes Google distinctes, pas de doublon). Cite entre guillemets les phrases exactes trouvées + URL. Ce qui n'est pas trouvé s'écrit [NON TROUVÉ] — ne fabrique jamais. Ce qui est une déduction s'écrit [DÉDUIT]. Donnée brute uniquement, sans synthèse. Écris en français, sois exhaustif et concret (noms propres, prix, lieux, objets, phrases).\n\n`;
           const _passes = [
-            { nom: 'alternatives', prompt: _entete + `MISSION : FICHES DÉTAILLÉES des ALTERNATIVES et des CONCURRENTS (8 à 12 fiches). Pour CHAQUE alternative ou concurrent (produits, marques, remèdes traditionnels, habitudes comme le café/le thé, médecin/pharmacien, ne rien faire…) : nom exact ; prix réel en devise locale et par jour d'usage ; où on l'achète (quels lieux, quels sites, quels vendeurs) ; la promesse exacte et les mots qu'il emploie ; formats de pub et rituels d'usage ; ce que les gens en disent de bien (verbatims) ; ce que les gens en disent de mal (verbatims) ; ses faiblesses structurelles ; la raison précise pour laquelle un utilisateur l'abandonne ou le garde malgré tout. Cherche aussi : quelles publicités ces concurrents diffusent en ce moment (Meta Ad Library / TikTok), avec quels angles, et DEPUIS QUAND chacune tourne quand c'est visible ; quels angles reviennent chez plusieurs concurrents (déjà entendus par le marché) ; quel angle AUCUN concurrent n'occupe (territoires libres).` },
+            { nom: 'alternatives', prompt: _entete + `MISSION : FICHES DÉTAILLÉES des ALTERNATIVES et des CONCURRENTS (8 à 12 fiches). Pour CHAQUE alternative ou concurrent (produits, marques, remèdes traditionnels, habitudes comme le café/le thé, médecin/pharmacien, ne rien faire…) : nom exact ; prix réel en devise locale et par jour d'usage ; où on l'achète (quels lieux, quels sites, quels vendeurs) ; la promesse exacte et les mots qu'il emploie ; formats de pub et rituels d'usage ; ce que les gens en disent de bien (verbatims) ; ce que les gens en disent de mal (verbatims) ; ses faiblesses structurelles ; la raison précise pour laquelle un utilisateur l'abandonne ou le garde malgré tout. Cherche aussi : quelles publicités ces concurrents diffusent en ce moment (Meta Ad Library / TikTok) et avec quels angles ; quel angle AUCUN concurrent n'occupe (territoires libres).` },
             { nom: 'vie_cible', prompt: _entete + `MISSION : LA VIE RÉELLE DE LA CIBLE du produit en ${pays}, de façon ultra-concrète. Cherche des forums, groupes, vidéos, articles, témoignages, commentaires. Ramène : (1) le profil réel des gens qui ont ce problème (métiers, âges, situation familiale, revenus) avec exemples de personnes réelles qui témoignent ; (2) leur ENTOURAGE : conjoint(e), enfants, parents, collègues, voisins, amis, belle-famille, patron, pharmacien, médecin, marabout/guérisseur, influenceur suivi — pour chaque type de personne : comment elle parle du problème, ce qu'elle conseille, comment elle réagit, quel rôle elle joue dans l'achat ; (3) les LIEUX réels de leur journée (type de logement, quartier-type, transport, lieu de travail, marché, pharmacie, salle, église/mosquée…) avec lumière, bruits, objets visibles ; (4) les OBJETS et marques réellement utilisés au quotidien (téléphone, vêtements, boissons, repas, produits déjà achetés) ; (5) expressions, proverbes, mots d'argot et façons exactes de parler du problème dans la langue locale ; (6) horaires et rythme d'une journée type, avec les moments où le problème frappe le plus.` },
-            { nom: 'signaux', prompt: _entete + `MISSION : SIGNAUX PRÉCOCES (6 à 12 insights que les concurrents n'ont pas encore exploités). Cherche : tendances récentes qui montent (hashtags, sons, formats TikTok/Instagram/YouTube liés au problème), nouveaux comportements de la cible, changements de contexte (prix, loi, saison, événements, usages mobile money/WhatsApp), conversations récentes (3 derniers mois) dans les commentaires et forums où les gens expriment une frustration pour laquelle aucune marque ne répond encore, nouveaux entrants ou produits étrangers en train d'arriver, et croyances qui changent. Pour chaque signal : la preuve (phrase exacte + URL + date), son ÂGE par rapport à la date du jour, classé RÉCENT (moins de 90 jours), INSTALLÉ (plus ancien et toujours présent) ou NON DATÉ ; depuis quand il existe et s'il MONTE ou RETOMBE (ce qui le montre) ; combien de personnes ou de sources différentes le portent ; pourquoi c'est encore peu exploité par les annonceurs ; combien de temps l'avance peut durer et ce qui la fermera. Un sujet apparu il y a moins d'une semaine sans rien derrière est noté « MODE POSSIBLE ».` }
+            { nom: 'signaux', prompt: _entete + `MISSION : SIGNAUX PRÉCOCES (6 à 12 insights que les concurrents n'ont pas encore exploités). Cherche : tendances récentes qui montent (hashtags, sons, formats TikTok/Instagram/YouTube liés au problème), nouveaux comportements de la cible, changements de contexte (prix, loi, saison, événements, usages mobile money/WhatsApp), conversations récentes (3 derniers mois) dans les commentaires et forums où les gens expriment une frustration pour laquelle aucune marque ne répond encore, nouveaux entrants ou produits étrangers en train d'arriver, et croyances qui changent. Pour chaque signal : la preuve (phrase exacte + URL + date si visible), pourquoi c'est encore peu exploité, combien de temps l'avance peut durer.` }
           ];
           if (_suiviCout.usd > COUT_MAX_HYPOTHESE * 0.45) throw new Error(`budget déjà à ${_suiviCout.usd.toFixed(2)} $ avant l'approfondissement : étape sautée`);
           console.log(`\n[1bis] Approfondissement (alternatives · vie de la cible · signaux précoces) — 3 recherches en parallèle... (coût estimé jusqu'ici : ${_suiviCout.usd.toFixed(2)} $)`);
@@ -3978,19 +4020,6 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
             }
           }
           if (!_nTr) console.log('   ✗ aucune requête associée trouvée');
-          for (const termeC of _termes.slice(0, 2)) {   // timing-marche-v1 : l'intérêt monte, tient ou retombe ?
-            try {
-              const rawC = await googleTrends.interestOverTime({ keyword: termeC, geo: geo || '', hl: 'fr', startTime: new Date(Date.now() - 365 * 86400000) });
-              const serie = ((JSON.parse(rawC).default || {}).timelineData || []).map(x => Number((x.value || [])[0]) || 0);
-              if (serie.length < 20) continue;
-              const moy = a => a.reduce((t, x) => t + x, 0) / Math.max(1, a.length), q = Math.floor(serie.length / 4);
-              const rec = moy(serie.slice(-q)), prec = moy(serie.slice(-2 * q, -q)), debut = moy(serie.slice(0, 2 * q));
-              if (rec + prec + debut < 3) continue;
-              const ev = prec > 0 ? (rec / prec - 1) * 100 : 0, sens = ev >= 15 ? 'EN HAUSSE' : ev <= -15 ? 'EN BAISSE' : 'STABLE';
-              donneesBrutes += `### SOURCE — GOOGLE TRENDS · INTÉRÊT DANS LE TEMPS ("${termeC}", ${geo || 'monde'}, 12 derniers mois)\nIndice moyen des 3 derniers mois : ${rec.toFixed(0)} · des 3 mois d'avant : ${prec.toFixed(0)} · du début de la période : ${debut.toFixed(0)} → ${sens} (${ev >= 0 ? '+' : ''}${ev.toFixed(0)} % sur le dernier trimestre).\n\n`;
-              console.log(`   → courbe "${termeC}" : ${sens} (${ev.toFixed(0)} %)`);
-            } catch (eC) { console.log(`   ✗ courbe Trends "${termeC}" :`, String(eC.message).slice(0, 80)); }
-          }
         } catch (e) {
           const hint = e.message.includes('Cannot find module') ? ' — exécute : npm install google-trends-api' : '';
           console.log('   ✗ erreur Trends :', e.message + hint);
@@ -4018,14 +4047,7 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
               console.log(`   → "${ytQuery}" : ${(sD.items || []).length} vidéo(s)`);
             } catch (e) { console.log(`   ✗ requête YouTube "${ytQuery}" :`, e.message); }
           }
-          try {   // timing-marche-v1 : ce qui se publie en ce moment sur le problème
-            const sUr = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=4&relevanceLanguage=fr&order=date&publishedAfter=${encodeURIComponent(new Date(Date.now() - 90 * 86400000).toISOString())}&q=${encodeURIComponent(_pbYT)}&key=${YOUTUBE_API_KEY}`;
-            const sDr = await httpsGetJson(sUr);
-            if (sDr.error) throw new Error(sDr.error.message);
-            for (const v of (sDr.items || [])) if (v.id && v.id.videoId && !_vus.has(v.id.videoId)) { _vus.add(v.id.videoId); videos.unshift({ ...v, _req: _pbYT + ' (90 derniers jours)' }); }
-            console.log(`   → vidéos des 90 derniers jours : ${(sDr.items || []).length}`);
-          } catch (e) { console.log('   ✗ requête YouTube récente :', e.message); }
-          videos = videos.slice(0, 12);
+          videos = videos.slice(0, 10);
           videos.forEach(v => console.log(`      • ${v.snippet.title}`));
           const ytQuery = _reqsYT.join(' | ');
 
@@ -4036,17 +4058,17 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
               const cUrl = `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&order=relevance&maxResults=40&videoId=${v.id.videoId}&key=${YOUTUBE_API_KEY}`;
               const cData = await httpsGetJson(cUrl);
               if (cData.error) throw new Error(cData.error.message);
-              const comments = (cData.items || []).map(c => ({ t: c.snippet.topLevelComment.snippet.textOriginal, d: c.snippet.topLevelComment.snippet.publishedAt })).filter(c => c.t && c.t.length > 25);
-              if (comments.length) { _okVid++; allComments.push(...comments.map(c => ({ t: c.t, d: c.d, v: v.snippet.title }))); }
+              const comments = (cData.items || []).map(c => c.snippet.topLevelComment.snippet.textOriginal).filter(t => t && t.length > 25);
+              if (comments.length) { _okVid++; allComments.push(...comments.map(t => ({ t, v: v.snippet.title }))); }
             } catch (e) {
               console.log(`      ✗ commentaires indisponibles (${v.snippet.title.slice(0,40)}...) :`, String(e.message).slice(0, 60));
             }
           }
           console.log(`   → ${allComments.length} commentaire(s) récupéré(s) sur ${_okVid} vidéo(s)`);
-          if (videos.length) donneesBrutes += `### SOURCE — YOUTUBE (vidéos du sujet : ${videos.map(v => `"${v.snippet.title}" (${v.snippet.channelTitle}, ${_ageTxt(_ageJ(v.snippet.publishedAt))})`).join(' ; ').slice(0, 1800)})\n\n`;
+          if (videos.length) donneesBrutes += `### SOURCE — YOUTUBE (vidéos du sujet : ${videos.map(v => `"${v.snippet.title}" (${v.snippet.channelTitle})`).join(' ; ').slice(0, 1800)})\n\n`;
           if (allComments.length) {
             donneesBrutes += `### SOURCE — YOUTUBE (commentaires, ${_okVid} vidéo(s))\n` +
-              allComments.slice(0, 120).map(c => `- [${c.v.slice(0, 50)}, ${_ageTxt(_ageJ(c.d))}] "${c.t.replace(/\n/g, ' ').slice(0, 300)}"`).join('\n') + '\n\n';
+              allComments.slice(0, 120).map(c => `- [${c.v.slice(0, 50)}] "${c.t.replace(/\n/g, ' ').slice(0, 300)}"`).join('\n') + '\n\n';
           }
         } catch (e) {
           console.log('   ✗ erreur YouTube :', e.message);
@@ -5447,7 +5469,6 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
             garantie: data.product.garantie || '',
             livraison_paiement: data.product.livraison_paiement || '',
             notes: data.product.notes || '',
-            video_action_url: (typeof data.product.video_action_url === 'string' && /^https?:\/\//.test(data.product.video_action_url)) ? data.product.video_action_url : null,
             cible_auto: !!data.product.cible_auto,
             documents: Array.isArray(data.product.documents) ? data.product.documents.filter(d => d && d.url).slice(0, 5).map(d => ({ name: String(d.name || 'document'), url: d.url })) : [],
           },
@@ -5527,10 +5548,6 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
       // v5.61 — les photos du produit sont préparées aspect par aspect (voir preparerPhotosProduit). Plus de recherche
       // d'une « meilleure » image sur le web, plus de choix dans le carrousel. Déjà prêtes (lancées à la réception du
       // brief) → rien à attendre ; sinon on attend au plus 85 s pour rester sous la limite de temps de Render.
-      // enrichi-produit-v1 : ton, taille, délai et fiche d'usage vidéo calculés pendant la préparation des photos (60 s au plus).
-      const _enrichi = (!briefs[idx].product?.enrichi || (briefs[idx].product.enrichi.video_url || null) !== (briefs[idx].product.video_action_url || null))
-        ? Promise.race([enrichirProduit(briefs[idx].product), new Promise(r => setTimeout(() => r(null), 60000))]).catch(e => { console.log('[Enrichi] ' + e.message); return null; })
-        : Promise.resolve(null);
       if (!Array.isArray(briefs[idx].product?.photos_produit)) {
         console.log(`[Photos] commande ${id} : préparation en cours, attente...`);
         await Promise.race([preparationPhotosCommande(id), new Promise(r => setTimeout(r, 85000))]);
@@ -5542,7 +5559,6 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         }
       }
 
-      { const _e = await _enrichi; if (_e) briefs[idx].product.enrichi = _e; }
       await saveBriefs([briefs[idx]]);
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true, brief: briefs[idx] }));
@@ -6172,8 +6188,8 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
           if (await wasSequenceSent(sub.user_id, dailyKey)) continue;
           const planLabelR = PLAN_LABELS[sub.plan] || sub.plan;
           const body = daysLeft === 0
-            ? `Ton forfait ${planLabelR} expire aujourd'hui — renouvelle pour ne pas perdre tes images de la semaine.`
-            : `Ton forfait ${planLabelR} expire dans ${daysLeft} jour${daysLeft>1?'s':''} — pense à renouveler.`;
+            ? `Ton forfait ${planLabelR} expire aujourd'hui — renouvelle pour garder tes productions du mois prochain.`
+            : `Ton forfait ${planLabelR} expire dans ${daysLeft} jour${daysLeft>1?'s':''} — renouvelle pour ne pas interrompre tes productions.`;
           await notifyUserBoth(sub.user_id, {
             title: daysLeft === 0 ? '⏰ Ton forfait expire aujourd\'hui' : '⏰ Ton forfait expire bientôt',
             body,
@@ -8066,8 +8082,8 @@ if (req.method === 'GET' && req.url === '/setup-templates') {
       contenu: `<p>Salut{{firstName}},</p><p>Tu t'es inscrit sur AdBoard, mais ton catalogue est encore vide.</p><p>On sait que beaucoup de vendeurs bricolent leurs visuels eux-mêmes avec ChatGPT ou Canva pour aller plus vite — sauf que "plus vite" prend souvent des heures, et le résultat ne convertit pas toujours.</p><p>Ajoute ton produit, on s'occupe du reste.</p><p><a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Ajouter mon produit →</a></p><p style="margin-top:24px;">AdStack</p>` },
 
     { cle: 'email_j1_has_product', categorie: 'email', etape_funnel: 'activation',
-      sujet: `🤯 {{firstName}} ! Découverte hallucinante sur {{productName}}...`,
-      contenu: `<p>Heyy{{firstName}},</p><p>On vient de faire une petite analyse sur {{productName}}.</p><p>Et nos spécialistes ont découvert une potentielle <strong>hausse de demande</strong> d'environ <strong>32%</strong> pour ce type de produit dans les 3 prochains mois.</p><p>Mais pour capter cette demande, il te faut une stratégie de créative publicitaire en béton. Ce qui est précisément ce dont nous sommes spécialisés — on sera ravis de mettre nos années d'expérience à ton service.</p><p><a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Demander mes visuels →</a></p><p style="margin-top:24px;">AdStack</p>` },
+      sujet: `{{firstName}}, on a regardé le marché de {{productName}}`,
+      contenu: `<p>Salut{{firstName}},</p><p>Tu as ajouté {{productName}} sur AdBoard. Bonne nouvelle : c'est exactement le point de départ dont on a besoin.</p><p>Pour chaque production, on étudie ton marché, tes concurrents et ta cible, puis on construit des angles différents, en vidéo et en image. Tu testes, tu gardes ce qui vend.</p><p><a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Demander mes créatives →</a></p><p style="margin-top:24px;">AdStack</p>` },
 
     { cle: 'email_j5_vision', categorie: 'email', etape_funnel: 'conversion',
       sujet: '🫣 La méthode secrète qui a fait la différence pour un de nos clients',
@@ -8687,8 +8703,8 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
       const userId = briefs[idx].client?.user_id;
       if (userId) {
         notifyUserBoth(userId, {
-          title: '🎉 Tes visuels sont prêts',
-          body: `Les images pour ${briefs[idx].product?.nom || 'ton produit'} sont livrées — va les récupérer sur AdBoard.`,
+          title: '🎉 Tes créatives sont prêtes',
+          body: `Les vidéos et images pour ${briefs[idx].product?.nom || 'ton produit'} sont livrées — va les récupérer sur AdBoard.`,
           url: '/adboard/gallery',
           type: 'brief',
         }).catch(()=>{});
@@ -8699,6 +8715,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
         sendDeliverablesReadyEmail({
           email: briefs[idx].client.email,
           produit: briefs[idx].product?.nom || 'ton produit',
+          brief: briefs[idx],
         }).catch(()=>{});
       }
     } else {
@@ -8984,7 +9001,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
 // ═══════════════════════════════════════════════════════════════════════════
 const SC_KEY = process.env.SOCIAL_MEDIA_SCRAPING_API || '';
 const SC_BASE = 'https://api.scrapecreators.com';
-const SC_MAX_REQUETES = parseInt(process.env.SC_MAX_REQUETES || '26', 10);
+const SC_MAX_REQUETES = parseInt(process.env.SC_MAX_REQUETES || '16', 10);
 const BALAYAGE_VALIDITE_JOURS = parseInt(process.env.BALAYAGE_VALIDITE_JOURS || '30', 10);
 
 async function scGet(chemin, params, compteur, timeoutMs = 25000) {
@@ -9083,118 +9100,36 @@ Concurrents directs : ${plan.concurrents.join(', ') || 'n/a'}
 `;
 }
 
-// timing-marche-v1 — LE TEMPS DU MARCHÉ. Chaque donnée collectée porte son ÂGE (l'analyste ne peut pas raisonner sur le timing
-// d'un angle avec des données non datées). Les pubs sont lues en DEUX tris : les plus vues (ce qui est prouvé) et les plus récentes
-// (ce qui se teste), puis rangées par FAMILLE D'ANGLE : un modèle étiquette chaque pub, le PROGRAMME compte (annonceurs, âges,
-// variantes) et pose un statut. Repères de lecture, issus des méthodes d'analyse de bibliothèque de pubs : la plupart des pubs sont
-// coupées dans leur première semaine ; une pub encore active après ~4 semaines est payée parce qu'elle rapporte ; au-delà de 2 mois
-// la preuve est forte ; une même accroche chez la majorité des annonceurs est déjà « dans le prix » ; plusieurs annonceurs qui
-// lancent la même porte dans les 2 dernières semaines signalent un déplacement du marché.
-function _ageJ(ts) {   // secondes, millisecondes ou date lisible → âge en jours (null si illisible)
-  if (ts === undefined || ts === null || ts === '') return null;
-  let ms = null;
-  if (typeof ts === 'number' || /^\d+(\.\d+)?$/.test(String(ts))) { const n = Number(ts); ms = n > 1e12 ? n : n * 1000; }
-  else { const d = Date.parse(String(ts)); if (!isNaN(d)) ms = d; }
-  if (!ms || ms < Date.UTC(2005, 0, 1) || ms > Date.now() + 86400000) return null;
-  return Math.max(0, Math.round((Date.now() - ms) / 86400000));
-}
-function _ageTxt(j) { return (j === null || j === undefined) ? 'date inconnue' : j === 0 ? "aujourd'hui" : j < 60 ? `il y a ${j} j` : j < 730 ? `il y a ${Math.round(j / 30)} mois` : `il y a ${Math.round(j / 365)} ans`; }
-
-// Statut d'une famille d'angle, d'après ce que le programme a compté (jamais d'après une impression).
-function _statutFamille(f, nbAnnonceursEchantillon) {
-  if (f.agesConnus === 0) return 'ÂGE INCONNU';
-  const moitie = Math.max(3, Math.ceil(nbAnnonceursEchantillon * 0.5));
-  if ((f.annonceurs >= 4 && f.n60 >= 1) || (f.annonceurs >= moitie && f.n30 >= 2)) return 'SATURÉ';
-  if (f.n30 >= 1) return (f.n14 >= 2 && f.annonceursRecents >= 2) ? 'PROUVÉ, ENCORE RELANCÉ' : 'PROUVÉ';
-  if ((f.n8_29 >= 1 && (f.annonceurs >= 2 || f.variantes >= 3)) || f.n8_29 >= 2 || (f.n14 >= 3 && f.annonceursRecents >= 3)) return 'EN MONTÉE';
-  return 'ESSAI ISOLÉ';
-}
-
-// Carte des angles des pubs : le modèle étiquette, le programme compte.
-async function carteAnglesPubs(liste, plan) {
-  if (!Array.isArray(liste) || liste.length < 4) return '';
-  try {
-    const token = await getToken();
-    const prompt = `Voici ${liste.length} publicités actives sur un marché. Problème de référence : « ${plan.probleme} » (catégorie : ${plan.categorie}).
-Pour CHAQUE publicité, dis à quelle FAMILLE D'ANGLE elle appartient. Une famille = ce que la pub PROMET (le désir ou le problème servi) + la PORTE par laquelle elle entre (un mécanisme, un ennemi, une preuve, l'identité de la personne, l'offre). Deux pubs de la même famille pourraient échanger leur accroche sans que personne le remarque.
-Règles : 3 à 9 familles au total ; nom court (3 à 7 mots) en français ; réutilise EXACTEMENT le même nom pour toutes les pubs d'une même famille ; une pub qui parle d'un autre problème reçoit la famille "HORS SUJET".
-"type" = ce que la pub fait surtout : "promesse" (annonce le résultat), "mecanisme" (explique comment ça marche), "preuve" (témoignage, chiffre, autorité), "identite" (parle de qui est la personne, de ce qu'elle refuse), "offre" (prix, promo, urgence).
-Réponds UNIQUEMENT par un tableau JSON, une entrée par publicité : [{"i":0,"famille":"...","type":"..."}]
-
-` + liste.map((a, i) => `${i}. [${a.page}] ${a.titre ? a.titre + ' — ' : ''}${_coupe(a.corps, 260)}`).join('\n');
-    const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0, maxOutputTokens: 4000, ...reflexion(MODELES.tendances, 0) } };
-    const d = await vertexRequest(token, MODELES.tendances, body, 45000, 'analyste_carte_pubs');
-    const raw = (d.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).filter(Boolean).join('');
-    const m = raw.match(/\[[\s\S]*\]/);
-    if (!m) throw new Error('réponse sans tableau');
-    return _carteDepuisEtiquettes(liste, JSON.parse(m[0]));
-  } catch (e) { console.log('   ✗ carte des angles des pubs ignorée :', e.message); return ''; }
-}
-
-function _carteDepuisEtiquettes(liste, etiquettes) {
-  const fam = new Map(); const TYPES = ['promesse', 'mecanisme', 'preuve', 'identite', 'offre']; const types = {};
-  (Array.isArray(etiquettes) ? etiquettes : []).forEach(e => {
-    const a = liste[Number(e && e.i)]; if (!a) return;
-    const nom = _coupe(String((e && e.famille) || '').trim(), 70); if (!nom || /^hors sujet$/i.test(nom)) return;
-    const cle = nom.toLowerCase();
-    if (!fam.has(cle)) fam.set(cle, { nom, pubs: 0, pages: new Set(), pagesRecentes: new Set(), ages: [], n7: 0, n14: 0, n8_29: 0, n30: 0, n60: 0, variantes: 0, types: {}, ex: [] });
-    const f = fam.get(cle); f.pubs++; f.pages.add(a.page); f.variantes += a.variantes || 1;
-    if (a.jours !== null && a.jours !== undefined) { f.ages.push(a.jours); if (a.jours <= 7) f.n7++; if (a.jours <= 14) { f.n14++; f.pagesRecentes.add(a.page); } if (a.jours >= 8 && a.jours <= 29) f.n8_29++; if (a.jours >= 30) f.n30++; if (a.jours >= 60) f.n60++; }
-    const t = TYPES.includes(String(e.type || '').toLowerCase()) ? String(e.type).toLowerCase() : null;
-    if (t) { f.types[t] = (f.types[t] || 0) + 1; types[t] = (types[t] || 0) + 1; }
-    if (f.ex.length < 2) f.ex.push(_coupe(a.titre || a.corps, 110));
-  });
-  if (!fam.size) return '';
-  const toutes = new Set(); fam.forEach(f => f.pages.forEach(p => toutes.add(p)));
-  const lignes = [...fam.values()].map(f => {
-    f.annonceurs = f.pages.size; f.annonceursRecents = f.pagesRecentes.size; f.agesConnus = f.ages.length;
-    f.statut = _statutFamille(f, toutes.size);
-    const vieux = f.ages.length ? Math.max(...f.ages) : null, jeune = f.ages.length ? Math.min(...f.ages) : null;
-    const typeDom = Object.entries(f.types).sort((x, y) => y[1] - x[1])[0];
-    return { f, txt: `- FAMILLE « ${f.nom} » — STATUT : ${f.statut} · ${f.pubs} pub(s) · ${f.annonceurs} annonceur(s) différent(s)` + (vieux !== null ? ` · la plus ancienne tourne depuis ${vieux} j, la plus récente lancée ${_ageTxt(jeune)}` : ' · âges inconnus') + ` · ${f.n14} lancée(s) dans les 14 derniers jours · ${f.n30} active(s) depuis 30 j ou plus · ${f.variantes} variante(s) au total` + (typeDom ? ` · message surtout de type ${typeDom[0]}` : '') + ` · ex. : ${f.ex.map(x => '« ' + x + ' »').join(' / ')}` };
-  }).sort((x, y) => (y.f.n30 * 10 + y.f.pubs) - (x.f.n30 * 10 + x.f.pubs));
-  const totT = Object.values(types).reduce((s, x) => s + x, 0);
-  const nbPubs = lignes.reduce((s, l) => s + l.f.pubs, 0);
-  return `### CARTE TEMPORELLE DES ANGLES DES PUBS (comptée par le programme sur ${nbPubs} pub(s) active(s) de ${toutes.size} annonceur(s) — un échantillon, pas un recensement)\n`
-    + `Comment lire les statuts : SATURÉ = beaucoup d'annonceurs différents sur la même porte depuis longtemps ; PROUVÉ = au moins une pub payée depuis 30 jours ou plus, place encore peu occupée ; EN MONTÉE = lancements récents qui ont passé leur première semaine ou se multiplient, sans pub ancienne ; ESSAI ISOLÉ = une ou deux pubs très récentes, rien de prouvé. Une famille absente de cette carte n'a aucune pub dans l'échantillon.\n`
-    + lignes.map(l => l.txt).join('\n') + '\n'
-    + (totT ? `TYPES DE MESSAGE DANS L'ÉCHANTILLON : ` + TYPES.filter(t => types[t]).map(t => `${t} ${Math.round(100 * types[t] / totT)} %`).join(' · ') + ` (sert à situer le stade du marché : des promesses seules, des mécanismes, des preuves, ou l'identité).\n` : '') + '\n';
-}
-
-// Balayage ScrapeCreators : voix du marché au niveau du PROBLÈME + pubs natives des alternatives/concurrents, le tout DATÉ.
+// Balayage ScrapeCreators : voix du marché au niveau du PROBLÈME + pubs natives des alternatives/concurrents.
 async function balayageScrapeCreators(plan, pays, compteur) {
   const stats = { reddit: 0, tiktok_videos: 0, tiktok_commentaires: 0, pubs: 0, erreurs: [] };
   const sections = { reddit: '', tiktok: '', pubs: '' };
   const geo = PAYS_TO_GEO[pays] || '';
 
   const tacheReddit = async () => {
-    const lignes = [], recentes = [], vus = new Set();
-    const ligne = p => `- [${p.subreddit_name_prefixed || ('r/' + (p.subreddit || '?'))}, ${_ageTxt(_ageJ(p.created_utc || p.created || p.created_at))}] "${_coupe(p.title, 160)}"${p.selftext ? ' — ' + _coupe(p.selftext, 380) : ''} (score ${p.score ?? '?'}, ${p.num_comments ?? '?'} commentaires) ${p.url || ''}`;
+    const lignes = [];
     for (const q of plan.reddit.slice(0, 3)) {
       try {
         const j = await scGet('/v1/reddit/search', { query: q, filter: 'posts', sort: 'relevance', timeframe: 'all', trim: 'true' }, compteur);
-        (j.posts || []).slice(0, 5).forEach(p => { const k = p.url || p.title; if (vus.has(k)) return; vus.add(k); stats.reddit++; lignes.push(ligne(p)); });
+        const posts = (j.posts || []).slice(0, 5);
+        posts.forEach(p => {
+          stats.reddit++;
+          lignes.push(`- [${p.subreddit_name_prefixed || ('r/' + (p.subreddit || '?'))}] "${_coupe(p.title, 160)}"${p.selftext ? ' — ' + _coupe(p.selftext, 380) : ''} (score ${p.score ?? '?'}, ${p.num_comments ?? '?'} commentaires) ${p.url || ''}`);
+        });
       } catch (e) { stats.erreurs.push('reddit « ' + q + ' » : ' + e.message); }
-    }
-    for (const q of [...new Set([plan.reddit[0], plan.formulations[0] || plan.probleme].filter(Boolean))].slice(0, 2)) {   // ce qui se dit EN CE MOMENT (30 derniers jours)
-      try {
-        const j = await scGet('/v1/reddit/search', { query: q, filter: 'posts', sort: 'top', timeframe: 'month', trim: 'true' }, compteur);
-        (j.posts || []).slice(0, 5).forEach(p => { const k = p.url || p.title; if (vus.has(k)) return; vus.add(k); stats.reddit++; recentes.push(ligne(p)); });
-      } catch (e) { stats.erreurs.push('reddit récent « ' + q + ' » : ' + e.message); }
     }
     try {
       const qC = plan.formulations[0] || plan.probleme;
       const j = await scGet('/v1/reddit/search', { query: qC, filter: 'comments', sort: 'top', trim: 'true' }, compteur);
-      (j.comments || j.posts || []).slice(0, 8).forEach(c => {
+      const liste = (j.comments || j.posts || []).slice(0, 8);
+      liste.forEach(c => {
         const t = c.body || c.selftext || c.text || c.comment || '';
         if (String(t).length < 25) return;
         stats.reddit++;
-        lignes.push(`- [commentaire ${c.subreddit_name_prefixed || ''}, ${_ageTxt(_ageJ(c.created_utc || c.created || c.created_at))}] "${_coupe(t, 380)}" (score ${c.score ?? '?'}) ${c.url || c.permalink || ''}`);
+        lignes.push(`- [commentaire ${c.subreddit_name_prefixed || ''}] "${_coupe(t, 380)}" (score ${c.score ?? '?'}) ${c.url || c.permalink || ''}`);
       });
     } catch (e) { stats.erreurs.push('reddit commentaires : ' + e.message); }
-    if (lignes.length || recentes.length) sections.reddit = `### SOURCE — SCRAPECREATORS · REDDIT (discussions sur le PROBLÈME : « ${plan.probleme} »)\n`
-      + (lignes.length ? `DISCUSSIONS DE FOND (toutes époques, les plus pertinentes) :\n` + lignes.join('\n') + '\n' : '')
-      + (recentes.length ? `DISCUSSIONS DES 30 DERNIERS JOURS (ce qui se dit en ce moment) :\n` + recentes.join('\n') + '\n' : `DISCUSSIONS DES 30 DERNIERS JOURS : aucune trouvée sur ces requêtes.\n`) + '\n';
+    if (lignes.length) sections.reddit = `### SOURCE — SCRAPECREATORS · REDDIT (discussions sur le PROBLÈME : « ${plan.probleme} »)\n` + lignes.join('\n') + '\n\n';
   };
 
   const tacheTikTok = async () => {
@@ -9213,63 +9148,48 @@ async function balayageScrapeCreators(plan, pays, compteur) {
       stats.tiktok_videos++;
       const pseudo = a.author?.unique_id || '';
       const url = a.share_url || (pseudo && a.aweme_id ? `https://www.tiktok.com/@${pseudo}/video/${a.aweme_id}` : '');
-      lignes.push(`- VIDÉO (${_ageTxt(_ageJ(a.create_time))}) « ${_coupe(a.desc, 220)} » (${a.statistics?.play_count ?? '?'} vues, ${a.statistics?.comment_count ?? '?'} commentaires) ${url}`);
+      lignes.push(`- VIDÉO « ${_coupe(a.desc, 220)} » (${a.statistics?.play_count ?? '?'} vues, ${a.statistics?.comment_count ?? '?'} commentaires) ${url}`);
       if (!url) continue;
       try {
         const j = await scGet('/v1/tiktok/video/comments', { url, trim: 'true' }, compteur);
         const coms = (j.comments || []).filter(c => String(c.text || '').length >= 15)
           .sort((x, y) => (y.digg_count || 0) - (x.digg_count || 0)).slice(0, 8);
-        coms.forEach(c => { nbCom++; lignes.push(`    · commentaire (${_ageTxt(_ageJ(c.create_time))}) : "${_coupe(c.text, 300)}" (${c.digg_count ?? 0} likes)`); });
+        coms.forEach(c => { nbCom++; lignes.push(`    · commentaire : "${_coupe(c.text, 300)}" (${c.digg_count ?? 0} likes)`); });
       } catch (e) { stats.erreurs.push('tiktok commentaires : ' + e.message); }
     }
     stats.tiktok_commentaires = nbCom;
-    if (lignes.length) sections.tiktok = `### SOURCE — SCRAPECREATORS · TIKTOK (vidéos et commentaires sur le problème, datés)\n` + lignes.join('\n') + '\n\n';
+    if (lignes.length) sections.tiktok = `### SOURCE — SCRAPECREATORS · TIKTOK (vidéos et commentaires sur le problème)\n` + lignes.join('\n') + '\n\n';
   };
 
   const tachePubs = async () => {
-    const ads = new Map();
-    const lire = (res, q, tri) => (res || []).slice(0, 12).forEach(ad => {
-      const s = ad.snapshot || {};
-      const corps0 = (s.body && (s.body.text || s.body)) || s.link_description || '';
-      const corps = typeof corps0 === 'string' ? corps0 : JSON.stringify(corps0);
-      if (!corps && !s.title) return;
-      const cle = String(ad.collation_id || ad.ad_archive_id || '') || (String(ad.page_name) + '|' + _coupe(corps, 60));
-      const ex = ads.get(cle);
-      if (ex) { if (!ex.tris.includes(tri)) ex.tris.push(tri); return; }
-      ads.set(cle, { page: _coupe(ad.page_name || '?', 60), q, jours: _ageJ(ad.start_date), variantes: Number(ad.collation_count) || 1, titre: _coupe(s.title || '', 120), corps: _coupe(corps, 420), cta: s.cta_text || '', tris: [tri] });
-    });
+    const lignes = [];
+    const vus = new Set();
     for (const q of plan.ads.slice(0, 3)) {
-      for (const [tri, sort] of [['vues', 'total_impressions'], ['recent', 'relevancy_monthly_grouped']]) {   // les plus vues = ce qui est prouvé ; les plus récentes = ce qui se teste
-        try {
-          let j = await scGet('/v1/facebook/adLibrary/search/ads', { query: q, country: geo || 'ALL', status: 'ACTIVE', sort_by: sort, media_type: 'ALL' }, compteur);
-          let res = j.searchResults || [];
-          if (!res.length && geo) {
-            j = await scGet('/v1/facebook/adLibrary/search/ads', { query: q, country: 'ALL', language: 'FR', status: 'ACTIVE', sort_by: sort, media_type: 'ALL' }, compteur);
-            res = j.searchResults || [];
-          }
-          lire(res, q, tri);
-        } catch (e) { stats.erreurs.push('pubs « ' + q + ' » (' + tri + ') : ' + e.message); }
-      }
+      try {
+        let j = await scGet('/v1/facebook/adLibrary/search/ads', { query: q, country: geo || 'ALL', status: 'ACTIVE', sort_by: 'total_impressions', media_type: 'ALL' }, compteur);
+        let res = j.searchResults || [];
+        if (!res.length && geo) {
+          j = await scGet('/v1/facebook/adLibrary/search/ads', { query: q, country: 'ALL', language: 'FR', status: 'ACTIVE', sort_by: 'total_impressions', media_type: 'ALL' }, compteur);
+          res = j.searchResults || [];
+        }
+        res.slice(0, 6).forEach(ad => {
+          const cle = ad.collation_id || ad.ad_archive_id;
+          if (cle && vus.has(cle)) return;
+          if (cle) vus.add(cle);
+          const s = ad.snapshot || {};
+          const corps = (s.body && (s.body.text || s.body)) || s.link_description || '';
+          if (!corps && !s.title) return;
+          const jours = ad.start_date ? Math.max(0, Math.round((Date.now() / 1000 - ad.start_date) / 86400)) : null;
+          stats.pubs++;
+          lignes.push(`- [${ad.page_name || '?'}] (recherche « ${q} »${jours !== null ? ', diffusée depuis ' + jours + ' j' : ''}${ad.collation_count > 1 ? ', ' + ad.collation_count + ' variantes' : ''}) ${s.title ? 'TITRE « ' + _coupe(s.title, 120) + ' » — ' : ''}« ${_coupe(typeof corps === 'string' ? corps : JSON.stringify(corps), 420)} »${s.cta_text ? ' [CTA : ' + s.cta_text + ']' : ''}`);
+        });
+      } catch (e) { stats.erreurs.push('pubs « ' + q + ' » : ' + e.message); }
     }
-    const liste = [...ads.values()];
-    stats.pubs = liste.length;
-    if (!liste.length) return;
-    const fmt = a => `- [${a.page}] (recherche « ${a.q} », ${a.jours !== null ? (a.jours <= 7 ? 'lancée il y a ' + a.jours + ' j' : 'diffusée depuis ' + a.jours + ' j') : 'date inconnue'}${a.variantes > 1 ? ', ' + a.variantes + ' variantes' : ''}) ${a.titre ? 'TITRE « ' + a.titre + ' » — ' : ''}« ${a.corps} »${a.cta ? ' [CTA : ' + a.cta + ']' : ''}`;
-    const tri = (f) => liste.filter(f).sort((x, y) => (y.jours || 0) - (x.jours || 0));
-    const prouvees = tri(a => a.jours !== null && a.jours >= 30), montee = tri(a => a.jours !== null && a.jours >= 8 && a.jours <= 29), essais = tri(a => a.jours !== null && a.jours <= 7), sansDate = liste.filter(a => a.jours === null);
-    const annonceurs = new Set(liste.map(a => a.page)).size;
-    let carte = '';
-    try { carte = await carteAnglesPubs(liste, plan); } catch (e) { stats.erreurs.push('carte des angles : ' + e.message); }
-    sections.pubs = carte
-      + `### SOURCE — SCRAPECREATORS · BIBLIOTHÈQUE DE PUBS META (${liste.length} pubs actives de ${annonceurs} annonceur(s), alternatives et concurrents ; lues en deux tris : les plus vues et les plus récentes)\n`
-      + `PUBS PAYÉES DEPUIS 30 JOURS OU PLUS (${prouvees.length}) — elles ont survécu au tri, l'annonceur les garde parce qu'elles rapportent :\n` + (prouvees.map(fmt).join('\n') || '- aucune') + '\n'
-      + `PUBS DE 8 À 29 JOURS (${montee.length}) — elles ont passé leur première semaine :\n` + (montee.map(fmt).join('\n') || '- aucune') + '\n'
-      + `PUBS DE 7 JOURS OU MOINS (${essais.length}) — ce que les annonceurs ESSAIENT en ce moment, rien de prouvé :\n` + (essais.map(fmt).join('\n') || '- aucune') + '\n'
-      + (sansDate.length ? `PUBS SANS DATE LISIBLE (${sansDate.length}) :\n` + sansDate.map(fmt).join('\n') + '\n' : '') + '\n';
+    if (lignes.length) sections.pubs = `### SOURCE — SCRAPECREATORS · BIBLIOTHÈQUE DE PUBS META (pubs actives des alternatives et concurrents, classées par impressions — les plus longtemps diffusées sont les plus rentables)\n` + lignes.join('\n') + '\n\n';
   };
 
   await Promise.all([tacheReddit(), tacheTikTok(), tachePubs()]);
-  const texte = [sections.reddit.slice(0, 8000), sections.tiktok.slice(0, 7000), sections.pubs.slice(0, 16000)].join('');
+  const texte = [sections.reddit, sections.tiktok, sections.pubs].map(s => s.slice(0, 7000)).join('');
   return { texte, stats };
 }
 
@@ -10606,100 +10526,6 @@ async function preparerPhotosProduit(product) {
 }
 // Tâche liée à une commande : une seule à la fois par commande, résultat écrit dans la commande (product.photos_produit + photo_nobg).
 const _prepPhotos = new Map();
-// ── enrichi-produit-v1 — ce que le client n'a pas à nous donner, nous le trouvons nous-mêmes ──────────────────
-// Au lancement d'une commande : (1) TON de la marque, déduit du produit et de la promesse (toujours collé au désir ou au problème
-// principal que le produit résout, jamais allusif) ; (2) TAILLE réelle du produit, cherchée sur Google à partir du nom et de la photo ;
-// (3) DÉLAI du résultat, quand il existe ; (4) FICHE D'USAGE tirée de la vidéo du client si elle en a envoyé une.
-// Tout est interne, rien n'est demandé au client. Résultat rangé dans brief.product.enrichi ; absent = jamais inventé.
-function _jsonDeTexte(t) {
-  let s = String(t || '').replace(/```json\s*|```/g, '').trim();
-  try { return JSON.parse(s); } catch (e) {}
-  const a = s.indexOf('{'), b = s.lastIndexOf('}');
-  if (a >= 0 && b > a) { try { return JSON.parse(s.slice(a, b + 1)); } catch (e) {} }
-  return null;
-}
-function _texteGemini(data) {
-  try { return (data.candidates?.[0]?.content?.parts || []).map(x => x.text || '').join('').trim(); } catch (e) { return ''; }
-}
-async function _telechargerVideoClient(urlStr, maxOctets) {
-  try {
-    const u = new URL(urlStr);
-    if (!/^https?:$/.test(u.protocol) || /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.)/i.test(u.hostname)) return null;
-    const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 30000);
-    const r = await fetch(u.href, { signal: ctrl.signal });
-    if (!r.ok) { clearTimeout(tm); return null; }
-    const len = Number(r.headers.get('content-length') || 0);
-    if (len && len > maxOctets) { clearTimeout(tm); return { trop_lourde: true, octets: len }; }
-    const buf = Buffer.from(await r.arrayBuffer()); clearTimeout(tm);
-    if (buf.length > maxOctets) return { trop_lourde: true, octets: buf.length };
-    let mime = (r.headers.get('content-type') || '').split(';')[0].trim();
-    if (!/^video\//.test(mime)) mime = /\.mov(\?|$)/i.test(u.pathname) ? 'video/quicktime' : /\.webm(\?|$)/i.test(u.pathname) ? 'video/webm' : 'video/mp4';
-    return { mimeType: mime, data: buf.toString('base64'), octets: buf.length };
-  } catch (e) { return null; }
-}
-async function enrichirProduit(p) {
-  const sortie = { fait_le: new Date().toISOString(), video_url: p.video_action_url || null };
-  const token = await getToken();
-  let page = '';
-  if (p.lien_page_produit) { try { const r = await fetchPageText(p.lien_page_produit, 0, false); page = String((r && r.text) || '').slice(0, 7000); } catch (e) {} }
-  const parts = [];
-  parts.push({ text:
-`Tu aides une agence de publicité vidéo. Produit : « ${p.nom || ''} ». Ce qu'il fait : ${p.utilite || 'non précisé'}. Cible : ${p.cible || 'non précisée'}. Marché : ${p.pays || 'non précisé'}. Prix : ${p.pricing || 'non précisé'}.
-${page ? 'TEXTE DE SA PAGE DE VENTE :\n' + page + '\n' : ''}
-Réponds en JSON strict, uniquement l'objet :
-{"ton_marque":"2 à 3 phrases. Le ton qui convient à CE produit, déduit du produit, de sa promesse et de la façon dont la page parle. Règles : il parle DIRECTEMENT au problème principal ou au désir principal que le produit résout, jamais par allusion, jamais d'un sujet voisin ou lointain. Exemple de raisonnement (ne le recopie pas) : un produit de performance intime appelle un ton très direct ; un produit de soin qui évite la douleur des alternatives appelle un ton propre, doux, centré sur ce confort. Si tu n'as pas assez d'éléments, écris null.",
-"taille_produit":{"texte":"dimensions réelles du produit ET de son contenant, en cm ou en ml, estimation moyenne (ex : 'flacon de 9 cm de haut, 3 cm de large'). null si introuvable","hauteur_cm":nombre ou null,"largeur_cm":nombre ou null,"repere":"comparaison parlante avec une main d'adulte (ex : 'tient dans la paume'), ou null","fiable":true ou false},
-"delai_resultat":"en combien de temps l'effet est ressenti ou visible, SEULEMENT si la page ou une source le dit. Sinon null"}
-Pour la taille : cherche sur Google le produit exact (nom, marque, fiches des revendeurs) et regarde la photo jointe. Une dimension que tu n'as pas trouvée est null, jamais inventée.` });
-  try {
-    const tel = p.photo_url ? await telechargerImagePourTri(p.photo_url) : null;
-    if (tel) parts.push({ inlineData: { mimeType: tel.mimeType, data: tel.data } });
-  } catch (e) {}
-  try {
-    const body = { contents: [{ role: 'user', parts }], tools: [{ googleSearch: {} }], generationConfig: { temperature: 0.2, maxOutputTokens: 4000 } };
-    const data = await vertexRequestAvecReessai(token, MODELES.documents, body, 60000, 'enrichi_produit');
-    const j = _jsonDeTexte(_texteGemini(data));
-    if (j) {
-      const nul = (v) => (v === null || v === undefined || String(v).toLowerCase() === 'null' || String(v).trim() === '') ? null : v;
-      if (nul(j.ton_marque)) sortie.ton_marque = String(j.ton_marque).trim().slice(0, 600);
-      if (j.taille_produit && typeof j.taille_produit === 'object' && nul(j.taille_produit.texte)) {
-        sortie.taille_produit = { texte: String(j.taille_produit.texte).slice(0, 300), hauteur_cm: Number(j.taille_produit.hauteur_cm) || null, largeur_cm: Number(j.taille_produit.largeur_cm) || null, repere: nul(j.taille_produit.repere) ? String(j.taille_produit.repere).slice(0, 160) : null, fiable: j.taille_produit.fiable === true };
-      }
-      if (nul(j.delai_resultat)) sortie.delai_resultat = String(j.delai_resultat).trim().slice(0, 240);
-    }
-  } catch (e) { console.log('[Enrichi] ton/taille : ' + e.message); }
-  // Fiche d'usage tirée de la vidéo du client (facultative). Gemini REGARDE la vidéo ; la fiche est neutre quant au style de rendu :
-  // l'agent vidéo la traduit ensuite dans le style du CT (photoréaliste, 3D, papier...).
-  if (p.video_action_url) {
-    const v = await _telechargerVideoClient(p.video_action_url, 14 * 1024 * 1024);
-    if (!v) sortie.video_statut = 'illisible';
-    else if (v.trop_lourde) sortie.video_statut = 'trop_lourde';
-    else {
-      try {
-        const body = { contents: [{ role: 'user', parts: [
-          { text:
-`Tu regardes une vidéo où l'on voit « ${p.nom || 'le produit'} » utilisé. Décris précisément, SANS inventer ce qui ne se voit pas, pour que des réalisateurs reproduisent fidèlement l'usage dans n'importe quel style visuel (photoréaliste, 3D, papier...).
-Réponds en JSON strict, uniquement l'objet :
-{"fiche_usage":"5 à 8 phrases : les gestes dans l'ordre, comment le produit est tenu et orienté, où il est posé ou appliqué sur le corps ou dans l'espace, ce que fait l'autre main, la durée des gestes",
-"echelle":"taille du produit par rapport à la main et au corps de la personne, ce qu'on voit réellement",
-"rendu_visible":"ce qui se voit à l'écran quand il agit : texture, mousse, lumière, mouvement, effet immédiat, ou null si rien",
-"a_ne_pas_montrer":"geste ou zone du corps qui paraîtrait faux, gênant ou dangereux si on le montrait mal, ou null",
-"qualite_video":"bonne, moyenne ou mauvaise : la vidéo montre-t-elle clairement l'usage ?"}` },
-          { inlineData: { mimeType: v.mimeType, data: v.data } }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 3000 } };
-        const data = await vertexRequestAvecReessai(token, MODELES.photos, body, 90000, 'enrichi_video');
-        const j = _jsonDeTexte(_texteGemini(data));
-        if (j && j.fiche_usage) {
-          const nul = (x) => (x === null || x === undefined || String(x).toLowerCase() === 'null' || String(x).trim() === '') ? null : String(x).trim().slice(0, 800);
-          sortie.video_usage = { fiche_usage: nul(j.fiche_usage), echelle: nul(j.echelle), rendu_visible: nul(j.rendu_visible), a_ne_pas_montrer: nul(j.a_ne_pas_montrer), qualite: nul(j.qualite_video) };
-          sortie.video_statut = 'lue';
-        } else sortie.video_statut = 'non_exploitable';
-      } catch (e) { console.log('[Enrichi] vidéo : ' + e.message); sortie.video_statut = 'erreur'; }
-    }
-  }
-  console.log('[Enrichi] ' + (p.nom || '?') + ' — ton:' + (sortie.ton_marque ? 'oui' : 'non') + ' taille:' + (sortie.taille_produit ? 'oui' : 'non') + ' délai:' + (sortie.delai_resultat ? 'oui' : 'non') + ' vidéo:' + (sortie.video_statut || 'aucune'));
-  return sortie;
-}
-
 function preparationPhotosCommande(idCommande) {
   if (_prepPhotos.has(idCommande)) return _prepPhotos.get(idCommande);
   const p = (async () => {
@@ -11396,9 +11222,45 @@ async function processProductPhoto(photoBase64, briefId) {
 }
 
 
+// delivery-v1 (19 nov. 2026) — CORRECTION DES EMAILS DE LA SÉQUENCE DÉJÀ EN BASE. Ils sont modifiables dans le CRM : on ne les écrase pas.
+// On corrige seulement ce qui est faux (offre « Starter » qui n'existe plus, chiffre de demande inventé, « images chaque semaine »)
+// et seulement si la ligne contient encore l'erreur : un texte déjà retouché à la main n'est pas touché. Sans effet au 2e démarrage.
+async function corrigerModelesEmailV1() {
+  try {
+    const H = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` };
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/templates?categorie=eq.email&select=cle,sujet,contenu`, { headers: H });
+    const rows = await r.json();
+    if (!Array.isArray(rows)) return;
+    let n = 0;
+    for (const t of rows) {
+      let sujet = String(t.sujet || ''), contenu = String(t.contenu || '');
+      const avant = sujet + '|' + contenu;
+      if (t.cle === 'email_j1_has_product' && /32\s*%/.test(contenu)) {
+        sujet = `{{firstName}}, on a regardé le marché de {{productName}}`;
+        contenu = `<p>Salut{{firstName}},</p><p>Tu as ajouté {{productName}} sur AdBoard. Bonne nouvelle : c'est exactement le point de départ dont on a besoin.</p><p>Pour chaque production, on étudie ton marché, tes concurrents et ta cible, puis on construit des angles différents, en vidéo et en image. Tu testes, tu gardes ce qui vend.</p><p><a href="https://adstackofficial.com/adboard/products" style="color:#2D7FF9;">Demander mes créatives →</a></p><p style="margin-top:24px;">AdStack</p>`;
+      }
+      if (t.cle === 'email_welcome' && /images prêtes à lancer chaque semaine|Demande des images/.test(contenu)) {
+        contenu = contenu.replace(/on t'envoie des images prêtes à lancer chaque semaine/g, 'on t\'envoie des vidéos et des images prêtes à lancer, construites sur une vraie stratégie')
+          .replace(/des images publicitaires génériques/g, 'des créatives publicitaires génériques')
+          .replace(/Demande des images/g, 'Demande ta première production');
+      }
+      contenu = contenu.replace(/Découvrir Starter/g, 'Découvrir PERF+').replace(/Je démarre avec Starter/g, 'Je démarre avec PERF+')
+        .replace(/le prix de PERF\+ \(\{\{prixLocal\}\}\)/g, 'le prix de PERF+ ({{prixLocal}} par mois)')
+        .replace(/Le vrai coût, c'est pas Starter\./g, 'Le vrai coût, ce n\'est pas PERF+.')
+        .replace(/C'est exactement ce que Starter permet de faire, chaque semaine\./g, 'C\'est exactement ce que PERF+ permet de faire, chaque mois.')
+        .replace(/une bonne diversité d'images publicitaires la même semaine/g, 'une bonne diversité de vidéos et d\'images publicitaires dans le même lot');
+      if (sujet + '|' + contenu === avant) continue;
+      const u = await fetch(`${SUPABASE_URL_INT}/rest/v1/templates?cle=eq.${encodeURIComponent(t.cle)}`, { method: 'PATCH', headers: { ...H, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ sujet, contenu }) });
+      if (u.ok) n++; else console.error('[Emails] correction ' + t.cle + ' refusée :', u.status);
+    }
+    if (n) console.log(`[Emails] ${n} modèle(s) d'email corrigé(s) (offre et chiffres à jour).`);
+  } catch (e) { console.error('[Emails] correction des modèles impossible :', e.message); }
+}
+
 server.listen(PORT, () => {
   console.log(`\n✅ AdStack Server → http://localhost:${PORT}\n`);
   setTimeout(() => { sonderModeles(); }, 3000);
+  setTimeout(() => { corrigerModelesEmailV1(); }, 8000);
 });
 
 // ── Auto-ping — empêche Render (offre gratuite) de mettre le serveur en veille ──
