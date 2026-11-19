@@ -108,14 +108,16 @@ const MODELES = {
   analyste:     process.env.MODELE_ANALYSTE     || 'gemini-3.1-pro',     // hypothèse de marché (rédaction)
   creative:     process.env.MODELE_CREATIVE     || 'gemini-3.1-pro',     // prompt de créative image (choix des aspects, structure du CT)
   copywriter:   process.env.MODELE_COPYWRITER   || 'gemini-3.1-pro',     // ad copies
-  raisonnement: process.env.MODELE_RAISONNEMENT || 'gemini-2.5-pro',     // défaut des tâches de raisonnement
+  // modeles-v3 (19 nov. 2026) : gemini-2.5-flash a été retiré du projet Google (« Publisher model … not found ») → les tâches
+  // qui l'utilisaient passent sur gemini-3-flash, et 2.5-pro sur 3.1-pro. Les anciens noms restent en repli (voir REPLIS_MODELES).
+  raisonnement: process.env.MODELE_RAISONNEMENT || 'gemini-3.1-pro',     // défaut des tâches de raisonnement
   scraping:     process.env.MODELE_SCRAPING     || 'gemini-3.1-pro',     // recherche Google Search de l'analyste (données brutes)
   tendances:    process.env.MODELE_TENDANCES    || 'gemini-3-flash',     // analyste : classement de la catégorie pour Google Trends
   documents:    process.env.MODELE_DOCUMENTS    || 'gemini-3-flash',     // analyste : lecture des documents fournis par le client
-  fiche:        process.env.MODELE_FICHE        || 'gemini-2.5-flash',   // remplisseur de fiche produit
-  utilitaire:   process.env.MODELE_UTILITAIRE   || 'gemini-2.5-flash',   // petites tâches courtes
-  demo:         process.env.MODELE_DEMO         || 'gemini-2.5-flash',   // stratège de démo
-  chat:         process.env.MODELE_CHAT         || 'gemini-2.5-flash',   // Ava
+  fiche:        process.env.MODELE_FICHE        || 'gemini-3-flash',     // remplisseur de fiche produit
+  utilitaire:   process.env.MODELE_UTILITAIRE   || 'gemini-3-flash',     // petites tâches courtes
+  demo:         process.env.MODELE_DEMO         || 'gemini-3-flash',     // stratège de démo
+  chat:         process.env.MODELE_CHAT         || 'gemini-3-flash',     // Ava
   photos:       process.env.MODELE_PHOTOS       || 'gemini-3-flash',     // inspection et contrôle des photos du produit
   image:        process.env.MODELE_IMAGE        || 'gemini-3-pro-image'  // génération d'images
 };
@@ -601,7 +603,10 @@ function vertexRequestRegional(token, model, body, timeoutMs = 90000, typeAppel 
 const REPLIS_MODELES = {
   'gemini-3.1-pro':  ['gemini-3.1-pro-preview', 'gemini-2.5-pro'],
   'gemini-3-flash':  ['gemini-3-flash-preview', 'gemini-2.5-flash'],
-  'gemini-3.8-flash': ['gemini-3-flash', 'gemini-2.5-flash']
+  'gemini-3.8-flash': ['gemini-3-flash', 'gemini-2.5-flash'],
+  // modeles-v3 : un ancien nom (variable Render ou code) ne bloque plus jamais une tâche — il bascule sur la génération suivante
+  'gemini-2.5-flash': ['gemini-3-flash', 'gemini-3-flash-preview'],
+  'gemini-2.5-pro':   ['gemini-3.1-pro', 'gemini-3.1-pro-preview'],
 };
 const _MODELES_INDISPO = new Map();   // modèle -> raison (indisponible pour toute la session)
 const _MODELES_VUS = new Set();       // couples tâche|modèle déjà annoncés dans le journal
@@ -6718,7 +6723,7 @@ Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`
       let token;
       try { token = await getToken(); }
       catch(e) { throw new Error('Token Vertex AI impossible: ' + e.message); }
-      console.log('[Ava] Appel Vertex AI model=gemini-2.5-flash contents.length=', contents.length);
+      console.log('[Ava] Appel Vertex AI model=' + CHAT_MODEL + ' contents.length=', contents.length);
       const geminiData = await vertexRequest(token, CHAT_MODEL, vertexBody, 25000);
       console.log('[Ava] Réponse Vertex AI:', JSON.stringify(geminiData).slice(0, 400));
       if (!geminiData?.candidates?.[0]) {
@@ -6944,7 +6949,7 @@ Langue : ${language === 'fr' ? 'français uniquement' : 'English only'}`;
       let token;
       try { token = await getToken(); }
       catch(e) { throw new Error('Token Vertex AI impossible: ' + e.message); }
-      console.log('[Ava-vente] Appel Vertex AI model=gemini-2.5-flash contents.length=', contents.length);
+      console.log('[Ava-vente] Appel Vertex AI model=' + CHAT_MODEL + ' contents.length=', contents.length);
       const geminiData = await vertexRequest(token, CHAT_MODEL, vertexBody, 25000);
       if (!geminiData?.candidates?.[0]) {
         console.error('[Ava-vente] Gemini error:', JSON.stringify(geminiData).slice(0,300));
