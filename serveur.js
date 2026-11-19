@@ -1290,7 +1290,7 @@ async function sendDeliverablesReadyEmail({ email, produit, brief }) {
     titre: `Tes créatives pour ${nomProduit} sont prêtes`,
     intro: `<p style="margin:0;">${prenom ? 'Bonjour ' + prenom + ', t' : 'T'}a production est terminée : ${total ? '<strong>' + resume + '</strong>' : 'tes créatives'}${nbCopies ? ` et <strong>${nbCopies} ad cop${nbCopies > 1 ? 'ies' : 'y'}</strong>` : ''} t'attendent dans AdBoard, prêtes à être lancées.</p>`,
     encadre: (angles.length ? `<div style="font-weight:700;color:#111827;margin-bottom:6px;">${angles.length} angle${angles.length > 1 ? 's' : ''} marketing testé${angles.length > 1 ? 's' : ''}</div>` + angles.map((a, i) => `<div style="padding:5px 0;border-top:1px solid #E8EEFB;">${i + 1}. ${a}</div>`).join('') : '')
-      + (b.reprise && b.reprise.angle ? `<div style="margin-top:12px;padding-top:10px;border-top:1px solid #E1EAFB;color:#6B7280;"><strong style="color:#374151;">Ta demande :</strong> refaire ta créative « ${echapHtml(String(b.reprise.angle).split('*')[0].trim().slice(0, 90))} ». C'est l'angle 1 de ce lot, dans le même style, avec des textes et des scènes nouveaux.</div>` : '')
+      + (b.reprise && b.reprise.angle ? `<div style="margin-top:12px;padding-top:10px;border-top:1px solid #E1EAFB;color:#6B7280;"><strong style="color:#374151;">Ta demande :</strong> continuer sur l'angle « ${echapHtml(String(b.reprise.angle).split('*')[0].trim().slice(0, 90))} ». C'est l'angle 1 de ce lot : de nouvelles créatives, dans le même style.</div>` : '')
       + (consignes ? `<div style="margin-top:12px;padding-top:10px;border-top:1px solid #E1EAFB;color:#6B7280;"><strong style="color:#374151;">Ta consigne, prise en compte :</strong> ${echapHtml(consignes.slice(0, 280))}${consignes.length > 280 ? '…' : ''}</div>` : ''),
     apercu: vignettes.length ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${vignettes.map(u => `<td width="${Math.floor(100 / vignettes.length)}%" style="padding:0 4px;"><img src="${echapHtml(u)}" alt="" width="100%" style="display:block;width:100%;border-radius:10px;border:1px solid #E5E7EB;"></td>`).join('')}</tr></table>` : '',
     etapes: ['Ouvre ta galerie et télécharge les créatives.', 'Lance-les en publicité : chaque angle est un test, garde ceux qui performent.', 'Dis-nous ce que tu en penses depuis la galerie : la prochaine production en tient compte.'],
@@ -5538,7 +5538,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
           `📦 Nouvelle demande — ${brief.product.nom}`,
           `<p><strong>${brief.quantity} images</strong> pour <strong>${brief.product.nom}</strong> (${brief.product.pays || 'pays non renseigné'}).</p>
            <p>Client : ${brief.client.email || 'email non renseigné'} — Plan ${brief.client.plan}</p>
-           ${brief.reprise ? `<p><strong>À refaire dans le style d'une créative livrée</strong> (${brief.reprise.format}) : angle « ${echapHtml(brief.reprise.angle)} », CT ${echapHtml(brief.reprise.ct)}.</p>` : ''}
+           ${brief.reprise ? `<p><strong>Nouvelle production sur un angle déjà livré</strong> (créative choisie : ${brief.reprise.format}) : angle « ${echapHtml(brief.reprise.angle)} », CT ${echapHtml(brief.reprise.ct)}.</p>` : ''}
            <p style="color:#888;font-size:12px">Reçue le ${new Date(brief.created_at).toLocaleString('fr-FR')} — id ${brief.id}</p>`
         ).catch(()=>{});
         // v5.65 — plus de préparation des photos à la réception : elle ne se fait qu'au lancement de la production (/commandes/:id/start).
