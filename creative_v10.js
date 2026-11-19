@@ -308,6 +308,7 @@ HARD LOCKS :
           '- Avis réels : ' + (avis.length ? avis.map(a => '« ' + String(a).slice(0, 200) + ' »').join(' ') : 'AUCUN'),
           '- Niveau de conscience voulu : ' + (b.niveau || '—') + ' · Angle : ' + String(b.angle || '').split('*')[0].slice(0, 200),
           b.verite ? '\n' + String(b.verite).slice(0, 3000) : '',
+          b.meta ? '\n' + String(b.meta).slice(0, 3500) : '',
         ].filter(Boolean).join('\n') });
         const SYS = `Tu es le contrôleur qualité d'une agence de publicités Meta Ads. Tu juges si IMAGE A peut être livrée TELLE QUELLE à un client exigeant qui va la diffuser. Tu es strict mais juste : tu ne refuses que pour un défaut réel et visible.
 DÉFAUTS BLOQUANTS (verdict "corriger") :
@@ -318,9 +319,10 @@ DÉFAUTS BLOQUANTS (verdict "corriger") :
 5. rendu : anatomie déformée (mains, doigts, visage), artefact visible, zone vide ou cassée, format qui n'est pas plein cadre 4:5, bande noire.
 6. structure : la mise en page ne suit pas le prompt (zone manquante, élément clé absent, CTA présent alors que le prompt l'interdit ou absent alors qu'il l'exige).
 7. verite : si une FICHE DE VÉRITÉ DE L'ANGLE est donnée, un texte de IMAGE A la contredit nettement (nie une cause qu'elle reconnaît, promet ce qu'elle exclut, affiche une rareté ou une échéance absente) ; ou un nom de société autre que le nom de marque indiqué est écrit.
-DÉFAUTS MINEURS (n'empêchent pas la livraison) : nuance de couleur, légère différence de position, style typographique.
+${b.meta ? `8. meta (PRODUIT SENSIBLE — meta-sensible-v1, règles données plus haut) : un texte de IMAGE A attribue directement l'état ou le défaut au spectateur (« vous êtes… », « votre ventre… », « tu souffres de… ») ; avant/après côte à côte ; gros plan sur une partie du corps visée (ventre, poitrine, entrejambe, fesses, peau malade) ; nudité ou geste suggestif ; promesse de résultat corporel chiffrée ou datée (« -10 kg en 7 jours ») ; mot de guérison médicale (guérit, soigne, traitement) ; mot listé « à éviter » écrit en clair. NE COMPTE PAS comme défaut : un ton direct, une douleur psychologique nommée à la troisième personne ou en désir, un témoignage — le ton direct est VOULU.
+` : ''}DÉFAUTS MINEURS (n'empêchent pas la livraison) : nuance de couleur, légère différence de position, style typographique.
 Réponds UNIQUEMENT par un objet JSON strict :
-{"verdict":"ok"|"corriger","score":0-10,"defauts":[{"type":"produit|texte|preuve|marque|rendu|structure|verite","gravite":"bloquant|mineur","detail":"phrase courte et précise, en français"}],"consignes_correction":"instructions précises pour corriger les défauts bloquants (ce qu'il faut écrire, retirer, montrer), vide si ok","resume":"une phrase"}`;
+{"verdict":"ok"|"corriger","score":0-10,"defauts":[{"type":"produit|texte|preuve|marque|rendu|structure|verite${b.meta ? '|meta' : ''}","gravite":"bloquant|mineur","detail":"phrase courte et précise, en français"}],"consignes_correction":"instructions précises pour corriger les défauts bloquants (ce qu'il faut écrire, retirer, montrer), vide si ok","resume":"une phrase"${b.meta ? ',"mention":"ok|absente|illisible — une petite mention légale (responsabilité de la marque, résultats variables…) est-elle écrite LISIBLEMENT dans IMAGE A, même en très petit ?"' : ''}}`;
         const raw = await callGeminiPro(SYS, parts, 3000, { modele: MODELES.creative, temperature: 0.1, thinkingBudget: 4096, logLabel: 'Contrôle qualité image', timeoutMs: 120000, typeAppel: 'controle_qualite_image' });
         const t = String(raw || ''), i = t.indexOf('{'), j = t.lastIndexOf('}');
         let d = null; try { d = JSON.parse(t.slice(i, j + 1)); } catch (_) { }
@@ -329,7 +331,7 @@ Réponds UNIQUEMENT par un objet JSON strict :
         const verdict = defauts.some(x => x.gravite === 'bloquant') ? 'corriger' : 'ok';
         console.log('🔎 CONTRÔLE QUALITÉ — ' + verdict + ' (' + (d.score ?? '?') + '/10)' + (defauts.length ? ' : ' + defauts.map(x => x.gravite[0].toUpperCase() + ':' + x.detail).join(' | ').slice(0, 300) : ''));
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ verdict, score: typeof d.score === 'number' ? d.score : null, defauts, consignes_correction: String(d.consignes_correction || '').slice(0, 1500), resume: String(d.resume || '').slice(0, 300) }));
+        res.end(JSON.stringify({ mention: b.meta ? (['ok', 'absente', 'illisible'].includes(String(d.mention || '').split(/[\s|—-]/)[0]) ? String(d.mention).split(/[\s|—-]/)[0] : 'absente') : null, verdict, score: typeof d.score === 'number' ? d.score : null, defauts, consignes_correction: String(d.consignes_correction || '').slice(0, 1500), resume: String(d.resume || '').slice(0, 300) }));
       } catch (e) {
         console.error('✗ Contrôle qualité :', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
