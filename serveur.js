@@ -225,7 +225,7 @@ function formatOffresPourPrompt(currency, currencyRate) {
   const { starter, pro, scale } = OFFERS;
   const ligne = (o) => `${o.name} : ${fmt(o.monthly.price)}/mois (abonnement mensuel, résiliable à tout moment) · ${o.creativesPerMonth} créatives/mois (jusqu'à ${o.lotsPerMonth} lots de 2 vidéos + 4 images) · jusqu'à ${o.produits} produits · ${o.membres} membres d'équipe sur AdBoard · stratégie marketing (recherche marché, concurrents, cible), ad copies, données marché et accès à AdBoard inclus · production en ${o.monthly.delivery} max après demande${o.prioritaire ? ' + file prioritaire' : ''} · garantie ${o.garantie}`;
   // Offre de départ sans abonnement (affichée sous les offres sur la page de vente) : ONE SHOT.
-  const depart = `ONE SHOT (pour ceux qui ne sont pas prêts pour un abonnement) : ${fmt(ONESHOT_PRIX_FCFA)}, une seule fois, 1 produit — 6 créatives (2 vidéos + 4 images) optimisées conversion à partir d'une stratégie marketing, reçues dans AdBoard sous 48h maximum. Sans Ad Copies. Lien : https://shop.adstackofficial.com/${ONESHOT_PRODUCT_ID}/checkout`;
+  const depart = `ONE SHOT (pour ceux qui ne sont pas prêts pour un abonnement) : ${fmt(PLAN_MAP[ONESHOT_PRODUCT_ID].price_fcfa)}, une seule fois, 1 produit — 6 créatives (2 vidéos + 4 images) optimisées conversion à partir d'une stratégie marketing, reçues dans AdBoard sous 48h maximum. Sans Ad Copies. Lien : https://shop.adstackofficial.com/${ONESHOT_PRODUCT_ID}/checkout`;
   return [ligne(starter), ligne(pro), ligne(scale), depart].join('\n');
 }
 
@@ -823,7 +823,9 @@ const PLAN_MAP = {
 const PLAN_LABELS = { oneshot: 'ONE SHOT', test: 'TEST', discovery: 'Discovery', starter: 'PERF+', pro: 'GROWTH', scale: 'SCALE' };
 
 // ── Séquence email de conversion J1/J5/J12/J21 ─────────────────────────────
-const SEQUENCE_PRICES = { starter: { price: OFFERS.starter.monthly.price, prixImg: OFFERS.starter.monthly.prixImg } }; // PERF+ (id interne starter) mensuel en FCFA, référence pour les prix cités dans les emails
+// PERF+ (id interne starter) mensuel en FCFA, référence pour les prix cités dans les emails. Lu À CHAQUE envoi (getter) : un prix changé
+// dans offres.json se retrouve dans le prochain email sans redémarrage.
+const SEQUENCE_PRICES = { get starter() { return { price: OFFERS.starter.monthly.price, prixImg: OFFERS.starter.monthly.prixImg }; } };
 
 // Convertit un prix FCFA vers la devise de la personne (détectée et mémorisée côté AdBoard).
 // Taux récupéré à chaque envoi — jamais de taux périmé, contrairement à un taux figé au moment de l'inscription.
@@ -1162,7 +1164,7 @@ async function sendPaymentConfirmationEmail({ email, name, plan, cycle, creditsP
       + `<div style="font-size:22px;font-weight:700;color:#111827;margin-bottom:12px;">${formatFCFA(priceFcfa)} FCFA</div>`
       + det.lignes.map(l => `<div style="padding:6px 0;border-top:1px solid #E8EEFB;">✓ ${l}</div>`).join('')
       + `<div style="padding:6px 0;border-top:1px solid #E8EEFB;color:#6B7280;">${isPack ? 'Valable' : 'Actif'} jusqu'au ${expiresAt.toLocaleDateString('fr-FR')}</div>`,
-    etapes: ['Ouvre AdBoard et ajoute ton produit (photo, prix, cible) s\'il n\'y est pas encore.', 'Clique sur « Demander une production » sur ce produit.', `Tu reçois tes créatives dans AdBoard sous ${plan === 'oneshot' || plan === 'starter' ? '48 h' : '24 h'}, avec un email quand elles sont prêtes.`],
+    etapes: ['Ouvre AdBoard et ajoute ton produit (photo, prix, cible) s\'il n\'y est pas encore.', 'Clique sur « Demander une production » sur ce produit.', `Tu reçois tes créatives dans AdBoard sous ${String((OFFERS[plan] && OFFERS[plan].monthly.delivery) || '48h').replace(/(\d)h/, '$1 h')}, avec un email quand elles sont prêtes.`],
     bouton: 'Demander ma première production', lien: 'https://www.adstackofficial.com/adboard/products',
     pied: 'Ta facture est jointe à cet email.',
   });
@@ -1288,6 +1290,7 @@ async function sendDeliverablesReadyEmail({ email, produit, brief }) {
     titre: `Tes créatives pour ${nomProduit} sont prêtes`,
     intro: `<p style="margin:0;">${prenom ? 'Bonjour ' + prenom + ', t' : 'T'}a production est terminée : ${total ? '<strong>' + resume + '</strong>' : 'tes créatives'}${nbCopies ? ` et <strong>${nbCopies} ad cop${nbCopies > 1 ? 'ies' : 'y'}</strong>` : ''} t'attendent dans AdBoard, prêtes à être lancées.</p>`,
     encadre: (angles.length ? `<div style="font-weight:700;color:#111827;margin-bottom:6px;">${angles.length} angle${angles.length > 1 ? 's' : ''} marketing testé${angles.length > 1 ? 's' : ''}</div>` + angles.map((a, i) => `<div style="padding:5px 0;border-top:1px solid #E8EEFB;">${i + 1}. ${a}</div>`).join('') : '')
+      + (b.reprise && b.reprise.angle ? `<div style="margin-top:12px;padding-top:10px;border-top:1px solid #E1EAFB;color:#6B7280;"><strong style="color:#374151;">Ta demande :</strong> refaire ta créative « ${echapHtml(String(b.reprise.angle).split('*')[0].trim().slice(0, 90))} ». C'est l'angle 1 de ce lot, dans le même style, avec des textes et des scènes nouveaux.</div>` : '')
       + (consignes ? `<div style="margin-top:12px;padding-top:10px;border-top:1px solid #E1EAFB;color:#6B7280;"><strong style="color:#374151;">Ta consigne, prise en compte :</strong> ${echapHtml(consignes.slice(0, 280))}${consignes.length > 280 ? '…' : ''}</div>` : ''),
     apercu: vignettes.length ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${vignettes.map(u => `<td width="${Math.floor(100 / vignettes.length)}%" style="padding:0 4px;"><img src="${echapHtml(u)}" alt="" width="100%" style="display:block;width:100%;border-radius:10px;border:1px solid #E5E7EB;"></td>`).join('')}</tr></table>` : '',
     etapes: ['Ouvre ta galerie et télécharge les créatives.', 'Lance-les en publicité : chaque angle est un test, garde ceux qui performent.', 'Dis-nous ce que tu en penses depuis la galerie : la prochaine production en tient compte.'],
@@ -1969,6 +1972,20 @@ function ecrireApprentissage(id, snap) {
       if (!r.ok) console.warn('[apprentissage] R2 HTTP ' + r.status);
     } catch (e) { console.warn('[apprentissage] ' + e.message); }
   })();
+}
+// reprise-angle-v1 — relit la fiche d'apprentissage d'UNE créative livrée (angle complet, CT, niveau) : sert quand le client demande de la refaire.
+async function lireApprentissage(id) {
+  try {
+    if (!/^[\w\-]+$/.test(String(id || ''))) return null;
+    const { presign } = require('./r2_video');
+    const { R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY } = process.env;
+    if (!R2_ENDPOINT || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) return null;
+    const bucket = process.env.R2_BUCKET || 'adstack-images', host = new URL(R2_ENDPOINT).host;
+    const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
+    const { url } = presign({ method: 'GET', host, path: `/${bucket}/learning/creatives/${id}.json`, accessKey: R2_ACCESS_KEY_ID, secret: R2_SECRET_ACCESS_KEY, region: 'auto', amzDate, expires: 600 });
+    const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    return r.ok ? await r.json() : null;
+  } catch (e) { console.warn('[apprentissage] lecture ' + id + ' : ' + e.message); return null; }
 }
 const _compactApprentissage = (x, max = 20000) => { if (x == null) return null; try { const t = JSON.stringify(x); return t.length <= max ? x : t.slice(0, max); } catch (_) { return null; } };
 
@@ -5475,6 +5492,14 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
           quantity: data.quantity || 6,
           history: data.history || { angles_used: [], personas_used: [], batches_count: 0 },
           photo_nobg: null,
+          // reprise-angle-v1 — le client a choisi une créative livrée à refaire : même angle, même CT (Factory l'impose à l'analyste et au choix des CT).
+          ...(data.reprise && data.reprise.creative_id ? { reprise: {
+            creative_id: String(data.reprise.creative_id).slice(0, 120),
+            angle: String(data.reprise.angle || '').slice(0, 300),
+            ct: String(data.reprise.ct || '').slice(0, 120),
+            format: data.reprise.format === 'video' ? 'video' : 'image',
+            apercu: /^https:\/\//.test(String(data.reprise.apercu || '')) ? String(data.reprise.apercu).slice(0, 500) : '',
+          } } : {}),
         };
         // v5.64 — le navigateur renvoie le brief jusqu'à 3 fois quand la réponse tarde (timeout de 15 s) : un brief déjà enregistré
         // est acquitté sans rien refaire (ni e-mail, ni push, ni photos), et on n'enregistre plus que CE brief (et non toute la liste).
@@ -5486,9 +5511,20 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
         }
         briefs.unshift(brief);
         await saveBriefs([brief]);
-        console.log(`[Brief] ✅ Reçu: ${brief.id} — ${brief.product.nom} (${brief.quantity} images)`);
+        console.log(`[Brief] ✅ Reçu: ${brief.id} — ${brief.product.nom} (${brief.quantity} images)${brief.reprise ? ' — reprise de la créative ' + brief.reprise.creative_id : ''}`);
         res.writeHead(200, {'Content-Type':'application/json'});
         res.end(JSON.stringify({ ok: true, id: brief.id }));
+        // reprise-angle-v1 : la fiche complète de la créative à refaire (angle avec son détail, nom du CT, niveau) est ajoutée en arrière-plan.
+        if (brief.reprise) {
+          lireApprentissage(brief.reprise.creative_id).then(async (f) => {
+            if (!f) return;
+            brief.reprise.angle_brut = String(f.angle_brut || '').slice(0, 3000);
+            brief.reprise.ct_nom = String(f.ct_nom || '').slice(0, 200);
+            brief.reprise.niveau = String(f.niveau || '').slice(0, 40);
+            if (!brief.reprise.ct && f.ct) brief.reprise.ct = String(f.ct).slice(0, 120);
+            await saveBriefs([brief]);
+          }).catch(e => console.warn('[Brief] fiche de la créative à refaire non lue :', e.message));
+        }
         // Notification push — confirmation de la demande
         if (brief.client.user_id) {
           sendPushToUser(brief.client.user_id, {
@@ -5502,6 +5538,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
           `📦 Nouvelle demande — ${brief.product.nom}`,
           `<p><strong>${brief.quantity} images</strong> pour <strong>${brief.product.nom}</strong> (${brief.product.pays || 'pays non renseigné'}).</p>
            <p>Client : ${brief.client.email || 'email non renseigné'} — Plan ${brief.client.plan}</p>
+           ${brief.reprise ? `<p><strong>À refaire dans le style d'une créative livrée</strong> (${brief.reprise.format}) : angle « ${echapHtml(brief.reprise.angle)} », CT ${echapHtml(brief.reprise.ct)}.</p>` : ''}
            <p style="color:#888;font-size:12px">Reçue le ${new Date(brief.created_at).toLocaleString('fr-FR')} — id ${brief.id}</p>`
         ).catch(()=>{});
         // v5.65 — plus de préparation des photos à la réception : elle ne se fait qu'au lancement de la production (/commandes/:id/start).
@@ -11222,6 +11259,61 @@ async function processProductPhoto(photoBase64, briefId) {
 }
 
 
+// offres-v1 (19 nov. 2026) — UNE SEULE SOURCE POUR LES OFFRES : https://www.adstackofficial.com/offres.json (fichier public/offres.json du
+// dépôt adboard). Le serveur la relit au démarrage puis toutes les 30 min : prix, créatives, lots, produits, membres, délai, garantie.
+// Les emails, la facture, les crédits d'un paiement et l'assistant Ava lisent ces valeurs au moment où ils s'en servent : changer une offre
+// = modifier ce seul fichier. Une valeur absente ou douteuse est ignorée (on garde la précédente) : un fichier mal rempli ne casse rien.
+const OFFRES_URL = process.env.OFFRES_URL || 'https://www.adstackofficial.com/offres.json';
+let offresMaj = null;
+function appliquerOffres(j) {
+  if (!j || typeof j !== 'object') return 0;
+  const num = (x, min, max) => { const n = Number(x); return Number.isFinite(n) && n >= min && n <= max ? Math.round(n) : null; };
+  const txt = (x, max) => (typeof x === 'string' && x.trim() ? x.trim().slice(0, max) : null);
+  let n = 0;
+  for (const o of (Array.isArray(j.offres) ? j.offres : [])) {
+    const cible = o && OFFERS[o.id];
+    if (!cible) continue;
+    const prix = num(o.prix, 10000, 50000000), cm = num(o.creatives_mois, 1, 2000), lots = num(o.lots_mois, 1, 400), prod = num(o.produits, 1, 1000);
+    if (prix) { cible.monthly.price = prix; n++; }
+    if (cm) { cible.creativesPerMonth = cm; cible.imagesPerWeek = Math.round(cm / 4); }
+    if (lots) cible.lotsPerMonth = lots;
+    if (prod) cible.produits = prod;
+    if (cible.creativesPerMonth && cible.monthly.price) cible.monthly.prixImg = Math.round(cible.monthly.price / cible.creativesPerMonth);
+    if (txt(o.membres, 10)) cible.membres = txt(o.membres, 10);
+    if (txt(o.delai, 20)) cible.monthly.delivery = txt(o.delai, 20);
+    if (typeof o.prioritaire === 'boolean') cible.prioritaire = o.prioritaire;
+    if (txt(o.garantie, 80)) cible.garantie = txt(o.garantie, 80);
+    if (txt(o.tagline, 300)) cible.tagline = txt(o.tagline, 300);
+    if (txt(o.nom, 30)) { cible.name = txt(o.nom, 30); PLAN_LABELS[o.id] = cible.name; }
+    // le paiement mensuel de cette offre crédite et facture selon ces valeurs
+    const idChariow = (String(o.checkout || cible.monthly.checkout || '').match(/prd_[a-z0-9]+/i) || [])[0];
+    const pm = idChariow && PLAN_MAP[idChariow];
+    if (pm && pm.plan === o.id && pm.cycle === 'monthly') {
+      if (prix) pm.price_fcfa = prix;
+      if (cm) pm.credits_per_week = Math.round(cm / 4);
+      pm.prix_img = cible.monthly.prixImg;
+    }
+  }
+  const os = j.oneshot, po = PLAN_MAP[ONESHOT_PRODUCT_ID];
+  if (os && po) {
+    const prix = num(os.prix, 5000, 5000000), cr = num(os.creatives, 1, 200);
+    if (prix) { po.price_fcfa = prix; n++; }
+    if (cr) po.total_credits = cr;
+    po.prix_img = Math.round(po.price_fcfa / (po.total_credits || 6));
+    if (txt(os.nom, 30)) PLAN_LABELS.oneshot = txt(os.nom, 30);
+  }
+  return n;
+}
+async function chargerOffres() {
+  try {
+    const r = await fetch(OFFRES_URL + '?t=' + Date.now(), { signal: AbortSignal.timeout(15000) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    const n = appliquerOffres(j);
+    if (n) { offresMaj = new Date().toISOString(); console.log(`[Offres] ${n} prix appliqué(s) depuis offres.json (${j.maj || 'sans date'}).`); }
+  } catch (e) { console.warn('[Offres] offres.json non lu (' + e.message + ') : valeurs précédentes gardées.'); }
+}
+
 // delivery-v1 (19 nov. 2026) — CORRECTION DES EMAILS DE LA SÉQUENCE DÉJÀ EN BASE. Ils sont modifiables dans le CRM : on ne les écrase pas.
 // On corrige seulement ce qui est faux (offre « Starter » qui n'existe plus, chiffre de demande inventé, « images chaque semaine »)
 // et seulement si la ligne contient encore l'erreur : un texte déjà retouché à la main n'est pas touché. Sans effet au 2e démarrage.
@@ -11261,6 +11353,8 @@ server.listen(PORT, () => {
   console.log(`\n✅ AdStack Server → http://localhost:${PORT}\n`);
   setTimeout(() => { sonderModeles(); }, 3000);
   setTimeout(() => { corrigerModelesEmailV1(); }, 8000);
+  setTimeout(() => { chargerOffres(); }, 5000);
+  setInterval(() => { chargerOffres(); }, 30 * 60 * 1000);
 });
 
 // ── Auto-ping — empêche Render (offre gratuite) de mettre le serveur en veille ──
