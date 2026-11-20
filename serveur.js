@@ -6849,7 +6849,9 @@ Une agence de performance créative pour les marques e-commerce sérieuses. On a
 qui a une vraie demande, des publicités qui tournent ; il veut de meilleurs résultats publicitaires mais n'a pas
 le temps de s'en occuper vraiment, entre tout ce qu'il gère au quotidien. Ce qu'il veut gagner : plus d'argent,
 du temps, et de la clarté (savoir enfin ce qui marche).
-Ce qu'il reçoit : pas une publicité, un SYSTÈME CRÉATIF COMPLET. On étudie ses résultats, les avis de ses clients,
+C'est du « fait pour vous » : on ne lui livre pas une publicité au hasard, NOUS mettons en place et gérons un
+système créatif complet sur SA marque et SES produits (ne dis jamais « votre système » ni « vous recevez un
+système », AdStack n'est pas un logiciel). On étudie ses résultats, les avis de ses clients,
 sa concurrence et son client idéal ; on en tire des angles qui font acheter ; on produit ses vidéos et ses images ;
 puis ses meilleures publicités (Top Performer) guident la production suivante. On s'occupe de toute la partie
 créative et marketing ; lui garde son temps.
