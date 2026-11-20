@@ -73,6 +73,23 @@ async function handle(req, res, deps) {
       if (!/^[A-Za-z0-9_\-]{1,60}$/.test(ct)) return rep(res, 400, { error: 'ct_id invalide' }), true
       const cle = cmd + '|' + slot, deja = recents.get(cle)
       if (deja && Date.now() - deja.t < 600000 && !b.forcer) return rep(res, 200, { execution: deja.execution, deja_lance: true }), true
+      // une-seule-machine-v1 (20 nov. 2026) : « Refaire » remplace la vidéo en cours. Avant de lancer, toute machine encore en marche pour la même
+      // commande et la même vidéo est arrêtée (sinon deux machines écrivent le même avancement, Factory saute de 16 % à 1 %, et on paie deux fois).
+      try {
+        const ancien = new Set(); if (deja && deja.execution) ancien.add(deja.execution)
+        const rl = await api(deps, 'GET', base(deps) + '/executions?pageSize=40').catch(() => null)
+        for (const x of ((rl && rl.ok && rl.d && rl.d.executions) || [])) {
+          if (x.completionTime) continue
+          const ev = [].concat(...(((x.template || {}).containers) || []).map((c) => c.env || []))
+          const val = (n) => (ev.find((e) => e.name === n) || {}).value
+          if (val('COMMANDE_ID') === cmd && String(val('SLOT') || '1') === slot) ancien.add(String(x.name || '').split('/').pop())
+        }
+        for (const ex of ancien) {
+          if (!ex) continue
+          const rc = await api(deps, 'POST', base(deps) + '/executions/' + ex + ':cancel', {}).catch(() => null)
+          console.log('⏹ VIDEO-JOB remplacé : ' + ex + ' arrêté avant de relancer commande ' + cmd + ' slot ' + slot + ' (HTTP ' + (rc ? rc.status : '?') + ')')
+        }
+      } catch (e) { console.log('Arrêt de l\'ancienne machine impossible : ' + e.message) }
       const env = [{ name: 'COMMANDE_ID', value: cmd }, { name: 'CT_ID', value: ct }, { name: 'SLOT', value: slot }]
       if (b.angle) env.push({ name: 'ANGLE', value: String(b.angle).slice(0, 300) })
       if (b.consignes) env.push({ name: 'CONSIGNES', value: String(b.consignes).slice(0, 7000) })
