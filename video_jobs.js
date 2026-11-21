@@ -1,3 +1,4 @@
+// tests-video-memoire-v1 : liste des tests vidéo gardée sur R2 (/video-jobs/tests).
 // v10 : + plan des niveaux de conscience, arrêt réel (/video-jobs/cancel), état de la machine, routes Creative Image v10.
 // Module Render : lance et suit les productions vidéo sur Google Cloud Run (job « video-adstack »),
 // et choisit automatiquement les CT vidéo d'une commande. Accroché dans serveur.js par une seule ligne :
@@ -12,6 +13,7 @@ const rep = (res, code, o) => { res.writeHead(code, { 'Content-Type': 'applicati
 const recents = new Map()            // anti double-clic : même vidéo relancée en moins de 10 minutes
 const verifs = new Map()             // dernier contrôle de l'exécution Cloud Run (au plus toutes les 30 s)
 const coutsTestNotes = new Set()     // test-video-v1 : coût d'un test noté une seule fois
+const testsClos = new Set()          // tests-video-memoire-v1 : état final d'un test recopié une seule fois
 // test-video-v1 (21 nov. 2026) : le test de l'agent Créative Vidéo passe par la MÊME machine Cloud Run que la production.
 // La synthèse du test (souvent celle que l'Analyste vient de produire, pas encore dans la commande) est déposée sur R2
 // et la machine la lit à la place de celle de la commande. Rien n'est écrit dans la commande du client.
@@ -25,6 +27,51 @@ async function deposerSynthese(cmd, slot, texte) {
   const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'text/markdown; charset=utf-8' }, body: Buffer.from(String(texte), 'utf8') })
   if (!r.ok) throw new Error('dépôt de la synthèse sur R2 : HTTP ' + r.status)
   return PUB() + '/' + key
+}
+
+// tests-video-memoire-v1 (21 nov. 2026) : la liste des tests vidéo vit sur le serveur (R2 : ct-video/tests/index.json), plus seulement dans le
+// navigateur. Revenir dans Factory, actualiser, changer d'appareil ou de navigateur : les tests, leur vidéo, l'historique et le dossier restent visibles,
+// et un test encore en cours est repris là où il en est.
+const IDX_KEY = 'ct-video/tests/index.json'
+async function r2Put(key, buf, type) {
+  const { R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY } = process.env
+  if (!R2_ENDPOINT || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) throw new Error('clés Cloudflare R2 absentes sur Render')
+  const bucket = process.env.R2_BUCKET || 'adstack-images'
+  const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '')
+  const url = require('./r2_video').presign({ method: 'PUT', host: new URL(R2_ENDPOINT).host, path: `/${bucket}/${key}`, accessKey: R2_ACCESS_KEY_ID, secret: R2_SECRET_ACCESS_KEY, region: 'auto', amzDate, expires: 900 }).url
+  const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': type }, body: buf })
+  if (!r.ok) throw new Error('R2 HTTP ' + r.status)
+}
+let idxCache = null
+async function lireIndex() {
+  try { const r = await fetch(PUB() + '/' + IDX_KEY + '?t=' + Date.now()); if (r.ok) { const j = await r.json(); if (Array.isArray(j)) { idxCache = j; return j } } } catch (_) { }
+  return idxCache || []
+}
+let idxChaine = Promise.resolve()
+function majIndex(f) {
+  idxChaine = idxChaine.then(async () => {
+    const l = await lireIndex()
+    const n = (f(l.slice()) || l).slice(0, 40)
+    idxCache = n
+    await r2Put(IDX_KEY, Buffer.from(JSON.stringify(n)), 'application/json')
+  }).catch((e) => console.log('Mémoire des tests vidéo non mise à jour : ' + e.message))
+  return idxChaine
+}
+const FINAUX = ['video_url', 'affiche_url', 'historique_url', 'dossier_url', 'cout_usd', 'erreur', 'etape', 'pct', 'qualite']
+const clore = (x, etat) => Object.assign(x, { etat: etat.etat }, ...FINAUX.filter((k) => etat[k] != null).map((k) => ({ [k]: etat[k] })), { fin: x.fin || Date.now() })
+// Relit l'état d'un test sur R2 et le recopie dans la liste (le fichier d'état est écrasé par le test suivant sur la même commande).
+async function rafraichirTest(x) {
+  if (!x || x.etat === 'termine' || x.etat === 'echec') return false
+  try {
+    const r = await fetch(`${PUB()}/ct-video/productions/${x.commande_id}_s9.json?t=${Date.now()}`)
+    if (!r.ok) return false
+    const e = await r.json()
+    if (e.execution && e.execution !== x.execution) { if (Date.now() - x.t > 3 * 3600000) { x.etat = 'echec'; x.erreur = x.erreur || 'État perdu (remplacé par un test plus récent).' ; return true } return false }
+    if (e.etat === 'termine' || e.etat === 'echec') { clore(x, e); return true }
+    x.etape = e.etape || x.etape; x.pct = e.pct != null ? e.pct : x.pct
+    if (Date.now() - x.t > 3 * 3600000) { x.etat = 'echec'; x.erreur = 'Machine sans nouvelles depuis plus de 3 h.'; return true }
+  } catch (_) { }
+  return false
 }
 
 async function api(deps, method, url, body) {
@@ -110,17 +157,23 @@ async function handle(req, res, deps) {
       if (b.consignes) env.push({ name: 'CONSIGNES', value: String(b.consignes).slice(0, 7000) })
       if (b.modele && /^veo-[\w.\-]+$/.test(b.modele)) env.push({ name: 'MODELE', value: b.modele })
       if (b.niveau && /^(Problem|Solution|Product|Most) Aware$/.test(b.niveau)) env.push({ name: 'NIVEAU', value: b.niveau })
+      let synUrl = ''
       if (b.test) {
         env.push({ name: 'TEST', value: '1' })
         if (b.synthese && String(b.synthese).trim().length > 200) {
-          try { env.push({ name: 'SYNTHESE_URL', value: await deposerSynthese(cmd, slot, String(b.synthese).slice(0, 400000)) }) }
+          try { synUrl = await deposerSynthese(cmd, slot, String(b.synthese).slice(0, 400000)); env.push({ name: 'SYNTHESE_URL', value: synUrl }) }
           catch (e) { return rep(res, 502, { error: 'Synthèse du test non transmise à la machine : ' + e.message }), true }
         }
+      }
+      if (b.test) {   // le test précédent sur cette commande : son état final est recopié avant que le nouveau test n'écrase le fichier
+        const l = await lireIndex(); const prec = l.find((x) => x.commande_id === cmd && x.etat !== 'termine' && x.etat !== 'echec')
+        if (prec && await rafraichirTest(prec)) await majIndex((ll) => ll.map((x) => (x.execution === prec.execution ? prec : x)))
       }
       const r = await api(deps, 'POST', base(deps) + ':run', { overrides: { containerOverrides: [{ env }], taskCount: 1 } })
       if (!r.ok) return rep(res, 502, { error: 'Cloud Run a refusé le lancement : ' + ((r.d.error && r.d.error.message) || r.status), http: r.status }), true
       const nom = (((r.d.metadata || {}).name) || '').split('/').pop() || ''
       recents.set(cle, { t: Date.now(), execution: nom })
+      if (b.test) await majIndex((l) => [{ execution: nom, commande_id: cmd, ct_id: ct, ct_nom: String(b.ct_nom || '').slice(0, 160), libelle: String(b.libelle || '').slice(0, 300), angle: String(b.angle || '').slice(0, 300), niveau: String(b.niveau || ''), synthese_url: synUrl, t: Date.now(), etat: 'en_cours', etape: 'La machine démarre', pct: 1 }, ...l.filter((x) => x.execution !== nom)])
       console.log('🎬 VIDEO-JOB lancé' + (b.test ? ' (TEST agent vidéo)' : '') + ' : commande ' + cmd + ' slot ' + slot + ' CT ' + ct + ' → ' + nom)
       return rep(res, 200, { execution: nom }), true
     }
@@ -181,7 +234,35 @@ async function handle(req, res, deps) {
         }
       }
       if (q.get('test') === '1' && ex && etat.etat === 'termine' && Number(etat.cout_usd) > 0 && !coutsTestNotes.has(ex) && deps.noterCoutTest) { coutsTestNotes.add(ex); deps.noterCoutTest(cmd, ex, Number(etat.cout_usd)) }
+      if (q.get('test') === '1' && ex && (etat.etat === 'termine' || etat.etat === 'echec') && !testsClos.has(ex)) { testsClos.add(ex); const fin = etat; majIndex((l) => l.map((x) => (x.execution === ex ? clore(x, fin) : x))) }
       return rep(res, 200, etat), true
+    }
+    // ── tests-video-memoire-v1 : les derniers tests de l'agent vidéo (pour Factory, quel que soit le navigateur) ──
+    if (req.method === 'GET' && url === '/video-jobs/tests') {
+      let l = await lireIndex()
+      if (!l.length) {   // première fois : les tests lancés avant cette version sont retrouvés dans Cloud Run (variable TEST=1)
+        const rl = await api(deps, 'GET', base(deps) + '/executions?pageSize=60').catch(() => null)
+        for (const x of ((rl && rl.ok && rl.d && rl.d.executions) || [])) {
+          const ev = [].concat(...(((x.template || {}).containers) || []).map((c) => c.env || []))
+          const val = (n) => (ev.find((e) => e.name === n) || {}).value || ''
+          if (val('TEST') !== '1') continue
+          l.push({ execution: String(x.name || '').split('/').pop(), commande_id: val('COMMANDE_ID'), ct_id: val('CT_ID'), ct_nom: '', libelle: '', angle: val('ANGLE'), niveau: val('NIVEAU'), synthese_url: val('SYNTHESE_URL'), t: Date.parse(x.createTime) || Date.now(), etat: 'en_cours' })
+        }
+        l.sort((a, b) => b.t - a.t)
+        const vus = new Set(); for (const x of l) { if (vus.has(x.commande_id)) { x.etat = 'echec'; x.erreur = 'Test ancien : son état a été remplacé par un test plus récent (historique dans les journaux).' } vus.add(x.commande_id) }
+        if (l.length) { for (const x of l) await rafraichirTest(x); const init = l.slice(); await majIndex(() => init) }
+      }
+      let change = false
+      for (const x of l.slice(0, 12)) if (await rafraichirTest(x)) change = true
+      if (change) { const maj = new Map(l.map((x) => [x.execution, x])); majIndex((ll) => ll.map((x) => maj.get(x.execution) || x)) }
+      return rep(res, 200, { tests: l.slice(0, 12) }), true
+    }
+    if (req.method === 'GET' && url === '/video-jobs/test-synthese') {
+      const ex = (new URL(req.url, 'http://x').searchParams.get('execution') || '').replace(/[^\w\-]/g, '')
+      const x = (await lireIndex()).find((t) => t.execution === ex)
+      if (!x || !x.synthese_url || !x.synthese_url.startsWith(PUB() + '/ct-video/tests/')) return rep(res, 404, { error: 'synthèse introuvable' }), true
+      const r = await fetch(x.synthese_url); if (!r.ok) return rep(res, 502, { error: 'R2 HTTP ' + r.status }), true
+      return rep(res, 200, { synthese: await r.text() }), true
     }
     // ── choix automatique des CT vidéo d'une commande ──
     if (req.method === 'POST' && url === '/video/select-cts') {
