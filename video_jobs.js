@@ -11,6 +11,21 @@ const lire = (req, max = 400000) => new Promise((ok, ko) => { let b = ''; req.on
 const rep = (res, code, o) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)) }
 const recents = new Map()            // anti double-clic : même vidéo relancée en moins de 10 minutes
 const verifs = new Map()             // dernier contrôle de l'exécution Cloud Run (au plus toutes les 30 s)
+const coutsTestNotes = new Set()     // test-video-v1 : coût d'un test noté une seule fois
+// test-video-v1 (21 nov. 2026) : le test de l'agent Créative Vidéo passe par la MÊME machine Cloud Run que la production.
+// La synthèse du test (souvent celle que l'Analyste vient de produire, pas encore dans la commande) est déposée sur R2
+// et la machine la lit à la place de celle de la commande. Rien n'est écrit dans la commande du client.
+async function deposerSynthese(cmd, slot, texte) {
+  const { R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY } = process.env
+  if (!R2_ENDPOINT || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) throw new Error('clés Cloudflare R2 absentes sur Render')
+  const bucket = process.env.R2_BUCKET || 'adstack-images'
+  const key = `ct-video/tests/${cmd}_s${slot}_${Date.now()}.md`
+  const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '')
+  const url = require('./r2_video').presign({ method: 'PUT', host: new URL(R2_ENDPOINT).host, path: `/${bucket}/${key}`, accessKey: R2_ACCESS_KEY_ID, secret: R2_SECRET_ACCESS_KEY, region: 'auto', amzDate, expires: 900 }).url
+  const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'text/markdown; charset=utf-8' }, body: Buffer.from(String(texte), 'utf8') })
+  if (!r.ok) throw new Error('dépôt de la synthèse sur R2 : HTTP ' + r.status)
+  return PUB() + '/' + key
+}
 
 async function api(deps, method, url, body) {
   const token = await deps.getToken()
@@ -67,7 +82,7 @@ async function handle(req, res, deps) {
     }
     // ── lancement d'une vidéo ──
     if (req.method === 'POST' && url === '/video-jobs/start') {
-      const b = JSON.parse((await lire(req)) || '{}')
+      const b = JSON.parse((await lire(req, 1500000)) || '{}')
       const cmd = String(b.commande_id || ''), ct = String(b.ct_id || ''), slot = String(parseInt(b.slot, 10) || 1)
       if (!/^[A-Za-z0-9\-]{8,60}$/.test(cmd)) return rep(res, 400, { error: 'commande_id invalide' }), true
       if (!/^[A-Za-z0-9_\-]{1,60}$/.test(ct)) return rep(res, 400, { error: 'ct_id invalide' }), true
@@ -95,11 +110,18 @@ async function handle(req, res, deps) {
       if (b.consignes) env.push({ name: 'CONSIGNES', value: String(b.consignes).slice(0, 7000) })
       if (b.modele && /^veo-[\w.\-]+$/.test(b.modele)) env.push({ name: 'MODELE', value: b.modele })
       if (b.niveau && /^(Problem|Solution|Product|Most) Aware$/.test(b.niveau)) env.push({ name: 'NIVEAU', value: b.niveau })
+      if (b.test) {
+        env.push({ name: 'TEST', value: '1' })
+        if (b.synthese && String(b.synthese).trim().length > 200) {
+          try { env.push({ name: 'SYNTHESE_URL', value: await deposerSynthese(cmd, slot, String(b.synthese).slice(0, 400000)) }) }
+          catch (e) { return rep(res, 502, { error: 'Synthèse du test non transmise à la machine : ' + e.message }), true }
+        }
+      }
       const r = await api(deps, 'POST', base(deps) + ':run', { overrides: { containerOverrides: [{ env }], taskCount: 1 } })
       if (!r.ok) return rep(res, 502, { error: 'Cloud Run a refusé le lancement : ' + ((r.d.error && r.d.error.message) || r.status), http: r.status }), true
       const nom = (((r.d.metadata || {}).name) || '').split('/').pop() || ''
       recents.set(cle, { t: Date.now(), execution: nom })
-      console.log('🎬 VIDEO-JOB lancé : commande ' + cmd + ' slot ' + slot + ' CT ' + ct + ' → ' + nom)
+      console.log('🎬 VIDEO-JOB lancé' + (b.test ? ' (TEST agent vidéo)' : '') + ' : commande ' + cmd + ' slot ' + slot + ' CT ' + ct + ' → ' + nom)
       return rep(res, 200, { execution: nom }), true
     }
     // ── analyse-ct-v1 : analyse automatique d'un CT vidéo à l'import (même machine que le moteur, MODE=analyse_ct, rien n'est produit) ──
@@ -158,6 +180,7 @@ async function handle(req, res, deps) {
           else if (etat.etat === 'demarrage') etat = Object.assign(etat, { etape: m.en_cours ? 'Machine démarrée — premier état attendu' : m.attente ? 'En attente de Cloud Run : ' + m.attente : 'Machine en file chez Cloud Run' })
         }
       }
+      if (q.get('test') === '1' && ex && etat.etat === 'termine' && Number(etat.cout_usd) > 0 && !coutsTestNotes.has(ex) && deps.noterCoutTest) { coutsTestNotes.add(ex); deps.noterCoutTest(cmd, ex, Number(etat.cout_usd)) }
       return rep(res, 200, etat), true
     }
     // ── choix automatique des CT vidéo d'une commande ──
