@@ -426,6 +426,7 @@ function getToken() {
 
 // ── Vertex AI Global Request (gemini-3-pro-image) ──
 function vertexRequestGlobal(token, model, body, timeoutMs = 120000, typeAppel = 'generation_image') {
+  const _cmdAppel = _ctxCommande();   // finance-v3 : la commande est lue AU MOMENT de l'appel (dans la réponse, le contexte est perdu : sockets réutilisées)
   return new Promise((resolve, reject) => {
     const bodyStr = JSON.stringify(body);
     const path = `/v1/projects/${PROJECT_ID}/locations/global/publishers/google/models/${model}:generateContent`;
@@ -455,7 +456,7 @@ function vertexRequestGlobal(token, model, body, timeoutMs = 120000, typeAppel =
             return;
           }
           const usage = parsed?.usageMetadata || {};
-          logCoutApi(categoriserAppel(typeAppel), typeAppel, usage, model, ((parsed?.candidates?.[0]?.groundingMetadata?.webSearchQueries) || []).length);
+          logCoutApi(categoriserAppel(typeAppel), typeAppel, usage, model, ((parsed?.candidates?.[0]?.groundingMetadata?.webSearchQueries) || []).length, _cmdAppel);
           resolve(parsed);
         } catch(e) { reject(e); }
       });
@@ -523,7 +524,7 @@ function _finPrixModele(modele) {
   return { e: GEMINI_PRIX_IN, s: GEMINI_PRIX_OUT };
 }
 let _finColonnesV2 = true;   // passe à false si les colonnes modele / commande_id n'existent pas encore (finance_v2.sql pas exécuté) : on enregistre alors comme avant
-function logCoutApi(source, typeAppel, usage, modele, nbRecherches) {
+function logCoutApi(source, typeAppel, usage, modele, nbRecherches, commandeAppel) {
   // Jamais bloquant — une erreur ici ne doit jamais casser la génération en cours.
   // Gemini détaille les tokens de sortie par modalité (candidatesTokensDetails) et compte
   // séparément les tokens de "réflexion" (thoughtsTokenCount) — les deux sont réels et
@@ -558,13 +559,14 @@ function logCoutApi(source, typeAppel, usage, modele, nbRecherches) {
       body: JSON.stringify(ligne)
     });
     if (!_finColonnesV2) { envoyer(base).catch(() => {}); return; }
-    envoyer(Object.assign({}, base, { modele: modele ? String(modele).slice(0, 60) : null, commande_id: _ctxCommande() }))
+    envoyer(Object.assign({}, base, { modele: modele ? String(modele).slice(0, 60) : null, commande_id: commandeAppel || _ctxCommande() }))
       .then(r => { if (!r.ok && r.status === 400) { _finColonnesV2 = false; console.log('   ⚠ finance : colonnes modele / commande_id absentes de api_usage_log — exécuter finance_v2.sql une fois dans Supabase (coûts enregistrés sans commande en attendant)'); return envoyer(base); } })
       .catch(() => {});
   } catch(e) {}
 }
 
 function vertexRequestRegional(token, model, body, timeoutMs = 90000, typeAppel = 'texte_gemini') {
+  const _cmdAppel = _ctxCommande();   // finance-v3 : voir vertexRequestGlobal
   return new Promise((resolve, reject) => {
     const bodyStr = JSON.stringify(body);
     const path = `/v1/projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${model}:generateContent`;
@@ -594,7 +596,7 @@ function vertexRequestRegional(token, model, body, timeoutMs = 90000, typeAppel 
             return;
           }
           const usage = parsed?.usageMetadata || {};
-          logCoutApi(categoriserAppel(typeAppel), typeAppel, usage, model, ((parsed?.candidates?.[0]?.groundingMetadata?.webSearchQueries) || []).length);
+          logCoutApi(categoriserAppel(typeAppel), typeAppel, usage, model, ((parsed?.candidates?.[0]?.groundingMetadata?.webSearchQueries) || []).length, _cmdAppel);
           resolve(parsed);
         } catch(e) { reject(new Error('Réponse Vertex invalide: ' + d.slice(0,200))); }
       });
