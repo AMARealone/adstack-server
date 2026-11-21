@@ -4053,7 +4053,8 @@ ${pageText}`;
         console.log('═'.repeat(60));
 
         let donneesBrutes = '';
-        let _planBalayage = null, _scPromise = null;
+        let _planBalayage = null, _scPromise = null, _brutsCT = null, _reperesBalayage = null;
+        memoireJournal('analyste : début');
         const _compteurSC = { n: 0, credits: 0 };
         console.log(`\n   → Balayage : ${_reutiliser ? 'RÉUTILISATION de l\'hypothèse stockée — ' : 'NOUVEAU BALAYAGE — '}${_dec.raison}`);
         if (_reutiliser) {
@@ -4077,6 +4078,7 @@ ${pageText}`;
       const researchPrompt = `Tu es un analyste de marché senior. Tu mènes une recherche APPROFONDIE et MULTI-SOURCE sur le produit "${produit}" de la marque "${marque}" vendu en ${pays}.${_blocMulti}
 
 ${blocProblemePourRecherche(_planBalayage)}OBJECTIF : ramener un MAXIMUM de DATA RÉELLE et de VERBATIMS clients authentiques — pas de paraphrase, pas de généralités. Cite les sources URL précises trouvées et les extraits textuels exacts (entre guillemets quand c\'est un verbatim).
+FRAÎCHEUR (balayage-v3) : nous sommes le ${new Date().toISOString().slice(0, 10)}. Cherche d'abord ce qui a été publié dans les 12 derniers mois (ajoute l'année en cours ou la précédente à tes requêtes quand c'est utile) ; écris la DATE de chaque source à côté de son URL (« date inconnue » si elle n'est pas visible). Une source de plus de 2 ans ne sert que si rien de plus récent n'existe, et elle est marquée [ANCIEN].
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DOMAINES À EXPLORER EN PRIORITÉ (utilise site: dans tes recherches Google)
@@ -4175,7 +4177,7 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
           const _entete = `Tu es un analyste de marché senior. Produit : "${produit}"${marque ? ` (marque "${marque}")` : ''}, vendu en ${pays}. Problème que le produit résout : ${_pb}. Alternatives déjà repérées : ${_alts}. Concurrents déjà repérés : ${_concs}.\nRÈGLES : recherche réellement (plusieurs requêtes Google distinctes, pas de doublon). Cite entre guillemets les phrases exactes trouvées + URL. Ce qui n'est pas trouvé s'écrit [NON TROUVÉ] — ne fabrique jamais. Ce qui est une déduction s'écrit [DÉDUIT]. Donnée brute uniquement, sans synthèse. Écris en français, sois exhaustif et concret (noms propres, prix, lieux, objets, phrases).\n\n`;
           const _passes = [
             { nom: 'alternatives', prompt: _entete + `MISSION : FICHES DÉTAILLÉES des ALTERNATIVES et des CONCURRENTS (8 à 12 fiches). Pour CHAQUE alternative ou concurrent (produits, marques, remèdes traditionnels, habitudes comme le café/le thé, médecin/pharmacien, ne rien faire…) : nom exact ; prix réel en devise locale et par jour d'usage ; où on l'achète (quels lieux, quels sites, quels vendeurs) ; la promesse exacte et les mots qu'il emploie ; formats de pub et rituels d'usage ; ce que les gens en disent de bien (verbatims) ; ce que les gens en disent de mal (verbatims) ; ses faiblesses structurelles ; la raison précise pour laquelle un utilisateur l'abandonne ou le garde malgré tout. Cherche aussi : quelles publicités ces concurrents diffusent en ce moment (Meta Ad Library / TikTok) et avec quels angles ; quel angle AUCUN concurrent n'occupe (territoires libres).` },
-            { nom: 'vie_cible', prompt: _entete + `MISSION : LA VIE RÉELLE DE LA CIBLE du produit en ${pays}, de façon ultra-concrète. Cherche des forums, groupes, vidéos, articles, témoignages, commentaires. Ramène : (1) le profil réel des gens qui ont ce problème (métiers, âges, situation familiale, revenus) avec exemples de personnes réelles qui témoignent ; (2) leur ENTOURAGE : conjoint(e), enfants, parents, collègues, voisins, amis, belle-famille, patron, pharmacien, médecin, marabout/guérisseur, influenceur suivi — pour chaque type de personne : comment elle parle du problème, ce qu'elle conseille, comment elle réagit, quel rôle elle joue dans l'achat ; (3) les LIEUX réels de leur journée (type de logement, quartier-type, transport, lieu de travail, marché, pharmacie, salle, église/mosquée…) avec lumière, bruits, objets visibles ; (4) les OBJETS et marques réellement utilisés au quotidien (téléphone, vêtements, boissons, repas, produits déjà achetés) ; (5) expressions, proverbes, mots d'argot et façons exactes de parler du problème dans la langue locale ; (6) horaires et rythme d'une journée type, avec les moments où le problème frappe le plus.` },
+            { nom: 'vie_cible', prompt: _entete + `MISSION : LA VIE RÉELLE DE LA CIBLE du produit en ${pays}, de façon ultra-concrète. Cherche des forums, groupes, vidéos, articles, témoignages, commentaires. Ramène : (1) le profil réel des gens qui ont ce problème (métiers, âges, situation familiale, revenus) avec exemples de personnes réelles qui témoignent ; (2) leur ENTOURAGE : conjoint(e), enfants, parents, collègues, voisins, amis, belle-famille, patron, pharmacien, médecin, marabout/guérisseur, influenceur suivi — pour chaque type de personne : comment elle parle du problème, ce qu'elle conseille, comment elle réagit, quel rôle elle joue dans l'achat ; (3) les LIEUX réels de leur journée (type de logement, quartier-type, transport, lieu de travail, marché, pharmacie, salle, église/mosquée…) avec lumière, bruits, objets visibles ; (4) les OBJETS et marques réellement utilisés au quotidien (téléphone, vêtements, boissons, repas, produits déjà achetés) ; (5) les mots, expressions et façons exactes de parler du problème dans la LANGUE OFFICIELLE que la cible emploie (français, anglais…) ; une expression en langue locale ou en argot se rapporte avec son SENS, traduit en mots courants de la langue officielle, jamais telle quelle ; (6) horaires et rythme d'une journée type, avec les moments où le problème frappe le plus.` },
             { nom: 'signaux', prompt: _entete + `MISSION : SIGNAUX PRÉCOCES (6 à 12 insights que les concurrents n'ont pas encore exploités). Cherche : tendances récentes qui montent (hashtags, sons, formats TikTok/Instagram/YouTube liés au problème), nouveaux comportements de la cible, changements de contexte (prix, loi, saison, événements, usages mobile money/WhatsApp), conversations récentes (3 derniers mois) dans les commentaires et forums où les gens expriment une frustration pour laquelle aucune marque ne répond encore, nouveaux entrants ou produits étrangers en train d'arriver, et croyances qui changent. Pour chaque signal : la preuve (phrase exacte + URL + date si visible), pourquoi c'est encore peu exploité, combien de temps l'avance peut durer.` }
           ];
           if (_suiviCout.usd > COUT_MAX_HYPOTHESE * 0.45) throw new Error(`budget déjà à ${_suiviCout.usd.toFixed(2)} $ avant l'approfondissement : étape sautée`);
@@ -4316,13 +4318,11 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
             const sc = await _scPromise;
             const st = sc.stats || {};
             console.log(`   → Reddit ${st.reddit || 0} · TikTok ${st.tiktok_videos || 0} vidéo(s) / ${st.tiktok_commentaires || 0} commentaire(s) · YouTube ${st.youtube || 0} · pubs ${st.pubs || 0} (dont ${st.pubs_recentes || 0} du tri « récentes ») · ${st.familles || 0} famille(s) d'angle · ${st.dates_inconnues || 0} donnée(s) sans date · ${_compteurSC.n} requête(s), ${_compteurSC.credits} crédit(s)`);
-            // candidats-ct-v1 : les meilleures créatives vues pendant le balayage partent dans la file « À valider » des galeries CT (sans attendre)
-            if (sc.bruts) {
-              try { require('./candidats_ct').capturer({ SB: SUPABASE_URL_INT, entetes: () => ({ apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }), presign: require('./r2_video').presign, notifierAdmin }, sc.bruts, { produit, pays, productId })
-                .then(r => console.log(`   [CT candidats] ${r.nouveaux || 0} nouvelle(s) candidate(s) en attente de validation${r.erreur ? ' — ' + r.erreur : ''}`))
-                .catch(e => console.log('   [CT candidats] ✗ ' + e.message)); }
-              catch (e) { console.log('   [CT candidats] module indisponible :', e.message); }
-            }
+            // candidats-ct-v2 : les créatives vues pendant le balayage partent dans la file « À valider » APRÈS l'hypothèse (avant : pendant,
+            // en même temps que le navigateur de la page produit et la synthèse — des vidéos de 80 Mo en mémoire au pire moment).
+            if (sc.bruts) _brutsCT = sc.bruts;
+            if (sc.reperes) _reperesBalayage = sc.reperes;
+            _statsBalayage.monde = { pubs: st.pubs_monde || 0, tiktok: st.tiktok_monde || 0 };
             (st.erreurs || []).slice(0, 6).forEach(er => console.log('   ✗ ' + er));
             if (sc.texte) { donneesBrutes += sc.texte; console.log(`   ✓ ${sc.texte.length} chars de voix du marché ajoutés`); }
             else console.log('   ✗ aucune donnée ScrapeCreators');
@@ -4469,6 +4469,7 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
         const _projete = (r) => _suiviCout.usd + (_tokEntree * TARIFS.pro_in + (45000 + r) * TARIFS.pro_out) / 1e6;
         if (_projete(_reflexionSynth) > COUT_MAX_HYPOTHESE) _reflexionSynth = 8192;
         if (_projete(_reflexionSynth) > COUT_MAX_HYPOTHESE) _reflexionSynth = 2048;
+        memoireJournal('analyste : avant la synthèse');
         console.log(`\n→ Synthèse — coût estimé jusqu'ici ${_suiviCout.usd.toFixed(2)} $ · entrée ≈ ${_tokEntree} tokens · réflexion ${_reflexionSynth} · projection finale ≈ ${_projete(_reflexionSynth).toFixed(2)} $ (plafond ${COUT_MAX_HYPOTHESE} $)`);
         const text = await callGeminiPro(system, claudeContent, maxOutputTokens || 64000, {
           modele: MODELES.analyste, temperature: 0.4, thinkingBudget: _reflexionSynth, logLabel: 'Analyste Hypothèse', timeoutMs: 420000,
@@ -4480,8 +4481,42 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
         console.log(`💰 COÛT ESTIMÉ DE CETTE HYPOTHÈSE : ${_suiviCout.usd.toFixed(2)} $ (Google : ${Object.entries(_suiviCout.lignes).map(([k, v]) => k + ' ' + v.toFixed(2)).join(' · ')} ; ScrapeCreators : ${_compteurSC.credits || 0} crédit(s) en plus) — plafond ${COUT_MAX_HYPOTHESE} $`);
         console.log('═'.repeat(60) + '\n');
         if (!_reutiliser && productId && !isTest) await enregistrerBalayage(productId, { requetes: _compteurSC.n, credits: _compteurSC.credits, plan: _planBalayage });
+        memoireJournal('analyste : synthèse reçue');
 
-        finirAnalyse(200, { text, balayage: _statsBalayage, cout_estime_usd: Math.round(_suiviCout.usd * 100) / 100 });
+        // balayage-v3 — L'HYPOTHÈSE PART-ELLE VRAIMENT DU BALAYAGE ? Le programme compte, dans le texte rendu, ce qui vient du balayage :
+        // familles d'angle de la carte, annonceurs, douleurs / désirs / peurs lus dans les pubs. Une hypothèse qui n'en cite presque rien
+        // a été écrite « de tête » : c'est écrit dans le journal et renvoyé à Factory.
+        try {
+          if (_reperesBalayage) {
+            const nrm = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+            const T = ' ' + nrm(text) + ' ';
+            const cite = (x) => { const m = nrm(x).split(' ').filter(w => w.length > 3); if (!m.length) return false; const k = m.filter(w => T.includes(' ' + w)).length; return k / m.length >= 0.7; };
+            const R0 = _reperesBalayage, mes = {};
+            [['familles', 'familles d\'angle'], ['annonceurs', 'annonceurs'], ['douleurs', 'douleurs des pubs'], ['desirs', 'désirs des pubs'], ['peurs', 'peurs des pubs']].forEach(([k]) => { const l = R0[k] || []; if (l.length) mes[k] = { cites: l.filter(cite).length, total: l.length }; });
+            const nSrc = (text.match(/\[SOURCÉ[^\]]*\]/gi) || []).length, nTT = (text.match(/tiktok/gi) || []).length, nPub = (text.match(/pub(?:licit)?[ée]?s?\s+(?:meta|facebook)|biblioth[eè]que de pubs|annonceur/gi) || []).length;
+            _statsBalayage.usage = Object.assign({ etiquettes_source: nSrc, mentions_tiktok: nTT, mentions_pubs: nPub }, mes);
+            console.log(`   📎 USAGE DU BALAYAGE dans l'hypothèse : ${Object.entries(mes).map(([k, v]) => k + ' ' + v.cites + '/' + v.total).join(' · ') || 'aucun repère'} · ${nSrc} étiquette(s) [SOURCÉ] · TikTok cité ${nTT} fois · pubs citées ${nPub} fois`);
+          }
+        } catch (eU) { console.log('   ⚠ mesure de l\'usage du balayage impossible :', eU.message); }
+
+        // syntheses-coffre-v1 — l'hypothèse est rangée sur le serveur dès qu'elle sort : une page rechargée ou un autre navigateur la retrouvent.
+        let _syntheseId = null;
+        try {
+          const _cles = [productId && 'p' + productId, reqBody.commandeId && 'c' + reqBody.commandeId].concat(Array.isArray(reqBody.cles) ? reqBody.cles : []).filter(Boolean).map(String);
+          _syntheseId = await require('./video_jobs').rangerSynthese({ cles: [...new Set(_cles)], texte: text, titre: String(reqBody.titre || [produit, marque].filter(Boolean).join(' · ') || 'Analyste').replace(/^Commande · /, '').slice(0, 180), agent: 'analyst', test: !!isTest });
+          if (_syntheseId) console.log(`   💾 Hypothèse rangée sur le serveur (${_syntheseId}) : récupérable depuis Factory même si la page a été rechargée.`);
+        } catch (eS) { console.log('   ⚠ hypothèse non rangée sur le serveur :', eS.message); }
+
+        finirAnalyse(200, { text, balayage: _statsBalayage, cout_estime_usd: Math.round(_suiviCout.usd * 100) / 100, synthese_id: _syntheseId });
+
+        // candidats-ct-v2 — capture des créatives APRÈS la réponse (une à la fois, juré avant tout téléchargement de vidéo)
+        if (_brutsCT) {
+          try {
+            require('./candidats_ct').capturer({ SB: SUPABASE_URL_INT, entetes: () => ({ apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }), presign: require('./r2_video').presign, notifierAdmin, jugerCreative: _jugerCreativeGemini }, _brutsCT, { produit, pays, productId, categorie: (_planBalayage && _planBalayage.categorie) || '' })
+              .then(r => { console.log(`   [CT candidats] ${r.nouveaux || 0} nouvelle(s) candidate(s) en attente de validation${r.erreur ? ' — ' + r.erreur : ''}`); memoireJournal('candidats CT : fin'); })
+              .catch(e => console.log('   [CT candidats] ✗ ' + e.message));
+          } catch (e) { console.log('   [CT candidats] module indisponible :', e.message); }
+        }
       } catch (e) {
         console.error('✗ analyste-synthese error:', e.message);
         finirAnalyse(500, { error: e.message });
@@ -9558,7 +9593,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
 // ═══════════════════════════════════════════════════════════════════════════
 const SC_KEY = process.env.SOCIAL_MEDIA_SCRAPING_API || '';
 const SC_BASE = 'https://api.scrapecreators.com';
-const SC_MAX_REQUETES = parseInt(process.env.SC_MAX_REQUETES || '26', 10);   // timing-marche-v2 : 26 (deux tris de pubs + Reddit récent + YouTube)
+const SC_MAX_REQUETES = parseInt(process.env.SC_MAX_REQUETES || '36', 10);   // balayage-v3 : 36 (26 + pubs et TikTok du monde entier, 3 derniers mois)
 const BALAYAGE_VALIDITE_JOURS = parseInt(process.env.BALAYAGE_VALIDITE_JOURS || '30', 10);
 
 async function scGet(chemin, params, compteur, timeoutMs = 25000) {
@@ -9606,7 +9641,8 @@ Réponds UNIQUEMENT par un objet JSON, sans texte autour, avec ces clés :
  "concurrents": ["jusqu'à 3 produits directement concurrents (même catégorie)"],
  "reddit": ["3 requêtes courtes centrées sur le problème, en français ou en anglais selon où la cible en parle"],
  "tiktok": ["2 requêtes courtes centrées sur le problème, dans la langue de la cible"],
- "ads": ["3 mots-clés pour la bibliothèque de pubs : le problème, une alternative, un concurrent direct"]
+ "ads": ["3 mots-clés pour la bibliothèque de pubs : le problème, une alternative, un concurrent direct"],
+ "creatives_monde": ["3 requêtes courtes EN ANGLAIS pour trouver, dans le MONDE ENTIER, les publicités et les vidéos de créateurs qui vendent en ce moment des PRODUITS de la même catégorie ou du même usage que ce produit : un nom de type de produit ou de format qui se vend avec des pubs et des avis de créateurs. Jamais une recette, un remède maison, un conseil de santé ni le nom de la marque du client."]
 }`;
     const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }],
                    generationConfig: { temperature: 0.2, maxOutputTokens: 1800, ...reflexion(MODELES.tendances, 0) } };
@@ -9627,8 +9663,11 @@ Réponds UNIQUEMENT par un objet JSON, sans texte autour, avec ces clés :
       reddit: arr(j.reddit, 3),
       tiktok: arr(j.tiktok, 2),
       ads: arr(j.ads, 3),
+      creatives_monde: arr(j.creatives_monde, 3),   // balayage-v3 : créatives du monde entier (catégorie et formats qui se vendent)
       source: 'gemini'
     };
+    if (!plan.creatives_monde.length) plan.creatives_monde = [plan.categorie];
+    console.log(`   → créatives cherchées dans le monde : ${plan.creatives_monde.join(' | ')}`);
     if (!plan.reddit.length) plan.reddit = [plan.probleme];
     if (!plan.tiktok.length) plan.tiktok = [plan.probleme];
     if (!plan.ads.length) plan.ads = [plan.categorie];
@@ -9651,6 +9690,7 @@ Catégorie : ${plan.categorie}
 Alternatives que la cible connaît déjà : ${plan.alternatives.join(', ') || 'n/a'}
 Concurrents directs : ${plan.concurrents.join(', ') || 'n/a'}
 → Cherche d'abord ce que les gens disent de CE PROBLÈME et de ces ALTERNATIVES (avis, échecs, scepticisme, ce qu'ils ont déjà essayé). La marque du client est probablement inconnue : ne gaspille pas tes requêtes dessus.
+→ (avatar-v1) Ramène des RÉCITS à la première personne, avec leurs mots exacts et leur source : le moment précis où le problème frappe (heure, lieu, geste), ce que la personne croit de sa cause et de ce qui marche, ce qu'elle a essayé avec ce qu'elle en a aimé et ce qui a lâché, son pire moment (où, devant qui), ce qui a changé « depuis que », ce qu'elle craint si rien ne change, au bout de combien de temps et pour quel effort elle attend un résultat, ce qu'elle espère vraiment pouvoir refaire. Les avis de 1 à 3 étoiles, les questions posées aux vendeurs, les commentaires sous les publicités et les témoignages longs en sont la meilleure source.
 → Les discussions qui parlent d'un produit précis restent acceptables quand elles décrivent le problème.
 → Reste dans le monde de la PRATIQUE du produit : ramène la parole des acheteurs naturels (sportifs, utilisateurs réels du genre de produit), pas celle d'une population qui souffre d'un problème voisin sans acheter ce genre de produit.
 
@@ -9667,9 +9707,15 @@ async function _etiqueterPubsGemini(liste, plan) {
 Pour CHAQUE pub, donne :
 - "famille" : la famille d'angle en 2 à 5 mots (le désir ou la douleur exploité + l'idée principale), en français. Deux pubs qui exploitent la même idée avec d'autres mots ont la MÊME famille, écrite à l'identique. Vise 4 à 10 familles au total.
 - "type" : le type de message dominant, un seul mot parmi : promesse, mécanisme, preuve, identité, offre.
-Réponds UNIQUEMENT par un tableau JSON : [{"i":0,"famille":"…","type":"…"}, …]
+- "douleur" : la douleur que la pub appuie, en 3 à 8 mots, telle que la personne la vit ("" si aucune).
+- "desir" : le désir qu'elle promet, en 3 à 8 mots, ce que la personne veut retrouver ou devenir ("" si aucun).
+- "peur" : la peur qu'elle active, en 3 à 8 mots ("" si aucune).
+- "accroche" : la mécanique de son ouverture en 2 à 5 mots (aveu, question, chiffre choc, avant-après, ennemi commun, démonstration, témoignage, défi…).
+- "cible" : qui est visé, en 2 à 6 mots, défini par ce qu'il fait ou vit.
+Écris tout en français courant, avec des mots que deux lecteurs écriraient pareil (pour que le programme puisse compter ce qui revient).
+Réponds UNIQUEMENT par un tableau JSON : [{"i":0,"famille":"…","type":"…","douleur":"…","desir":"…","peur":"…","accroche":"…","cible":"…"}, …]
 ${liste}`;
-    const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 4000, ...reflexion(MODELES.tendances, 0) } };
+    const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 12000, ...reflexion(MODELES.tendances, 0) } };
     const d = await vertexRequest(token, MODELES.tendances, body, 45000, 'analyste_carte_angles');
     const raw = (d.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).filter(Boolean).join('');
     const m = raw.match(/\[[\s\S]*\]/); if (!m) throw new Error('réponse sans tableau');
@@ -10455,6 +10501,40 @@ function memoireLibreMo() {
     return (m - Number(cur)) / 1048576;
   } catch (e) { return Infinity; }
 }
+// memoire-v1 (21 nov. 2026) — Render a redémarré le serveur pour dépassement de mémoire pendant une analyse de marché. On ne voyait pas
+// QUI la prenait. Chaque étape lourde écrit maintenant la mémoire du serveur dans le journal, et une veille signale tout passage au-dessus
+// de 80 % de la limite (avec les tâches en cours), une fois par minute au plus.
+function memoireEtat() {
+  const u = process.memoryUsage(), Mo = x => Math.round(x / 1048576);
+  let lim = null, cur = null;
+  try { const fs = require('fs'); let mx, cu; try { mx = fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim(); cu = fs.readFileSync('/sys/fs/cgroup/memory.current', 'utf8').trim(); } catch (e) { mx = fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8').trim(); cu = fs.readFileSync('/sys/fs/cgroup/memory/memory.usage_in_bytes', 'utf8').trim(); } if (mx !== 'max' && Number(mx) < 1e13) lim = Mo(Number(mx)); cur = Mo(Number(cu)); } catch (e) { }
+  return { rss: Mo(u.rss), tas: Mo(u.heapUsed), externe: Mo(u.external + (u.arrayBuffers || 0)), conteneur: cur, limite: lim };
+}
+function memoireJournal(etape) {
+  try { const m = memoireEtat(); console.log(`   🧠 mémoire (${etape}) : processus ${m.rss} Mo (tas ${m.tas}, tampons ${m.externe})${m.limite ? ` · conteneur ${m.conteneur}/${m.limite} Mo (${Math.round(m.conteneur / m.limite * 100)} %)` : ''}${_rendu.occupe ? ' · navigateur Chromium ouvert' : ''}`); } catch (e) { }
+}
+setInterval(() => { try { const m = memoireEtat(); if (m.limite && m.conteneur / m.limite >= 0.8) memoireJournal('⚠ VEILLE : au-dessus de 80 % de la limite'); } catch (e) { } }, 60000).unref();
+
+// candidats-ct-v2 — LE JURÉ DES CRÉATIVES : regarde l'image (affiche de la vidéo ou image de la pub) et lit son texte. Une candidate n'entre dans la
+// file « À valider » que si c'est une créative publicitaire qu'on peut transposer en CT pour un autre produit.
+async function _jugerCreativeGemini(c) {
+  const token = await getToken();
+  const prompt = `Tu es directeur de création d'une agence de publicités vidéo et image pour l'e-commerce. Cette image est ${c.plateforme === 'tiktok' ? 'la première image d\'une vidéo TikTok' : 'l\'image (ou la première image de la vidéo) d\'une publicité Meta'} trouvée en cherchant la catégorie « ${c.categorie || c.produit || ''} ». Son texte : « ${String(c.texte || '').slice(0, 500)} » (auteur : ${c.auteur || '?'}).
+On cherche des MODÈLES DE CRÉATIVES (CT) : une forme de publicité qui fait vendre un produit et qu'on peut refaire, avec la même mécanique, pour un autre produit de la même famille.
+Juge :
+- "nature" : un mot parmi ugc_avis (une personne présente, utilise ou recommande un produit), demonstration (le produit en action, avant/après), pub_produit (visuel publicitaire construit autour d'un produit), temoignage, tendance_format (un format viral réutilisable), recette, tutoriel, information, divertissement, autre.
+- "transposable" : true seulement si c'est une créative centrée sur un PRODUIT ou sur un résultat obtenu grâce à un produit, avec une mécanique de persuasion lisible (accroche, preuve, bénéfice), qu'un autre produit de cette catégorie pourrait reprendre. Une recette, un remède maison, un conseil général, une photo sans produit ni message, un contenu de divertissement sans produit : false.
+- "note" : 0 à 10, la force publicitaire (arrêt du défilement, clarté du message, désir créé).
+- "angle" : l'angle ou la promesse en une phrase courte, en français.
+- "raison" : une phrase en français.
+Réponds UNIQUEMENT en JSON : {"nature":"…","transposable":true,"note":8,"angle":"…","raison":"…"}`;
+  const body = { contents: [{ role: 'user', parts: [{ inlineData: { mimeType: c.mime || 'image/jpeg', data: c.data } }, { text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 600, responseMimeType: 'application/json', ...reflexion(MODELES.tendances, 0) } };
+  const d = await vertexRequest(token, MODELES.tendances, body, 40000, 'candidats_ct_jure');
+  const raw = (d.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text).filter(Boolean).join('');
+  const m = raw.match(/\{[\s\S]*\}/); if (!m) throw new Error('réponse du juré illisible');
+  return JSON.parse(m[0]);
+}
+
 async function fetchPageRendue(urlStr, opts) {
   opts = opts || {};
   const tempsMax = opts.tempsMax || 30000;
@@ -10466,6 +10546,7 @@ async function fetchPageRendue(urlStr, opts) {
   const libre = memoireLibreMo();
   if (libre < (opts.memoireMinMo || 400)) { console.log(`   [rendu] mémoire libre trop faible (${Math.round(libre)} Mo) — navigateur ignoré`); return null; }
   _rendu.occupe = true;
+  memoireJournal('navigateur Chromium : ouverture');
   let browser = null;
   const debut = Date.now();
   const tuer = async () => { try { if (browser) await browser.close(); } catch (e) { try { browser.process() && browser.process().kill('SIGKILL'); } catch (e2) {} } };

@@ -94,7 +94,7 @@ async function syntheses(req, res, url) {
       await r2Put(key, Buffer.from(texte, 'utf8'), 'text/markdown; charset=utf-8')
       const e = { id, cles: (Array.isArray(b.cles) ? b.cles : []).map(String).filter((c) => /^[pc][\w\-]{1,60}$/.test(c)).slice(0, 4), titre: String(b.titre || '').slice(0, 200), agent: String(b.agent || 'analyst').slice(0, 30), t: Date.now(), taille: texte.length, url: PUB() + '/' + key }
       if (b.marche) { try { await r2Put('factory/syntheses/' + id + '_marche.json', Buffer.from(String(b.marche), 'utf8'), 'application/json'); e.marche = true } catch (_) { } }
-      synChaine = synChaine.then(async () => { const l = await lireSyn(); const n = [e, ...l].slice(0, 80); synCache = n; await r2Put(SYN_IDX, Buffer.from(JSON.stringify(n)), 'application/json') })
+      synChaine = synChaine.catch(() => {}).then(async () => { const l = await lireSyn(); const n = [e, ...l].slice(0, 80); synCache = n; await r2Put(SYN_IDX, Buffer.from(JSON.stringify(n)), 'application/json') })
       await synChaine
       console.log('💾 Synthèse de test rangée : ' + id + ' (' + e.titre + ', ' + texte.length + ' car.)')
       return rep(res, 200, { ok: true, id }), true
@@ -207,7 +207,7 @@ async function handle(req, res, deps) {
         if (b.synthese && String(b.synthese).trim().length > 200) {
           try { synUrl = await deposerSynthese(cmd, slot, String(b.synthese).slice(0, 400000)); env.push({ name: 'SYNTHESE_URL', value: synUrl })
             const e = { id: Date.now().toString(36) + 'v', cles: ['c' + cmd], titre: 'Synthèse du test vidéo' + (b.libelle ? ' · ' + String(b.libelle).split(' · ')[0] : ''), agent: 'video', t: Date.now(), taille: String(b.synthese).length, url: synUrl }
-            synChaine = synChaine.then(async () => { const l = await lireSyn(); if (l.some((x) => x.taille === e.taille && (x.cles || []).includes(e.cles[0]))) return; const n = [e, ...l].slice(0, 80); synCache = n; await r2Put(SYN_IDX, Buffer.from(JSON.stringify(n)), 'application/json') }).catch(() => {}) }
+            synChaine = synChaine.catch(() => {}).then(async () => { const l = await lireSyn(); if (l.some((x) => x.taille === e.taille && (x.cles || []).includes(e.cles[0]))) return; const n = [e, ...l].slice(0, 80); synCache = n; await r2Put(SYN_IDX, Buffer.from(JSON.stringify(n)), 'application/json') }).catch(() => {}) }
           catch (e) { return rep(res, 502, { error: 'Synthèse du test non transmise à la machine : ' + e.message }), true }
         }
       }
@@ -339,3 +339,14 @@ async function handle(req, res, deps) {
   } catch (e) { console.error('✗ video_jobs', e.message); return rep(res, 500, { error: e.message }), true }
 }
 module.exports = handle
+// syntheses-coffre-v1 : le serveur range lui-même l'hypothèse de l'Analyste dès qu'elle sort (appelé par /analyste-synthese)
+module.exports.rangerSynthese = async ({ cles, texte, titre, agent, test }) => {
+  texte = String(texte || ''); if (texte.trim().length < 200) return null
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+  const key = 'factory/syntheses/' + id + '.md'
+  await r2Put(key, Buffer.from(texte, 'utf8'), 'text/markdown; charset=utf-8')
+  const e = { id, cles: (Array.isArray(cles) ? cles : []).map(String).filter((c) => /^[pc][\w\-]{1,60}$/.test(c)).slice(0, 4), titre: String(titre || '').slice(0, 200), agent: String(agent || 'analyst').slice(0, 30), test: !!test, serveur: true, t: Date.now(), taille: texte.length, url: PUB() + '/' + key }
+  synChaine = synChaine.catch(() => {}).then(async () => { const l = await lireSyn(); const n = [e, ...l].slice(0, 80); synCache = n; await r2Put(SYN_IDX, Buffer.from(JSON.stringify(n)), 'application/json') })
+  await synChaine
+  return id
+}

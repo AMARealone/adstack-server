@@ -124,10 +124,13 @@ function engagementTikTok(s) {
   if (vues < 1000) return 0
   return ((Number(s.digg_count) || 0) + 2 * (Number(s.comment_count) || 0) + 3 * (Number(s.share_count) || 0) + 2 * (Number(s.collect_count) || 0)) / vues
 }
-// Preuve d'une pub Meta : jours de diffusion × (1 + variantes / 5). Une pub de moins de 14 jours n'a pas encore de preuve.
+// Preuve d'une pub Meta. Une pub de moins de 14 jours n'a pas encore de preuve. balayage-v3 : la durée compte jusqu'à 90 jours (au-delà, elle
+// prouve la même chose), et une pub lancée il y a plus de 4 mois perd de sa valeur de CANDIDATE (avant : une pub de 4 ans gagnait toujours ;
+// le fondateur veut ce qui tourne maintenant). Les variantes (la marque la décline) restent le signe le plus fort.
 function preuvePub(ageJ, variantes) {
   if (ageJ === null || ageJ === undefined || ageJ < 14) return 0
-  return ageJ * (1 + Math.min(Number(variantes) || 1, 10) / 5)
+  const fraicheur = ageJ <= 120 ? 1 : ageJ <= 240 ? 0.5 : ageJ <= 365 ? 0.25 : 0.05
+  return Math.min(ageJ, 90) * (1 + Math.min(Number(variantes) || 1, 10) / 5) * fraicheur
 }
 
-module.exports = { ageJours, ageTexte, trancheAge, LIBELLE_TRANCHE, carteTemporelle, texteCarte, choisirCandidats, engagementTikTok, preuvePub, mediane, VERSION: 'timing-marche-v2' }
+module.exports = { ageJours, ageTexte, trancheAge, LIBELLE_TRANCHE, carteTemporelle, texteCarte, choisirCandidats, engagementTikTok, preuvePub, mediane, VERSION: 'balayage-v3' }
