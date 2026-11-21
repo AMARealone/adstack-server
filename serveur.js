@@ -425,10 +425,32 @@ function getToken() {
 }
 
 // ── Vertex AI Global Request (gemini-3-pro-image) ──
+// images-v1 (21 nov. 2026) — « Invalid value at contents[0].parts[1].inline_data.data (TYPE_BYTES) » : une image envoyée
+// avec son en-tête « data:…;base64, », un lien à la place des octets, ou du base64 « url-safe ». Tout appel Gemini passe ici :
+// l'en-tête est retiré, le base64 remis au format standard, et une image qui reste illisible est retirée (avec un journal)
+// au lieu de faire échouer tout l'appel.
+function _nettoyerImages(body) {
+  try {
+    (body && body.contents || []).forEach((c, ci) => {
+      (c && c.parts || []).forEach((p, pi) => {
+        const k = p && (p.inlineData ? 'inlineData' : p.inline_data ? 'inline_data' : null); if (!k) return;
+        const d = p[k]; let t = String(d.data || '');
+        const m = t.match(/^data:([^;,]+)[^,]*;base64,/i); if (m) { t = t.slice(m[0].length); if (/^image\//i.test(m[1])) { if (k === 'inlineData') d.mimeType = m[1]; else d.mime_type = m[1]; } }
+        t = t.replace(/\s/g, '').replace(/-/g, '+').replace(/_/g, '/');
+        if (!t || /^(https?:)?\/\//i.test(String(d.data || '')) || /[^A-Za-z0-9+/=]/.test(t)) {
+          console.log(`   ⚠ [images] image illisible retirée de l'appel (contents[${ci}].parts[${pi}], début : « ${String(d.data || '').slice(0, 40)} »)`);
+          delete p[k]; p.text = '(Une image prévue ici était illisible et a été retirée.)'; return;
+        }
+        d.data = t;
+      });
+    });
+  } catch (e) { console.log('   ⚠ [images] nettoyage impossible : ' + e.message); }
+  return body;
+}
 function vertexRequestGlobal(token, model, body, timeoutMs = 120000, typeAppel = 'generation_image') {
   const _cmdAppel = _ctxCommande();   // finance-v3 : la commande est lue AU MOMENT de l'appel (dans la réponse, le contexte est perdu : sockets réutilisées)
   return new Promise((resolve, reject) => {
-    const bodyStr = JSON.stringify(body);
+    const bodyStr = JSON.stringify(_nettoyerImages(body));
     const path = `/v1/projects/${PROJECT_ID}/locations/global/publishers/google/models/${model}:generateContent`;
     const req = https.request({
       hostname: 'aiplatform.googleapis.com', path, method: 'POST',
@@ -568,7 +590,7 @@ function logCoutApi(source, typeAppel, usage, modele, nbRecherches, commandeAppe
 function vertexRequestRegional(token, model, body, timeoutMs = 90000, typeAppel = 'texte_gemini') {
   const _cmdAppel = _ctxCommande();   // finance-v3 : voir vertexRequestGlobal
   return new Promise((resolve, reject) => {
-    const bodyStr = JSON.stringify(body);
+    const bodyStr = JSON.stringify(_nettoyerImages(body));
     const path = `/v1/projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${model}:generateContent`;
     const req = https.request({
       hostname: `${LOCATION}-aiplatform.googleapis.com`, path, method: 'POST',
