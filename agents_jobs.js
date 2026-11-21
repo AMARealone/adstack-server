@@ -108,6 +108,17 @@ module.exports = async function agentsJobs(req, res, deps) {
       majIndex((l) => [{ id, agent, route, etiquette, execution, t: Date.now(), etat: 'lance' }, ...l.filter((x) => x.id !== id)])
       return rep(res, 200, { id, execution, agent }), true
     }
+    // ── journal complet en FICHIER téléchargeable (journal-agent-<agent>-<id>.txt) ──
+    if (req.method === 'GET' && url === '/agents-jobs/journal') {
+      const id = (new URL(req.url, 'http://x').searchParams.get('id') || '').replace(/[^\w]/g, '')
+      if (!id) return rep(res, 400, { error: 'id manquant' }), true
+      const r = await fetch(PUB() + '/agents/journaux/' + id + '.txt?t=' + Date.now())
+      if (!r.ok) return rep(res, 404, { error: 'journal introuvable (la machine ne l\'a pas encore publié)' }), true
+      const txt = Buffer.from(await r.arrayBuffer())
+      const agent = ((String(txt.subarray(0, 200)).match(/JOURNAL DE L'AGENT (\w+)/) || [])[1] || 'agent').toLowerCase()
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Disposition': `attachment; filename="journal-${agent}-${id}.txt"`, 'Cache-Control': 'no-store' })
+      res.end(txt); return true
+    }
     // ── avancement + journal en direct ──
     if (req.method === 'GET' && url === '/agents-jobs/status') {
       const id = (new URL(req.url, 'http://x').searchParams.get('id') || '').replace(/[^\w]/g, '')

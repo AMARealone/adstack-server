@@ -99,8 +99,10 @@ async function dejaVues(deps, cles) {
 }
 
 // ── 3. Capture complète (appelée sans attendre, APRÈS l'hypothèse : une seule à la fois, pour la mémoire du serveur) ──
-let _file = Promise.resolve()
-function capturer(deps, bruts, ctx) { const p = _file.then(() => _capturer(deps, bruts, ctx)); _file = p.catch(() => {}); return p }
+let _file = Promise.resolve(), _actives = 0
+// enCours() : nombre de captures pas encore terminées (la machine Google Cloud d'un agent attend qu'il tombe à 0 avant de s'éteindre)
+function capturer(deps, bruts, ctx) { _actives++; const p = _file.then(() => _capturer(deps, bruts, ctx)).finally(() => { _actives-- }); _file = p.catch(() => {}); return p }
+const enCours = () => _actives
 async function _capturer(deps, bruts, ctx) {
   const log = (m) => console.log('   [CT candidats] ' + m)
   const items = []
@@ -123,6 +125,7 @@ async function _capturer(deps, bruts, ctx) {
         if (c.type === 'image') c._fichier = f
         const j = await deps.jugerCreative({ data: f.buf.toString('base64'), mime: f.type && /image\//.test(f.type) ? f.type : 'image/jpeg', texte: c.texte, plateforme: c.plateforme, auteur: c.auteur, produit: ctx.produit, categorie: ctx.categorie || '' })
         notes.push(Object.assign(c, { jury: j || {} }))
+        log(`juré ${notes.length}/${choisis.length} : ${c.plateforme} « ${coupe(c.auteur, 30)} » → ${(j || {}).note ?? '?'}/10, ${(j || {}).nature || '?'}${(j || {}).transposable === true ? ', transposable' : ''}`)
       } catch (e) { notes.push(Object.assign(c, { jury: { note: 0, raison: 'illisible : ' + coupe(e.message, 80) } })) }
     }
     const garde = notes.filter((c) => c.jury && c.jury.transposable === true && Number(c.jury.note) >= 7)
@@ -209,4 +212,4 @@ async function routes(req, res, deps) {
   } catch (e) { return J(500, { error: e.message }), true }
 }
 
-module.exports = { capturer, routes, depuisPub, depuisTikTok, VERSION: 'candidats-ct-v2' }
+module.exports = { capturer, enCours, routes, depuisPub, depuisTikTok, VERSION: 'candidats-ct-v2' }
