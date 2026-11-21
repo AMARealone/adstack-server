@@ -159,6 +159,7 @@ async function handle(req, res, deps) {
   const url = (req.url || '').split('?')[0]
   if (url === '/production/dossier') return require('./dossier')(req, res)
   if (url === '/creative-prod-v10' || url === '/creative-qa') return require('./creative_v10')(req, res, deps)
+  if (url.startsWith('/agents-jobs/')) return require('./agents_jobs')(req, res, deps)   // agents-cloud-v1
   if (url.startsWith('/factory-tests/')) return syntheses(req, res, url)
   if (!url.startsWith('/video-jobs/') && url !== '/video/select-cts') return false
   try {

@@ -12156,9 +12156,9 @@ async function corrigerModelesEmailV1() {
 }
 
 server.listen(PORT, () => {
-  console.log(`\n✅ AdStack Server → http://localhost:${PORT}\n`);
+  console.log(`\n✅ AdStack Server → http://localhost:${PORT}${process.env.AGENT_JOB ? ' (machine Google Cloud d\'un agent : pas d\'auto-ping ni de tâches de fond)' : ''}\n`);
   setTimeout(() => { sonderModeles(); }, 3000);
-  setTimeout(() => { corrigerModelesEmailV1(); }, 8000);
+  if (!process.env.AGENT_JOB) setTimeout(() => { corrigerModelesEmailV1(); }, 8000);   // agents-cloud-v1 : seul Render touche aux modèles d'email
   setTimeout(() => { chargerOffres(); }, 5000);
   setInterval(() => { chargerOffres(); }, 30 * 60 * 1000);
 });
@@ -12168,7 +12168,7 @@ server.listen(PORT, () => {
 // suivant (souvent un prospect qui clique sur sa démo) tombe sur l'écran de réveil
 // générique de Render — mauvaise impression, surtout en pleine prospection à froid.
 const RENDER_URL_PUBLIC = 'https://adstack-server.onrender.com';
-setInterval(() => {
+if (!process.env.AGENT_JOB) setInterval(() => {   // agents-cloud-v1 : la machine d'un agent ne réveille pas Render
   https.get(`${RENDER_URL_PUBLIC}/`, (res) => {
     res.on('data', () => {});
     res.on('end', () => console.log(`[Auto-ping] OK (${res.statusCode})`));
