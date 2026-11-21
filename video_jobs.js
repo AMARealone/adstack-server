@@ -1,4 +1,5 @@
 // tests-video-memoire-v1 : liste des tests vidéo gardée sur R2 (/video-jobs/tests).
+// syntheses-coffre-v1 : synthèses des tests Analyste gardées sur R2 (/factory-tests/*).
 // v10 : + plan des niveaux de conscience, arrêt réel (/video-jobs/cancel), état de la machine, routes Creative Image v10.
 // Module Render : lance et suit les productions vidéo sur Google Cloud Run (job « video-adstack »),
 // et choisit automatiquement les CT vidéo d'une commande. Accroché dans serveur.js par une seule ligne :
@@ -74,6 +75,48 @@ async function rafraichirTest(x) {
   return false
 }
 
+// syntheses-coffre-v1 (21 nov. 2026) : chaque synthèse produite par le test Analyste est rangée sur le SERVEUR (R2 factory/syntheses/).
+// Une hypothèse payée (~1 $) ne dépend plus jamais du navigateur : on la retrouve depuis n'importe quel écran, appareil ou navigateur.
+const SYN_IDX = 'factory/syntheses/index.json'
+let synCache = null, synChaine = Promise.resolve()
+async function lireSyn() {
+  try { const r = await fetch(PUB() + '/' + SYN_IDX + '?t=' + Date.now()); if (r.ok) { const j = await r.json(); if (Array.isArray(j)) { synCache = j; return j } } } catch (_) { }
+  return synCache || []
+}
+async function syntheses(req, res, url) {
+  try {
+    if (req.method === 'POST' && url === '/factory-tests/synthese') {
+      const b = JSON.parse((await lire(req, 3000000)) || '{}')
+      const texte = String(b.texte || '')
+      if (texte.trim().length < 200) return rep(res, 400, { error: 'synthèse vide' }), true
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+      const key = 'factory/syntheses/' + id + '.md'
+      await r2Put(key, Buffer.from(texte, 'utf8'), 'text/markdown; charset=utf-8')
+      const e = { id, cles: (Array.isArray(b.cles) ? b.cles : []).map(String).filter((c) => /^[pc][\w\-]{1,60}$/.test(c)).slice(0, 4), titre: String(b.titre || '').slice(0, 200), agent: String(b.agent || 'analyst').slice(0, 30), t: Date.now(), taille: texte.length, url: PUB() + '/' + key }
+      if (b.marche) { try { await r2Put('factory/syntheses/' + id + '_marche.json', Buffer.from(String(b.marche), 'utf8'), 'application/json'); e.marche = true } catch (_) { } }
+      synChaine = synChaine.then(async () => { const l = await lireSyn(); const n = [e, ...l].slice(0, 80); synCache = n; await r2Put(SYN_IDX, Buffer.from(JSON.stringify(n)), 'application/json') })
+      await synChaine
+      console.log('💾 Synthèse de test rangée : ' + id + ' (' + e.titre + ', ' + texte.length + ' car.)')
+      return rep(res, 200, { ok: true, id }), true
+    }
+    if (req.method === 'GET' && url === '/factory-tests/syntheses') {
+      const cles = (new URL(req.url, 'http://x').searchParams.get('cles') || '').split(',').filter(Boolean)
+      const l = await lireSyn()
+      return rep(res, 200, { syntheses: (cles.length ? l.filter((x) => (x.cles || []).some((c) => cles.includes(c))) : l).slice(0, 25) }), true
+    }
+    if (req.method === 'GET' && url === '/factory-tests/synthese') {
+      const id = (new URL(req.url, 'http://x').searchParams.get('id') || '').replace(/[^a-z0-9]/g, '')
+      const x = (await lireSyn()).find((s) => s.id === id)
+      if (!x) return rep(res, 404, { error: 'synthèse introuvable' }), true
+      const r = await fetch(x.url); if (!r.ok) return rep(res, 502, { error: 'R2 HTTP ' + r.status }), true
+      let marche = ''
+      if (x.marche) { try { const rm = await fetch(PUB() + '/factory/syntheses/' + id + '_marche.json'); if (rm.ok) marche = await rm.text() } catch (_) { } }
+      return rep(res, 200, { ...x, texte: await r.text(), marche_json: marche }), true
+    }
+    return rep(res, 404, { error: 'route inconnue' }), true
+  } catch (e) { return rep(res, 500, { error: e.message }), true }
+}
+
 async function api(deps, method, url, body) {
   const token = await deps.getToken()
   const r = await fetch(url, { method, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
@@ -116,6 +159,7 @@ async function handle(req, res, deps) {
   const url = (req.url || '').split('?')[0]
   if (url === '/production/dossier') return require('./dossier')(req, res)
   if (url === '/creative-prod-v10' || url === '/creative-qa') return require('./creative_v10')(req, res, deps)
+  if (url.startsWith('/factory-tests/')) return syntheses(req, res, url)
   if (!url.startsWith('/video-jobs/') && url !== '/video/select-cts') return false
   try {
     // ── diagnostic : qui est le compte du serveur, et peut-il lancer le job ? ──
@@ -161,7 +205,9 @@ async function handle(req, res, deps) {
       if (b.test) {
         env.push({ name: 'TEST', value: '1' })
         if (b.synthese && String(b.synthese).trim().length > 200) {
-          try { synUrl = await deposerSynthese(cmd, slot, String(b.synthese).slice(0, 400000)); env.push({ name: 'SYNTHESE_URL', value: synUrl }) }
+          try { synUrl = await deposerSynthese(cmd, slot, String(b.synthese).slice(0, 400000)); env.push({ name: 'SYNTHESE_URL', value: synUrl })
+            const e = { id: Date.now().toString(36) + 'v', cles: ['c' + cmd], titre: 'Synthèse du test vidéo' + (b.libelle ? ' · ' + String(b.libelle).split(' · ')[0] : ''), agent: 'video', t: Date.now(), taille: String(b.synthese).length, url: synUrl }
+            synChaine = synChaine.then(async () => { const l = await lireSyn(); if (l.some((x) => x.taille === e.taille && (x.cles || []).includes(e.cles[0]))) return; const n = [e, ...l].slice(0, 80); synCache = n; await r2Put(SYN_IDX, Buffer.from(JSON.stringify(n)), 'application/json') }).catch(() => {}) }
           catch (e) { return rep(res, 502, { error: 'Synthèse du test non transmise à la machine : ' + e.message }), true }
         }
       }
