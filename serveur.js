@@ -1103,25 +1103,32 @@ async function sendSequenceEmail(email, key, ctx, userId) {
 }
 
 async function markSequenceSent(userId, emailKey) {
-  await fetch(`${SUPABASE_URL_INT}/rest/v1/email_sequence_log`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': SUPABASE_SERVICE_KEY,
-      'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-      'Prefer': 'resolution=ignore-duplicates',
-    },
-    body: JSON.stringify({ user_id: userId, email_key: emailKey })
-  });
+  try {
+    const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/email_sequence_log`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'Prefer': 'resolution=ignore-duplicates',
+      },
+      body: JSON.stringify({ user_id: userId, email_key: emailKey })
+    });
+    if (!r.ok && r.status !== 409) console.error('[Sequence] ⚠ envoi NON noté dans le journal (' + emailKey + ', HTTP ' + r.status + ') : risque de doublon');
+  } catch (e) { console.error('[Sequence] ⚠ envoi NON noté dans le journal (' + emailKey + ') : ' + e.message); }
 }
 
+// envois-surs-v1 : en cas de doute (lecture impossible), on considère l'email comme DÉJÀ envoyé — un email manqué vaut mieux qu'un doublon.
 async function wasSequenceSent(userId, emailKey) {
-  const r = await fetch(
-    `${SUPABASE_URL_INT}/rest/v1/email_sequence_log?user_id=eq.${userId}&email_key=eq.${emailKey}&limit=1`,
-    { headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` } }
-  );
-  const rows = await r.json();
-  return Array.isArray(rows) && rows.length > 0;
+  try {
+    const r = await fetch(
+      `${SUPABASE_URL_INT}/rest/v1/email_sequence_log?user_id=eq.${userId}&email_key=eq.${encodeURIComponent(emailKey)}&limit=1`,
+      { headers: { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}` } }
+    );
+    if (!r.ok) { console.error('[Sequence] journal illisible (' + emailKey + ', HTTP ' + r.status + ') : email non envoyé par prudence'); return true; }
+    const rows = await r.json();
+    return !Array.isArray(rows) || rows.length > 0;
+  } catch (e) { console.error('[Sequence] journal illisible (' + emailKey + ') : ' + e.message + ' — email non envoyé par prudence'); return true; }
 }
 
 // ── Web Push (notifications navigateur) ────────────────────────────────────
@@ -6242,6 +6249,9 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
   }
   res.writeHead(200, {'Content-Type':'application/json'});
   res.end(JSON.stringify({ ok: true, message: 'Séquence en cours de traitement' }));
+  // envois-surs-v1 : deux appels du cron rapprochés ne lancent jamais deux passages en même temps (sinon doublons possibles)
+  if (global.__seqEnCours && Date.now() - global.__seqEnCours < 3600000) { console.log('[Sequence] passage déjà en cours : appel ignoré'); return; }
+  global.__seqEnCours = Date.now();
 
   try {
     // 1. Récupérer tous les users (Supabase Admin API)
@@ -6451,12 +6461,23 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
       const lire = async (chemin) => { const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/${chemin}`, { headers: H }); const j = await r.json(); return Array.isArray(j) ? j : []; };
       const bilanCC = await CC.traiterCycle({
         lire, users, offres: OFFERS, labels: PLAN_LABELS,
-        journalDe: (uid) => lire(`email_sequence_log?user_id=eq.${uid}&email_key=like.cc_*&select=email_key,created_at`),
+        // envois-surs-v1 : la colonne de date du journal est sent_at (created_at n'existe pas : la lecture échouait et rendait une liste vide → doublons).
+        // Lecture STRICTE : une erreur arrête ce client au lieu de faire croire qu'aucun email n'est jamais parti.
+        journalDe: async (uid) => { const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/email_sequence_log?user_id=eq.${uid}&email_key=like.cc_*&select=email_key,sent_at`, { headers: H }); if (!r.ok) throw new Error('journal des envois illisible (HTTP ' + r.status + ') : aucun email envoyé à ce client'); const j = await r.json(); if (!Array.isArray(j)) throw new Error('journal des envois illisible'); return j; },
         marquer: (uid, cle) => markSequenceSent(uid, cle),
+        // Réservation AVANT l'envoi : une seule ligne possible par client + email (index unique email_sequence_log_unique).
+        reserver: async (uid, cle) => {
+          try {
+            const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/email_sequence_log?on_conflict=user_id,email_key`, { method: 'POST', headers: { ...H, 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=representation' }, body: JSON.stringify({ user_id: uid, email_key: cle }) });
+            if (!r.ok) { console.error('[Cycle client] réservation impossible (HTTP ' + r.status + ') — lancez le SQL envois_surs.sql (index unique) : ' + (await r.text()).slice(0, 160)); return false; }
+            const rows = await r.json(); return Array.isArray(rows) && rows.length > 0;
+          } catch (e) { console.error('[Cycle client] réservation impossible : ' + e.message); return false; }
+        },
+        liberer: async (uid, cle) => { try { await fetch(`${SUPABASE_URL_INT}/rest/v1/email_sequence_log?user_id=eq.${uid}&email_key=eq.${encodeURIComponent(cle)}`, { method: 'DELETE', headers: H }); } catch (_) {} },
         lienDesinscription: (uid) => `https://adstack-server.onrender.com/emails/lettres-stop?u=${encodeURIComponent(uid)}&s=${signerDesinscription(uid)}`,
         envoyer: async ({ to, objet, html, texte, cle, userId }) => {
           const RESEND_KEY = process.env.RESEND_API_KEY; if (!RESEND_KEY) return false;
-          const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
+          const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json', 'Idempotency-Key': ('cc-' + userId + '-' + cle).slice(0, 256) },
             body: JSON.stringify({ from: "L'équipe AdStack <bonjour@adstackofficial.com>", to: [to], reply_to: 'contact@adstackofficial.com', subject: objet, html: injecterUtmDansHtml(html, cle), text: texte,
               tags: [{ name: 'email_key', value: cle.replace(/[^A-Za-z0-9_-]/g, '_') }, { name: 'user_id', value: userId }] }) });
           if (!r.ok) console.error('[Cycle client] envoi refusé :', r.status, (await r.text()).slice(0, 200));
@@ -6471,6 +6492,7 @@ if (req.method === 'GET' && req.url.startsWith('/cron/email-sequence')) {
   } catch(e) {
     console.error('[Sequence] Erreur cron:', e.message);
   }
+  global.__seqEnCours = 0;
   return;
 }
 

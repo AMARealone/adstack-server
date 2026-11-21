@@ -341,7 +341,21 @@ function scoreSante(c, { clics30 = 0, ouvertures30 = 0, avis = 0 } = {}, mainten
 }
 
 // ── LE PASSAGE QUOTIDIEN : appelé par /cron/email-sequence. Au plus un email par client et par jour.
-async function traiterCycle({ lire, envoyer, marquer, users, offres, labels, journalDe, lienDesinscription }, maintenant = Date.now()) {
+// envois-surs-v1 (21 nov. 2026) — cause du doublon « La pub que vous préférez… » reçu deux jours de suite : le journal des envois
+// était lu avec une colonne qui n'existe pas (created_at au lieu de sent_at) ; la lecture échouait EN SILENCE et rendait une liste
+// vide, donc le programme croyait n'avoir jamais rien envoyé et renvoyait chaque jour le premier email. Désormais :
+//  1. une lecture du journal qui échoue arrête tout pour ce client (on n'envoie jamais « à l'aveugle ») ;
+//  2. l'email est RÉSERVÉ dans le journal AVANT l'envoi (clé unique client + email) : si la réservation échoue ou existe déjà, rien ne part ;
+//  3. un envoi refusé par Resend libère la réservation (il repartira au prochain passage) ;
+//  4. Resend reçoit une clé d'idempotence : même appelé deux fois, il n'envoie qu'une fois ;
+//  5. deux passages simultanés du programme sont impossibles (verrou).
+let _cycleEnCours = false
+async function traiterCycle({ lire, envoyer, marquer, reserver, liberer, users, offres, labels, journalDe, lienDesinscription }, maintenant = Date.now()) {
+  if (_cycleEnCours) { console.log('[Cycle client] passage déjà en cours : ce second passage est ignoré'); return { envoyes: 0, erreurs: 0, ignore: true } }
+  _cycleEnCours = true
+  try { return await _traiterCycle({ lire, envoyer, marquer, reserver, liberer, users, offres, labels, journalDe, lienDesinscription }, maintenant) } finally { _cycleEnCours = false }
+}
+async function _traiterCycle({ lire, envoyer, marquer, reserver, liberer, users, offres, labels, journalDe, lienDesinscription }, maintenant = Date.now()) {
   const subs = await lire('subscriptions?select=user_id,plan,type,active,started_at,expires_at,credits_per_week,total_credits');
   const parUser = new Map();
   (Array.isArray(subs) ? subs : []).forEach((s) => { if (!parUser.has(s.user_id)) parUser.set(s.user_id, []); parUser.get(s.user_id).push(s); });
@@ -358,8 +372,16 @@ async function traiterCycle({ lire, envoyer, marquer, users, offres, labels, jou
       if (!c) continue;
       const choix = choisirEmail(c, c.deja, maintenant); if (!choix) continue;
       const m = construire(choix, c, c.offres, lienDesinscription ? lienDesinscription(uid) : ''); if (!m) continue;
-      const ok = await envoyer({ to: u.email, objet: m.objet, html: m.html, texte: m.texte, cle: m.cle, userId: uid });
-      if (ok) { await marquer(uid, m.cle); bilan.envoyes++; }
+      if (reserver) {
+        const pris = await reserver(uid, m.cle)
+        if (!pris) { console.log('[Cycle client] ' + uid + ' · ' + m.cle + ' : déjà envoyé ou réservation impossible → rien ne part'); continue }
+        const ok = await envoyer({ to: u.email, objet: m.objet, html: m.html, texte: m.texte, cle: m.cle, userId: uid });
+        if (ok) { bilan.envoyes++; console.log('[Cycle client] envoyé · ' + m.cle + ' → ' + uid) }
+        else { await liberer(uid, m.cle); bilan.erreurs++ }
+      } else {
+        const ok = await envoyer({ to: u.email, objet: m.objet, html: m.html, texte: m.texte, cle: m.cle, userId: uid });
+        if (ok) { await marquer(uid, m.cle); bilan.envoyes++; }
+      }
     } catch (e) { bilan.erreurs++; console.error('[Cycle client] ' + uid + ' : ' + e.message); }
   }
   return bilan;
