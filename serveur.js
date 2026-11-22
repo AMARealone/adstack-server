@@ -4409,6 +4409,12 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
                 console.log(`   ✓ rendu navigateur ajouté aux données brutes (${renduA.avis.length} avis, ${renduA.text.length} car.)`);
               }
             } catch (eR) { console.log('   ✗ rendu navigateur ignoré :', eR.message); }
+            // univers-vendeur-v1 — ce que la boutique vend autour du produit (accueil, menu, catalogue) : premier signal du rayon et du motif d'achat.
+            try {
+              const uv = await require('./univers_vendeur').universVendeur(lien_page_produit, fetchRawHtml);
+              if (uv.texte) { donneesBrutes += uv.texte; console.log(`   ✓ univers du vendeur ajouté aux données brutes (${uv.stats.site} · menu ${uv.stats.menu} · rayons ${uv.stats.rayons} · produits ${uv.stats.produits} · ${uv.texte.length} car.)`); }
+              else console.log('   ✗ univers du vendeur non lisible' + (uv.stats && uv.stats.erreur ? ' : ' + uv.stats.erreur : ''));
+            } catch (eU) { console.log('   ✗ univers du vendeur ignoré :', eU.message); }
           } catch(e) {
             console.log('   ✗ erreur fetch page produit :', e.message);
             donneesBrutes += `### SOURCE — PAGE PRODUIT CLIENT (URL présente, non accessible)\nURL : ${lien_page_produit}\nNote : contenu non chargeable (anti-bot ou timeout). L'URL EST bien fournie dans le brief.\n\n`;
