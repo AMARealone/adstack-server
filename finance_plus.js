@@ -45,7 +45,8 @@ async function productions(deps, du, au) {
   if (api.absente) { colonnes = false; api = await lire('api_usage_log', 'select=source,type_appel,cout_usd,created_at&' + fen + '&order=created_at.asc'); }
   let ext = await lire('couts_externes', 'select=fournisseur,origine,cout_usd,commande_id,ref,detail,created_at&' + fen + '&order=created_at.asc');
   if (ext.absente) ext = await lire('couts_externes', 'select=fournisseur,origine,cout_usd,ref,detail,created_at&' + fen + '&order=created_at.asc');
-  const tx = await lire('transactions', 'select=user_id,montant_fcfa,montant_net_fcfa,commission_chariow_fcfa,plan,created_at&' + fen + '&order=created_at.asc');
+  const tx = await lire('transactions', 'select=user_id,email,montant_fcfa,montant_net_fcfa,commission_chariow_fcfa,plan,created_at&' + fen + '&order=created_at.asc');
+  if (deps.equipe && Array.isArray(tx.rows)) tx.rows = tx.rows.filter((t) => !deps.equipe(t));   // comptes-equipe-v1 : pas de marge « client » sur les comptes de l'équipe
   let briefs = []; try { briefs = (await loadBriefs()) || []; } catch (_) { briefs = []; }
   const parId = {}; briefs.forEach((b) => { if (b && b.id) parId[b.id] = b; });
 

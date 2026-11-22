@@ -1807,7 +1807,7 @@ async function calculerFinance(du, au, avecTendance) {
   const jDu = _finJ(du), jAu = _finJ(au), nbJours = jAu - jDu + 1;
   const fen = 'created_at=gte.' + du + 'T00:00:00Z&created_at=lt.' + _finDate(jAu + 1) + 'T00:00:00Z';
   const [tx, api, ext, fixes, dep] = await Promise.all([
-    _finLire('transactions', 'select=montant_fcfa,commission_chariow_fcfa,montant_net_fcfa,plan,created_at&' + fen + '&order=created_at.asc'),
+    _finLire('transactions', 'select=user_id,email,montant_fcfa,commission_chariow_fcfa,montant_net_fcfa,plan,created_at&' + fen + '&order=created_at.asc'),
     _finLire('api_usage_log', 'select=source,type_appel,cout_usd,created_at&' + fen + '&order=created_at.asc'),
     _finLire('couts_externes', 'select=fournisseur,origine,unites,cout_usd,detail,created_at&' + fen + '&order=created_at.asc'),
     _finLire('finance_couts_fixes', 'select=*&order=id.asc', 1000),
@@ -1817,7 +1817,8 @@ async function calculerFinance(du, au, avecTendance) {
   const serie = []; for (let k = 0; k < nbSeaux; k++) serie.push({ date: _finDate(jDu + k * pas), revenu_net_usd: 0, variable_usd: 0, fixe_usd: 0, ponctuel_usd: 0 });
   const seau = (iso) => { const k = Math.floor((_finJ(String(iso).slice(0, 10)) - jDu) / pas); return serie[Math.max(0, Math.min(nbSeaux - 1, k))]; };
 
-  // Revenus
+  // Revenus — comptes-equipe-v1 : les achats faits par les comptes de l'équipe (tests, démo, admin) ne sont pas du revenu
+  { const CE = require('./comptes_equipe'), idsE = await CE.ids(SUPABASE_URL_INT, SUPABASE_SERVICE_KEY); const avant = tx.rows.length; tx.rows = tx.rows.filter(t => !CE.estEquipe(t, idsE)); if (tx.rows.length < avant) console.log(`[Finance] ${avant - tx.rows.length} achat(s) de comptes de l'équipe exclu(s) des revenus`); }
   let brutF = 0, commF = 0, netF = 0; const parPlan = {};
   tx.rows.forEach(t => {
     const brut = Number(t.montant_fcfa) || 0;
@@ -3942,7 +3943,8 @@ ${pageText}`;
           if (!_finDateOk(auP)) auP = auj;
           if (!duP || !_finDateOk(duP)) { const n = q.get('tout') ? 3650 : Math.max(1, Math.min(3650, parseInt(q.get('jours') || '30', 10) || 30)); duP = _finDate(_finJ(auP) - (n - 1)); }
           const pr = await _finParams();
-          const repP = await require('./finance_plus').productions({ lire: _finLire, jourSuivant: (d) => _finDate(_finJ(d) + 1), loadBriefs, taux: (await _finTaux(pr)).xof_par_usd, commissionPct: pr.valeurs.commission_chariow_pct }, duP, auP);
+          const _CE = require('./comptes_equipe'), _idsE = await _CE.ids(SUPABASE_URL_INT, SUPABASE_SERVICE_KEY);
+          const repP = await require('./finance_plus').productions({ lire: _finLire, jourSuivant: (d) => _finDate(_finJ(d) + 1), loadBriefs, taux: (await _finTaux(pr)).xof_par_usd, commissionPct: pr.valeurs.commission_chariow_pct, equipe: (t) => _CE.estEquipe(t, _idsE) }, duP, auP);
           return J(200, repP);
         }
         if (req.method === 'GET' && chemin === '/finance/resume') {
@@ -7733,6 +7735,14 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/reorder-top-perf
 // endpoint plutôt qu'une lecture directe du CRM) + briefs (usage) + transactions (dépense),
 // avec la clé service pour tout voir peu importe le compte. Inclut TOUT abonné, qu'il ait ou
 // non été prospect/lead dans le CRM au préalable.
+// comptes-equipe-v1 — GET /crm/comptes-equipe : identifiants et emails des comptes de l'équipe, pour que le CRM les retire des revenus.
+if (req.method === 'GET' && req.url === '/crm/comptes-equipe') {
+  if (!(await crmAdminOk(req))) { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'unauthorized' })); return; }
+  const CE = require('./comptes_equipe');
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ids: [...(await CE.ids(SUPABASE_URL_INT, SUPABASE_SERVICE_KEY))], emails: [...CE.emails()] }));
+  return;
+}
 if (req.method === 'GET' && req.url === '/crm/clients') {
   if (!(await crmAdminOk(req))) { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'unauthorized' })); return; }
   try {
@@ -7747,6 +7757,7 @@ if (req.method === 'GET' && req.url === '/crm/clients') {
     const depuis30 = new Date(Date.now() - 30 * 86400000).toISOString();
     const [produitsS, evtsS] = await Promise.all([lireOk('products?select=user_id,id,creatives'), lireOk(`email_events?created_at=gte.${depuis30}&select=user_id,event_type`)]);
     const CCs = require('./cycle_client');
+    const _CEq = require('./comptes_equipe'), _idsEq = await _CEq.ids(SUPABASE_URL_INT, SUPABASE_SERVICE_KEY);
     const subs = await subsRes.json();
     const usersData = await usersRes.json();
     const users = usersData.users || usersData || [];
@@ -7762,17 +7773,17 @@ if (req.method === 'GET' && req.url === '/crm/clients') {
     const clients = subs.map(sub => {
       const u = usersById[sub.user_id] || {};
       const mesBriefs = briefs.filter(b => b.user_id === sub.user_id);
-      const used = mesBriefs.filter(briefCompteCredits).reduce((s, b) => s + (b.credits_used || 9), 0);
+      // clients-v2 — même calcul que la production (route des briefs) : le forfait donne tout son volume dès le début de la période
+      // (PERF+ 24, GROWTH 48, SCALE 96 par mois ; ×3 en trimestriel), et seules les demandes de la période en cours le consomment.
+      // Avant : le CRM débloquait les crédits semaine par semaine (6 par semaine pour PERF+), d'où « 24 / 12 » ou « 6 / 12 ».
+      const _debutPeriode = sub.started_at ? new Date(sub.started_at).getTime() : 0;
+      const used = mesBriefs.filter(briefCompteCredits).filter(b => sub.type === 'pack' || !_debutPeriode || new Date(b.created_at).getTime() >= _debutPeriode - 60000).reduce((s, b) => s + (b.credits_used || 9), 0);
       let total;
       if (sub.type === 'pack') {
         total = sub.total_credits || 0;
       } else {
-        const started = new Date(sub.started_at);
-        const now = new Date();
-        const startedMidnight = new Date(started.getFullYear(), started.getMonth(), started.getDate());
-        const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const weeksActive = Math.floor((nowMidnight - startedMidnight) / (7 * 86400000)) + 1;
-        total = weeksActive * (sub.credits_per_week || 0);
+        const _base = ({ test: 12, starter: 24, pro: 48, scale: 96 })[sub.plan] ?? ((sub.credits_per_week || 0) * 4);
+        total = sub.cycle === 'quarterly' ? _base * 3 : _base;
       }
       const mesTx = transactions.filter(t => t.user_id === sub.user_id);
       const totalDepense = mesTx.reduce((s, t) => s + (t.montant_fcfa || 0), 0);
@@ -7788,6 +7799,7 @@ if (req.method === 'GET' && req.url === '/crm/clients') {
         credits_used: used, credits_total: Math.max(total, 0),
         total_depense_fcfa: totalDepense,
         nb_achats: mesTx.length,
+        interne: _CEq.estEquipe({ user_id: sub.user_id, email: u.email }, _idsEq),   // comptes-equipe-v1 : compte de l'équipe, jamais compté comme revenu
         premier_achat: mesTx[0]?.created_at || sub.started_at,
         sante: (() => { try {
           const etat = CCs.etatClient({ subs: subs.filter(s => s.user_id === sub.user_id), briefs: mesBriefs, produits: produitsS.filter(p => p.user_id === sub.user_id), journal: [], offres: OFFERS, labels: PLAN_LABELS });
