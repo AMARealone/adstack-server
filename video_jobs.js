@@ -205,6 +205,8 @@ async function handle(req, res, deps) {
       if (b.consignes) env.push({ name: 'CONSIGNES', value: String(b.consignes).slice(0, 7000) })
       if (b.modele && /^veo-[\w.\-]+$/.test(b.modele)) env.push({ name: 'MODELE', value: b.modele })
       if (b.niveau && /^(Problem|Solution|Product|Most) Aware$/.test(b.niveau)) env.push({ name: 'NIVEAU', value: b.niveau })
+      if (b.arret === 'plan') env.push({ name: 'ARRET', value: 'plan' })   // texte-dabord-v1 : la machine s'arrête après le texte et le plan, avant toute image et tout clip
+      if (b.neuf) env.push({ name: 'REPRISE_NEUVE', value: '1' })           // texte-dabord-v1 : réécrire le texte = repartir de zéro (aucune réponse déjà payée n'est relue, un nouveau dossier de reprise est écrit)
       let synUrl = ''
       if (b.test) {
         env.push({ name: 'TEST', value: '1' })
