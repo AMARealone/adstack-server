@@ -7487,6 +7487,18 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context(\
       (Date.now() - new Date(b.generation_started_at).getTime()) < FENETRE_GENERATION_ACTIVE_MS
     );
 
+    // cible-unique-v1 (23 nov. 2026) — décision du fondateur : au seuil de 18 angles sur une cible, AUCUN élargissement automatique.
+    // La cible est gardée ; le fondateur reçoit une alerte (une seule fois par cible) et décide lui-même comment l'élargir
+    // (il l'écrit dans le champ « cible » de la fiche produit : l'Analyste l'applique comme une cible imposée).
+    const seuilAtteint = nbAnglesCibleCourante >= SEUIL_ANGLES_AVANT_ROTATION;
+    if (seuilAtteint && marche.alerte_seuil_cible !== (signatureCibleActuelle || cibleActuelle)) {
+      try {
+        await notifierAdmin(`🎯 Cible à élargir — ${String((product.marche && product.marche.produit) || productId).slice(0, 60)}`,
+          `<p>La cible <strong>${String(cibleActuelle || '?').replace(/</g, '&lt;')}</strong> a ${nbAnglesCibleCourante} angles exploités (seuil : ${SEUIL_ANGLES_AVANT_ROTATION}).</p><p>Rien n'a changé : les prochaines commandes restent sur cette cible tant que tu n'as pas décidé. Pour l'élargir, écris la nouvelle cible dans le champ « cible » de la fiche produit ; l'Analyste l'appliquera à la commande suivante.</p>`);
+        await fetch(`${SUPABASE_URL_INT}/rest/v1/products?id=eq.${productId}`, { method: 'PATCH', headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ marche: { ...marche, alerte_seuil_cible: signatureCibleActuelle || cibleActuelle } }) });
+      } catch (eA) { console.warn('[renewal-context] alerte seuil :', eA.message); }
+    }
+
     let apprentissage = null; // appr-client-v1
     try { apprentissage = await apprentissagePourProduit(productId, cibleActuelle, signatureCibleActuelle, angleGagnant, parseInt(new URL(req.url, 'http://x').searchParams.get('nb_angles') || '4', 10)); } catch (_) {}
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -7497,7 +7509,8 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context(\
       cibleActuelle,
       anglesHistorique,
       nbAnglesCibleCourante,
-      rotationNecessaire: nbAnglesCibleCourante >= SEUIL_ANGLES_AVANT_ROTATION,
+      rotationNecessaire: false,   // cible-unique-v1 : jamais d'élargissement automatique, voir seuilAtteint
+      seuilAtteint,
       ctsUtilisesDernierLot,
       ctGagnants,
       historiqueCreatives,
@@ -11822,7 +11835,7 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
     // Description de la cible pour ce lot — calculée une seule fois, réutilisée à la fois pour
     // l'entrée de livraison globale ET pour chaque créative individuelle (nouveau : avant, seule
     // la livraison globale la connaissait, aucune créative ne savait à quelle cible elle appartenait).
-    const cibleCeLot = [deliverables.marche?.persona?.nom, deliverables.marche?.persona?.role, deliverables.marche?.persona?.age ? `${deliverables.marche.persona.age} ans` : null, deliverables.marche?.persona?.ville].filter(Boolean).join(', ') || null;
+    let cibleCeLot = [deliverables.marche?.persona?.nom, deliverables.marche?.persona?.role, deliverables.marche?.persona?.age ? `${deliverables.marche.persona.age} ans` : null, deliverables.marche?.persona?.ville].filter(Boolean).join(', ') || null;
     // Cause profonde corrigée (la même cible apparaît dupliquée plusieurs fois côté client —
     // "Aïssatou, Aïssatou, Aïssatou" — une par batch au lieu d'une seule avec tous les batches
     // dessous) : le client regroupe les livraisons par égalité EXACTE du texte cibleCeLot
@@ -11831,7 +11844,22 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
     // l'instruction de réutilisation — assez pour casser une comparaison de texte exact.
     // Signature stable ajoutée ici, sans le prénom, réservée à l'identité/au regroupement —
     // cibleCeLot reste inchangé pour l'affichage (le prénom reste agréable à lire).
-    const cibleSignatureCeLot = [deliverables.marche?.persona?.sexe, deliverables.marche?.persona?.role, deliverables.marche?.persona?.age, deliverables.marche?.persona?.ville].filter(Boolean).join('|').toLowerCase().trim() || null;
+    let cibleSignatureCeLot = [deliverables.marche?.persona?.sexe, deliverables.marche?.persona?.role, deliverables.marche?.persona?.age, deliverables.marche?.persona?.ville].filter(Boolean).join('|').toLowerCase().trim() || null;
+    // cible-unique-v1 (23 nov. 2026) — décision du fondateur : UNE cible par produit, gardée « un bon bout de temps » (même prénom, même profil) ;
+    // seuls les angles changent d'un lot à l'autre. La cible ne change que si l'Analyste l'écrit (« NOUVELLE CIBLE (… ) » en S1 : cible imposée par le client
+    // dans sa fiche produit, ou élargissement décidé par le fondateur). Sinon, ce lot est rattaché à la cible du lot précédent : même entrée dans AdBoard,
+    // même persona (prénom, portrait), et le prénom de l'hypothèse est aligné pour que la commande suivante reparte du même nom.
+    const lotPrecedent = [...existingDeliveries].reverse().find(d => d && d.ticketId !== ticketId && (d.cible || d.cible_signature));
+    const nouvelleCibleEcrite = /NOUVELLE CIBLE\s*\(/i.test(String(deliverables.synthesis || ''));
+    const personaGardee = lotPrecedent && !nouvelleCibleEcrite && existing.marche?.persona?.nom ? existing.marche.persona : null;
+    if (lotPrecedent && !nouvelleCibleEcrite) {
+      if (cibleCeLot !== lotPrecedent.cible) console.log(`[Push] cible-unique : lot rattaché à la cible « ${lotPrecedent.cible} » (l'hypothèse disait « ${cibleCeLot} », sans NOUVELLE CIBLE écrite)`);
+      cibleCeLot = lotPrecedent.cible || cibleCeLot; cibleSignatureCeLot = lotPrecedent.cible_signature || cibleSignatureCeLot;
+      const ancienNom = String(personaGardee?.nom || '').split(',')[0].trim(), nouveauNom = String(deliverables.marche?.persona?.nom || '').split(',')[0].trim();
+      if (ancienNom.length >= 3 && nouveauNom.length >= 3 && ancienNom !== nouveauNom && /^[\p{L}\-' ]+$/u.test(nouveauNom) && deliverables.synthesis) {
+        deliverables.synthesis = String(deliverables.synthesis).replace(new RegExp('(^|[^\\p{L}])' + nouveauNom.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\p{L}])', 'gu'), (m, a) => a + ancienNom);
+      }
+    }
 
     const existingIds = new Set(existingCreatives.map(c => c.id));
     const newCreatives = [];
@@ -11956,9 +11984,10 @@ async function pushDeliverablesToProduct(productId, ticketId, deliverables, alre
       // même cible démographique. Comparaison basée maintenant sur les faits stables (sexe,
       // rôle, âge, ville) — jamais le prénom, qui n'est qu'une habillage narratif.
       const signaturePersona = (p) => p ? [p.sexe, p.role, p.age, p.ville].filter(Boolean).join('|').toLowerCase().trim() : '';
-      const memePerson = signaturePersona(existing.marche?.persona) && signaturePersona(existing.marche?.persona) === signaturePersona(deliverables.marche.persona);
+      const memePerson = !!personaGardee || (signaturePersona(existing.marche?.persona) && signaturePersona(existing.marche?.persona) === signaturePersona(deliverables.marche.persona));
       patchBody.marche = {
         ...deliverables.marche,
+        ...(personaGardee ? { persona: personaGardee } : {}),   // cible-unique-v1
         // Nécessaire pour compter les angles du SEUL persona courant (voir /products/:id/renewal-context) —
         // un changement de persona (rotation après 18 angles) redémarre le compteur à zéro.
         persona_started_at: memePerson
