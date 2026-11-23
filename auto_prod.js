@@ -157,7 +157,7 @@ async function routes(req, res, deps) {
       const parJeton = cmd.auto && cmd.auto.jeton && egal(b.jeton, cmd.auto.jeton)
       if (!parJeton && !(await deps.adminOk(req))) return rep(res, 403, { error: 'non autorisé' }), true
       const r = b.resume && typeof b.resume === 'object' ? b.resume : null
-      const txt = r ? `${r.images || 0}/${r.images_attendues || 0} images, ${r.videos || 0}/${r.videos_attendues || 0} vidéos, ${r.copies || 0}/${r.copies_attendues || 0} ad copies` : ''
+      const txt = r ? `${r.images || 0}/${r.images_attendues || 0} images, ${r.videos || 0}/${r.videos_attendues || 0} vidéos, ${r.copies || 0}/${r.copies_attendues || 0} ad copies` + (r.videos_a_revoir ? ` — ${r.videos_a_revoir} vidéo(s) jugée(s) non livrable(s) par le moteur` : '') : ''
       const dossier = typeof b.dossier_url === 'string' && /^https:\/\//.test(b.dossier_url) ? { url: b.dossier_url.slice(0, 500), date: new Date().toISOString(), fichiers: Number(b.dossier_fichiers) || null, mo: Number(b.dossier_mo) || null, auto: !!parJeton } : null
       const avant = cmd.auto || {}
       await majAuto(id, deps, (x, c) => {
@@ -169,7 +169,7 @@ async function routes(req, res, deps) {
       if (parJeton && (b.etat === 'prete' || b.etat === 'incomplete') && !avant.prete_le) {
         const envoi = new Date(cmd.created_at).getTime() + H(avant.envoi_h || 36)
         await deps.notifierAdmin(`${b.etat === 'prete' ? '✅ Production prête à vérifier' : '🟠 Production terminée, lot incomplet'} — ${nomDe(cmd)}`,
-          `<p><strong>${nomDe(cmd)}</strong> — ${txt}.</p><p>${b.etat === 'prete' ? 'Tout est rangé dans la carte de la commande. Rien n\'est parti chez le client : vérifie, régénère ce que tu veux, puis envoie.' : 'Certains livrables manquent : ouvre la commande, « Reprendre » ne refait que ce qui manque.'}</p><p>Envoi prévu au client : <strong>${heure(envoi)}</strong>${envoiAuto() ? ' (envoi automatique allumé)' : ' (c\'est toi qui envoies)'}.</p>${dossier ? '<p><a href="' + dossier.url + '">Télécharger le dossier complet de la production</a></p>' : ''}${lien(id)}`)
+          `<p><strong>${nomDe(cmd)}</strong> — ${txt}.</p><p>${b.etat === 'prete' ? 'Tout est rangé dans la carte de la commande. Rien n\'est parti chez le client : vérifie, régénère ce que tu veux, puis envoie.' : (r && r.videos_a_revoir ? 'Rien n\'est parti chez le client. ' + r.videos_a_revoir + ' vidéo(s) jugée(s) non livrable(s) : ouvre la commande, regarde-la et corrige les plans fautifs avec « 🩹 Corriger des plans » (quelques dollars) ou « ↻ Refaire ». ' : '') + 'Si des livrables manquent, « Reprendre » ne refait que ce qui manque.'}</p><p>Envoi prévu au client : <strong>${heure(envoi)}</strong>${envoiAuto() ? ' (envoi automatique allumé)' : ' (c\'est toi qui envoies)'}.</p>${dossier ? '<p><a href="' + dossier.url + '">Télécharger le dossier complet de la production</a></p>' : ''}${lien(id)}`)
         if (deps.ADMIN_USER_ID && deps.notifyUserBoth) deps.notifyUserBoth(deps.ADMIN_USER_ID, { title: b.etat === 'prete' ? '✅ Production prête à vérifier' : '🟠 Lot incomplet', body: `${nomDe(cmd)} — ${txt}`, url: '/factory/production', type: 'info' }).catch(() => {})
       }
       if (parJeton && b.etat === 'echec') await deps.notifierAdmin(`❌ Production automatique en échec — ${nomDe(cmd)}`, `<p>${String(b.erreur || 'erreur inconnue').slice(0, 300)}</p><p><strong>Lance ou reprends la production à la main dans Factory.</strong></p>${lien(id)}`)

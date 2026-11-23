@@ -254,6 +254,49 @@ async function handle(req, res, deps) {
       for (const [k, x] of recents) if (x.execution === ex) recents.delete(k)
       return rep(res, r.ok ? 200 : 502, r.ok ? { ok: true } : { error: (r.d.error && r.d.error.message) || 'HTTP ' + r.status }), true
     }
+    // ── correcteur-cible-v1 (23 nov. 2026) : corriger des plans d'une vidéo livrée sans repayer la vidéo ──
+    // Factory envoie { commande_id, slot, plans: [{ bloc, consigne }] }. La machine est relancée avec EXACTEMENT les réglages de la vidéo livrée
+    // (lus dans son manifeste de reprise) ; les corrections déjà faites sur cette vidéo sont reprises, une nouvelle consigne remplace l'ancienne pour le même plan.
+    if (req.method === 'POST' && url === '/video-jobs/corriger') {
+      const b = JSON.parse((await lire(req, 60000)) || '{}')
+      const cmd = String(b.commande_id || ''), slot = String(parseInt(b.slot, 10) || 1)
+      if (!/^[A-Za-z0-9\-]{8,60}$/.test(cmd)) return rep(res, 400, { error: 'commande_id invalide' }), true
+      const neufs = (Array.isArray(b.plans) ? b.plans : []).map((x) => ({ bloc: parseInt(x && x.bloc, 10), consigne: String((x && x.consigne) || '').replace(/\s+/g, ' ').trim().slice(0, 1500) })).filter((x) => x.bloc >= 1 && x.bloc <= 40 && x.consigne.length >= 4)
+      if (!neufs.length) return rep(res, 400, { error: 'Aucun plan à corriger : choisissez un plan et écrivez ce qu\'il doit montrer.' }), true
+      const cmdSafe = cmd.replace(/[^\w\-]/g, '').slice(0, 40)
+      let m = null
+      try { const r = await fetch(`${PUB()}/ct-video/reprises/${cmdSafe}_s${slot}__manifest.json?t=${Date.now()}`); if (r.ok) m = await r.json() } catch (_) { }
+      if (!m || !m.pid || !m.ct || !Array.isArray(m.fichiers) || !m.fichiers.length) return rep(res, 409, { error: 'Cette vidéo ne peut pas être corrigée plan par plan : elle a été produite avant le correcteur, ou une autre vidéo l\'a remplacée. Utilisez « Refaire ».' }), true
+      if (!['livree', 'incomplete'].includes(m.etat)) return rep(res, 409, { error: 'La dernière production de cette vidéo n\'est pas terminée (état : ' + (m.etat || '?') + ').' }), true
+      if (!m.empreinte) return rep(res, 409, { error: 'Cette vidéo a été produite avant le correcteur : utilisez « Refaire ».' }), true
+      // une machine encore en marche sur cette vidéo : on ne corrige pas par-dessus
+      try {
+        const rl = await api(deps, 'GET', base(deps) + '/executions?pageSize=40')
+        for (const x of ((rl && rl.ok && rl.d && rl.d.executions) || [])) {
+          if (x.completionTime) continue
+          const ev = [].concat(...(((x.template || {}).containers) || []).map((c) => c.env || []))
+          const val = (n) => (ev.find((e) => e.name === n) || {}).value
+          if (val('COMMANDE_ID') === cmd && String(val('SLOT') || '1') === slot) return rep(res, 409, { error: 'Une production tourne déjà sur cette vidéo : attendez sa fin ou annulez-la.' }), true
+        }
+      } catch (_) { }
+      const parBloc = new Map((Array.isArray(m.corrections) ? m.corrections : []).filter((x) => x && x.bloc).map((x) => [Number(x.bloc), { bloc: Number(x.bloc), consigne: String(x.consigne || '') }]))
+      neufs.forEach((x) => parBloc.set(x.bloc, x))
+      const plans = [...parBloc.values()].sort((x, y) => x.bloc - y.bloc).slice(0, 8)
+      const env = [{ name: 'COMMANDE_ID', value: cmd }, { name: 'CT_ID', value: String(m.ct) }, { name: 'SLOT', value: slot }, { name: 'CORRECTION', value: JSON.stringify({ plans }) }]
+      if (m.angle) env.push({ name: 'ANGLE', value: String(m.angle).slice(0, 300) })
+      if (m.niveau) env.push({ name: 'NIVEAU', value: String(m.niveau) })
+      if (m.modele && /^[\w.\-]{3,60}$/.test(m.modele)) env.push({ name: 'MODELE', value: m.modele })
+      if (m.consignes) env.push({ name: 'CONSIGNES', value: String(m.consignes).slice(0, 7000) })
+      if (m.synthese_url && /^https:\/\//.test(m.synthese_url)) env.push({ name: 'SYNTHESE_URL', value: m.synthese_url })
+      if (m.test) env.push({ name: 'TEST', value: '1' })
+      const max = parseFloat(b.max_usd); if (max >= 1 && max <= 15) env.push({ name: 'CORRECTION_MAX_USD', value: String(max) })
+      const r = await api(deps, 'POST', base(deps) + ':run', { overrides: { containerOverrides: [{ env }], taskCount: 1 } })
+      if (!r.ok) return rep(res, 502, { error: 'Cloud Run a refusé le lancement : ' + ((r.d.error && r.d.error.message) || r.status), http: r.status }), true
+      const nom = (((r.d.metadata || {}).name) || '').split('/').pop() || ''
+      recents.set(cmd + '|' + slot, { t: Date.now(), execution: nom })
+      console.log('🩹 CORRECTION VIDÉO lancée : commande ' + cmd + ' slot ' + slot + ' — ' + plans.map((x) => 'plan ' + x.bloc).join(', ') + ' → ' + nom)
+      return rep(res, 200, { execution: nom, plans }), true
+    }
     // ── avancement d'une vidéo (fichier d'état écrit par la machine sur R2, relayé ici : pas de souci CORS) ──
     if (req.method === 'GET' && url === '/video-jobs/status') {
       const q = new URL(req.url, 'http://x').searchParams
@@ -331,7 +374,8 @@ async function handle(req, res, deps) {
       // forme-mesuree-v1 : ce que le moteur a relevé sur la vidéo source de chaque CT déjà produit (qui porte la vidéo, comment) : un fait, pas une description
       const FAM = { une_personne_face_camera: 'face_camera', voix_off_sur_plans: 'voix_off', mini_plans_voix_off_ou_chanson: 'voix_off', film_decoupe_plusieurs_personnes: 'dialogue' }
       await Promise.all(cts.map(async (c) => { try { const ac = new AbortController(), tm = setTimeout(() => ac.abort(), 2500); const r = await fetch(PUB() + '/ct-video/formes/' + encodeURIComponent(c.id) + '.json', { signal: ac.signal }); clearTimeout(tm); if (r.ok) { const j = await r.json(); if (j && j.fabrication) c._forme = { famille: j.anime ? 'animation' : (FAM[j.fabrication] || 'autre'), detail: String(j.fabrication).replace(/_/g, ' ') + (j.anime ? ', animé' : '') } } } catch (_) { } }))
-      parts.push({ type: 'text', text: '━━━ GALERIE DE CT VIDÉO : ' + cts.length + ' ━━━\n' + cts.map((c, i) => (i + 1) + '. id=' + c.id + ' | ' + (c.name || '') + ' | durée ' + (c.duree_s || '?') + ' s | niche ' + f(c.niche) + ' | conscience ' + f(c.awareness) + ' | style ' + f(c.styleTags) + ' | blocs ' + f(c.blocs) + (c._forme ? ' | FORME MESURÉE : ' + c._forme.famille + ' (' + c._forme.detail + ')' : '') + '\n   ' + [c.meta, c.hook && ('HOOK : ' + c.hook), c.chute && ('CHUTE : ' + c.chute), c.produit_compatible && ('PRODUITS OK : ' + f(c.produit_compatible)), c.angles_fit && ('ANGLES : ' + f(c.angles_fit)), c.lieux_interdits && ('LIEUX INTERDITS : ' + f(c.lieux_interdits)), c.epic && ('EPIC : ' + f(c.epic))].filter(Boolean).join(' · ').slice(0, 900)).join('\n') })
+      const ligneCT = (c, i) => (i + 1) + '. id=' + c.id + ' | ' + (c.name || '') + ' | durée ' + (c.duree_s || '?') + ' s | niche ' + f(c.niche) + ' | conscience ' + f(c.awareness) + ' | style ' + f(c.styleTags) + ' | blocs ' + f(c.blocs) + (c._forme ? ' | FORME MESURÉE : ' + c._forme.famille + ' (' + c._forme.detail + ')' : '') + '\n   ' + [c.meta, c.hook && ('HOOK : ' + c.hook), c.chute && ('CHUTE : ' + c.chute), c.produit_compatible && ('PRODUITS OK : ' + f(c.produit_compatible)), c.angles_fit && ('ANGLES : ' + f(c.angles_fit)), c.lieux_interdits && ('LIEUX INTERDITS : ' + f(c.lieux_interdits)), c.epic && ('EPIC : ' + f(c.epic))].filter(Boolean).join(' · ').slice(0, 900)
+      parts.push({ type: 'text', text: '━━━ GALERIE DE CT VIDÉO : ' + cts.length + ' ━━━\n' + cts.map(ligneCT).join('\n') })
       const plan = b.mode === 'plan'
       const raw = await deps.callGeminiPro((plan ? SYSTEME_PLAN : SYSTEME_SELECTION).replace('{{N}}', String(n)), parts, 12000, { modele: deps.MODELES.creative, temperature: 0.3, thinkingBudget: 12288, logLabel: 'Choix CT vidéo', timeoutMs: 150000, typeAppel: 'selection_ct_video' })
       const txt = String(raw || ''), d = txt.indexOf('{'), e = txt.lastIndexOf('}')
@@ -350,6 +394,31 @@ async function handle(req, res, deps) {
         if (doublon) console.log('🎞 SELECT-CT-VIDEO — ⚠ dispositifs en double dans le lot : ' + choix.map((c) => c.id + '=' + c.famille).join(', ') + (autres ? ' alors que ' + autres + ' CT d\'un autre dispositif mesuré existent' : ' (aucun autre dispositif mesuré dans la galerie)'))
         var diversite = doublon ? { doublon: true, familles: fams, autres_dispositifs_mesures: autres } : null
       } catch (eD) { var diversite = null }
+      // zero-redondance-v3 (23 nov. 2026) — en production automatique, personne ne voit l'alerte : un doublon de dispositif est REMPLACÉ ici.
+      // Pour chaque vidéo en double (la première de la famille est gardée), l'agent rechoisit un CT pour le même angle et le même niveau, parmi les CT dont le
+      // dispositif MESURÉ n'est pas encore dans le lot. Sans CT d'un autre dispositif mesuré, le doublon reste et l'alerte part comme avant.
+      if (plan && diversite && diversite.doublon && diversite.autres_dispositifs_mesures > 0) {
+        try {
+          const vusF = new Set(), aRemplacer = []
+          choix.forEach((c) => { if (!c.famille) return; if (vusF.has(c.famille)) aRemplacer.push(c); else vusF.add(c.famille) })
+          for (const c of aRemplacer) {
+            const pris = new Set(choix.map((x) => x.id)), famsPrises = new Set(choix.filter((x) => x !== c).map((x) => x.famille).filter(Boolean))
+            const cand = cts.filter((x) => x._forme && !famsPrises.has(x._forme.famille) && !pris.has(String(x.id)))
+            if (!cand.length) continue
+            const parts2 = [parts[0], parts[1], { type: 'text', text: 'ANGLE À SERVIR :\n1. ' + c.angle + '\nNIVEAU DE CONSCIENCE IMPOSÉ : la vidéo DOIT porter le niveau ' + (c.niveau_video || 'Solution Aware') + '.\nLes autres vidéos du lot portent déjà ces dispositifs : ' + [...famsPrises].join(', ') + '. Celle-ci doit en avoir un autre : tous les CT ci-dessous en ont un autre, mesuré sur leur vidéo source.' },
+              { type: 'text', text: '━━━ CT POSSIBLES : ' + cand.length + ' ━━━\n' + cand.map(ligneCT).join('\n') }]
+            const raw2 = await deps.callGeminiPro(SYSTEME_SELECTION.replace('{{N}}', '1'), parts2, 8000, { modele: deps.MODELES.creative, temperature: 0.2, thinkingBudget: 6144, logLabel: 'Remplacement doublon CT vidéo', timeoutMs: 120000, typeAppel: 'selection_ct_video' })
+            const t2 = String(raw2 || ''), d2 = t2.indexOf('{'), e2 = t2.lastIndexOf('}')
+            let n2 = null; try { n2 = (JSON.parse(t2.slice(d2, e2 + 1)).choix || []).find((x) => x && cand.some((y) => String(y.id) === String(x.id))) } catch (_) { }
+            if (!n2) continue
+            const g2 = cand.find((y) => String(y.id) === String(n2.id))
+            console.log('🎞 SELECT-CT-VIDEO — doublon remplacé : ' + c.id + ' (' + c.famille + ') → ' + g2.id + ' (' + g2._forme.famille + ') pour « ' + String(c.angle).slice(0, 60) + ' »')
+            Object.assign(c, { remplace: c.id, id: String(g2.id), famille: g2._forme.famille, famille_mesuree: true, raison: String(n2.raison || '').slice(0, 600) + ' (Remplace un CT au même dispositif qu\'une autre vidéo du lot.)' })
+          }
+          const fams2 = choix.map((c) => c.famille).filter(Boolean)
+          diversite = fams2.length > 1 && new Set(fams2).size < fams2.length ? { doublon: true, familles: fams2, autres_dispositifs_mesures: cts.filter((c) => c._forme && !fams2.includes(c._forme.famille)).length } : (aRemplacer.length ? { doublon: false, remplaces: choix.filter((c) => c.remplace).map((c) => ({ avant: c.remplace, apres: c.id })) } : diversite)
+        } catch (eR) { console.log('Remplacement du doublon impossible : ' + eR.message) }
+      }
       // offre-forte-v1 : une vidéo Most Aware n'est gardée que si l'offre est jugée irrésistible (la vérification finale est refaite par Factory)
       //   un choix Most Aware malgré une offre ordinaire est RETIRÉ (pas rebaptisé : son CT est un CT d'offre) ; Factory rechoisit alors un CT au bon niveau
       if (plan && forceOffre !== 'irresistible') { const av = choix.length; choix = choix.filter((c) => !/most/i.test(c.niveau_video)); if (choix.length < av) console.log('🎞 SELECT-CT-VIDEO — ' + (av - choix.length) + ' vidéo(s) Most Aware retirée(s) : offre ' + (forceOffre || 'non jugée')) }
