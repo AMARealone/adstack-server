@@ -56,7 +56,15 @@ async function lancerOuvrier(b, deps) {
 const lien = (id) => `<p><a href="${FACTORY}/production?cmd=${encodeURIComponent(id)}" style="color:#5B8DEF;">Ouvrir la commande dans Factory →</a></p>`
 
 // ── Passage régulier (toutes les 30 à 60 min, depuis /cron/check-pending) ──
+// auto-prod-v2 : deux déclencheurs (le minuteur interne du serveur et cron-job.org) peuvent tomber en même temps ;
+// un seul passage à la fois, sinon la même commande pourrait être lancée deux fois.
+let passageEnCours = false
 async function cron(deps) {
+  if (passageEnCours) { console.log('[Auto-prod] passage déjà en cours, celui-ci est ignoré'); return { ignore: true } }
+  passageEnCours = true
+  try { return await cron0(deps) } finally { passageEnCours = false }
+}
+async function cron0(deps) {
   const bilan = { lancees: 0, rappels: 0, envoyees: 0, alertes: 0 }
   const briefs = await deps.loadBriefs()
   const now = Date.now()

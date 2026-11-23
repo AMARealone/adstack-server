@@ -12192,3 +12192,16 @@ if (!process.env.AGENT_JOB) setInterval(() => {   // agents-cloud-v1 : la machin
     res.on('end', () => console.log(`[Auto-ping] OK (${res.statusCode})`));
   }).on('error', (e) => console.log(`[Auto-ping] Erreur : ${e.message}`));
 }, 10 * 60 * 1000); // toutes les 10 minutes — bien en dessous du seuil de 15 min de Render
+
+// auto-prod-v2 — le serveur vérifie LUI-MÊME les commandes toutes les 15 minutes : fin de l'attente → production lancée,
+// heure d'envoi → rappel. Avant, tout dépendait de cron-job.org ; le 23 nov. il n'a pas appelé et une commande est restée
+// 6 h en attente sans que personne ne soit prévenu. cron-job.org reste en secours (un seul passage à la fois, voir auto_prod.js).
+// AUTO_PROD_INTERNE=0 sur Render coupe ce minuteur.
+if (!process.env.AGENT_JOB && process.env.AUTO_PROD_INTERNE !== '0') {
+  const _apTour = async () => {
+    try { const b = await require('./auto_prod').cron(depsAutoProd()); if (b && !b.ignore) console.log('[Auto-prod] passage interne fait'); }
+    catch (e) { console.error('[Auto-prod] passage interne :', e.message); }
+  };
+  setTimeout(_apTour, 2 * 60 * 1000);          // premier passage 2 min après le démarrage (après un redéploiement aussi)
+  setInterval(_apTour, 15 * 60 * 1000);
+}
