@@ -4986,7 +4986,7 @@ HARD LOCKS :
         // par rapport au lot précédent pour ce même produit, pour éviter la répétition visuelle.
         let rotationTxt = '';
         if (excludeIds && excludeIds.length) {
-          rotationTxt = `\n\nRÈGLE DE ROTATION (commande de renouvellement pour ce produit) : ces CT ont déjà été utilisés au lot précédent pour ce même produit : ${excludeIds.join(', ')}. Au moins 50 à 60% de ta sélection de ${count} CTs doit être composée de CT DIFFÉRENTS de cette liste — priorise la nouveauté visuelle. Tu peux réutiliser jusqu'à ~40-50% de ces CT si la galerie ne permet pas assez de diversité, jamais plus.`;
+          rotationTxt = `\n\nRÈGLE DE ROTATION (commande de renouvellement pour ce produit) : ces CT ont déjà été utilisés au lot précédent pour ce même produit : ${excludeIds.join(', ')}. ZÉRO REDONDANCE (décision du fondateur, 23 nov. 2026) : aucun de ces CT ne revient dans ta sélection de ${count} CTs, et la famille de concept de chacun d'eux (sa structure : comparatif, avant-après, témoignage, liste, offre manuscrite, produit en main…) ne revient pas non plus tant que la galerie offre un CT compatible d'une autre famille. Un client qui reçoit ses premières productions doit voir, d'un lot à l'autre, des créatives qui ne se ressemblent ni par le modèle ni par l'idée. Tu ne reprends un de ces CT que si la galerie ne contient plus aucun CT compatible, et tu le dis.`;
         }
 
         // v5.62 — ASSETS DU CLIENT : le choix des CT tient compte de ce que le client a réellement fourni, pour que les créatives les mettent en valeur.
