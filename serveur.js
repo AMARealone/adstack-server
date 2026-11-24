@@ -11064,17 +11064,17 @@ async function loadBriefs(idUnique) {
   }
 }
 
+let _colsAutoOk = null;   // alertes-sobres-v1 : null = pas encore su, true = colonnes auto/dossiers présentes, false = absentes
 async function saveBriefs(briefs) {
   invaliderListeCommandes();
   try {
     for (const b of briefs) {
-      const r = await fetch(`${SUPABASE_URL_INT}/rest/v1/commandes`, {
-        method: 'POST',
-        headers: {
-          apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-          'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal'
-        },
-        body: JSON.stringify({
+      // alertes-sobres-v1 (24 nov. 2026) : le suivi de la production automatique (champ « auto » : lancée, rappel d'envoi déjà fait…) et les dossiers
+      // n'étaient JAMAIS écrits en base (ils manquaient à cette liste) : à chaque passage du cron, le serveur croyait n'avoir rien envoyé et renvoyait
+      // « C'est l'heure d'envoyer » toutes les 10 à 30 minutes. Ils sont écrits quand la commande les porte ; si la table n'a pas encore ces colonnes,
+      // la sauvegarde est refaite sans eux (rien d'autre n'est perdu) et le journal le dit.
+      const extra = (_colsAutoOk === false) ? {} : Object.assign({}, b.auto !== undefined ? { auto: b.auto } : {}, b.dossiers !== undefined ? { dossiers: b.dossiers } : {});
+      const corps = (x) => JSON.stringify(Object.assign({
           id: b.id, created_at: b.created_at, status: b.status, client: b.client,
           product: b.product, quantity: b.quantity, history: b.history, photo_nobg: b.photo_nobg,
           deliverables: b.deliverables, started_at: b.started_at, done_at: b.done_at,
@@ -11091,8 +11091,21 @@ async function saveBriefs(briefs) {
           // persisté. Au prochain chargement, generation_version revenait à sa valeur d'avant,
           // recréant EXACTEMENT la même collision d'id qu'avant le premier fix.
           generation_version: b.generation_version || 1,
-        })
+        }, x));
+      const envoyer = (x) => fetch(`${SUPABASE_URL_INT}/rest/v1/commandes`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal'
+        },
+        body: corps(x)
       });
+      let r = await envoyer(extra);
+      if (!r.ok && Object.keys(extra).length) {
+        const t = await r.text();
+        if (/auto|dossiers|PGRST204|42703|column/i.test(t)) { if (_colsAutoOk !== false) console.error('[Commandes] colonnes « auto » / « dossiers » absentes de la table commandes : ajoute-les dans Supabase (alter table commandes add column if not exists auto jsonb, add column if not exists dossiers jsonb). Sauvegarde refaite sans elles.'); _colsAutoOk = false; r = await envoyer({}); }
+        else { console.error('[Commandes] Sauvegarde échouée pour', b.id, ':', t); continue; }
+      } else if (r.ok && Object.keys(extra).length) _colsAutoOk = true;
       if (!r.ok) console.error('[Commandes] Sauvegarde échouée pour', b.id, ':', await r.text());
     }
   } catch(e) {

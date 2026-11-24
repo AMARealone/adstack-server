@@ -59,6 +59,12 @@ const lien = (id) => `<p><a href="${FACTORY}/production?cmd=${encodeURIComponent
 // auto-prod-v2 : deux déclencheurs (le minuteur interne du serveur et cron-job.org) peuvent tomber en même temps ;
 // un seul passage à la fois, sinon la même commande pourrait être lancée deux fois.
 let passageEnCours = false
+// alertes-sobres-v1 (24 nov. 2026) — fondateur : « 2 ou 3 alertes au maximum, pas toutes les 10 minutes ». Le suivi « auto » n'était pas écrit en base
+// (corrigé dans saveBriefs) ; en plus, ce garde en mémoire plafonne chaque alerte et chaque lancement même si la base ne garde pas l'état.
+const memo = new Map()   // « id|genre » → { n, t }
+const deja = (id, genre) => memo.get(id + '|' + genre) || { n: 0, t: 0 }
+const note = (id, genre) => { const x = deja(id, genre); memo.set(id + '|' + genre, { n: x.n + 1, t: Date.now() }) }
+const RAPPELS_ENVOI_MAX = 3
 async function cron(deps) {
   if (passageEnCours) { console.log('[Auto-prod] passage déjà en cours, celui-ci est ignoré'); return { ignore: true } }
   passageEnCours = true
@@ -78,7 +84,8 @@ async function cron0(deps) {
       const infos = `<p>Client : ${(b.client && b.client.email) || 'email non renseigné'} — ${b.quantity} créatives · offre ${a.delai_h} h</p><p style="color:#888;font-size:12px">Demande reçue le ${heure(new Date(b.created_at).getTime())} · envoi prévu le ${heure(new Date(b.created_at).getTime() + H(a.envoi_h))} · id ${b.id}</p>`
 
       // 1. Fin de l'attente : la production démarre (ou, sans ouvrier, le fondateur est prévenu comme avant)
-      if (b.status === 'pending' && age >= H(a.attente_h) && !a.lancee_le && !a.alerte_attente) {
+      if (b.status === 'pending' && age >= H(a.attente_h) && !a.lancee_le && !a.alerte_attente && !deja(b.id, 'attente').n) {
+        note(b.id, 'attente')
         if (prodActive()) {
           try {
             const o = await lancerOuvrier(b, deps)
@@ -97,14 +104,19 @@ async function cron0(deps) {
         continue
       }
       // 2. L'ouvrier tourne depuis trop longtemps sans nouvelles : une alerte, une seule
-      if (a.lancee_le && !a.prete_le && !a.alerte_retard && now - new Date(a.lancee_le).getTime() > H(Math.max(5, (a.envoi_h - a.attente_h) * 0.6))) {
-        await majAuto(b.id, deps, (x) => { x.alerte_retard = true })
+      if (a.lancee_le && !a.prete_le && !a.alerte_retard && !deja(b.id, 'retard').n && now - new Date(a.lancee_le).getTime() > H(Math.max(5, (a.envoi_h - a.attente_h) * 0.6))) {
+        note(b.id, 'retard'); await majAuto(b.id, deps, (x) => { x.alerte_retard = true })
         await deps.notifierAdmin(`⚠️ Production automatique en retard — ${nomDe(b)}`, `<p>Lancée le ${heure(new Date(a.lancee_le).getTime())}, la production n'est toujours pas signalée prête${a.etape ? ' (dernière étape : ' + a.etape + ')' : ''}. Ouvre la commande pour voir où elle en est ; « Reprendre » ne refait que ce qui manque.</p>${infos}${lien(b.id)}`)
         bilan.alertes++
       }
-      // 3. Heure d'envoi : envoi automatique si allumé ET lot complet ; sinon un rappel
-      if (age >= H(a.envoi_h) && !a.envoi_traite) {
-        await majAuto(b.id, deps, (x) => { x.envoi_traite = new Date().toISOString() })
+      // 3. Heure d'envoi : envoi automatique si allumé ET lot complet ; sinon un rappel — au plus 3 fois, espacés (à l'heure d'envoi, puis
+      //    au tiers et aux deux tiers du temps qui reste avant l'échéance promise), et plus du tout dès que la commande est envoyée (statut « done »)
+      const nR = Math.max(Number(a.rappels_envoi) || 0, deja(b.id, 'envoi').n), dernierR = Math.max(a.dernier_rappel_envoi ? new Date(a.dernier_rappel_envoi).getTime() : 0, deja(b.id, 'envoi').t)
+      const ecartR = H(Math.max(1, (a.delai_h - a.envoi_h) / RAPPELS_ENVOI_MAX))
+      if (age >= H(a.envoi_h) && nR < RAPPELS_ENVOI_MAX && (!nR || now - dernierR >= ecartR) && !(nR && a.envoyee_auto_le)) {
+        note(b.id, 'envoi')
+        await majAuto(b.id, deps, (x) => { x.envoi_traite = x.envoi_traite || new Date().toISOString(); x.rappels_envoi = nR + 1; x.dernier_rappel_envoi = new Date().toISOString() })
+        if (nR) { await deps.notifierAdmin(`🔔 Rappel ${nR + 1}/${RAPPELS_ENVOI_MAX} : livrables à envoyer — ${nomDe(b)}`, `<p>La commande n'est pas encore envoyée au client. Échéance promise : <strong>${heure(new Date(b.created_at).getTime() + H(a.delai_h))}</strong>.${nR + 1 >= RAPPELS_ENVOI_MAX ? ' C\'est le dernier rappel.' : ''}</p>${infos}${lien(b.id)}`); bilan.rappels++; continue }
         if (a.prete_le && a.complet && envoiAuto()) {
           try {
             const r = await fetch(`http://127.0.0.1:${deps.PORT}/commandes/${b.id}/done`, { method: 'POST' })
