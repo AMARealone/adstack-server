@@ -322,22 +322,29 @@ function etatClient({ subs, briefs, produits, journal, offres, labels }, mainten
 function scoreSante(c, { clics30 = 0, ouvertures30 = 0, avis = 0 } = {}, maintenant = Date.now()) {
   if (!c) return null;
   const raisons = [];
+  // sante-nouveau-v1 (24 nov. 2026) : un client qui venait de payer (PERF+, le jour même) sortait « À risque, 10/100 » — « utilise peu », « aucune demande »,
+  // « n'ouvre pas nos emails » — parce que le score le jugeait comme s'il était là depuis un mois. Chaque signal n'est jugé qu'une fois qu'il a eu le
+  // temps d'exister : l'usage après 7 jours, l'absence de demande à compter du DÉBUT du forfait (pas de la création du monde), les emails après 14 jours.
+  const ageJ = c.startedAt ? (maintenant - c.startedAt) / JOUR : 99;
+  const nouveau = !!c.actif && ageJ < 7;
   const tempsEcoule = c.expiresAt && c.startedAt ? Math.min(1, Math.max(0.05, (maintenant - c.startedAt) / (new Date(c.expiresAt).getTime() - c.startedAt))) : 0.5;
   const pct = c.total > 0 ? c.used / c.total : 0;
-  const usage = Math.min(100, Math.round((pct / tempsEcoule) * 70));   // utilise-t-il ses créatives au rythme du mois ?
-  if (pct / tempsEcoule < 0.5) raisons.push('Utilise peu ses créatives');
-  const jDemande = c.derniereDemande ? (maintenant - c.derniereDemande) / JOUR : 99;
+  const usage = ageJ < 7 ? 70 : Math.min(100, Math.round((pct / tempsEcoule) * 70));   // utilise-t-il ses créatives au rythme du mois ?
+  if (ageJ >= 7 && pct / tempsEcoule < 0.5) raisons.push('Utilise peu ses créatives');
+  const repere = Math.max(c.derniereDemande || 0, c.startedAt || 0);
+  const jDemande = repere ? (maintenant - repere) / JOUR : 99;
   const activite = jDemande <= 7 ? 100 : jDemande <= 14 ? 70 : jDemande <= 30 ? 35 : 0;
   if (jDemande > 14) raisons.push(c.derniereDemande ? `Aucune demande depuis ${Math.round(jDemande)} jours` : 'Aucune demande de production');
-  const emails = Math.min(100, clics30 * 35 + ouvertures30 * 8);
-  if (!clics30 && !ouvertures30) raisons.push('N\'ouvre pas nos emails');
+  const emails = ageJ < 14 && !clics30 && !ouvertures30 ? 60 : Math.min(100, clics30 * 35 + ouvertures30 * 8);
+  if (ageJ >= 14 && !clics30 && !ouvertures30) raisons.push('N\'ouvre pas nos emails');
+  if (nouveau && !c.derniereDemande) raisons.unshift('Nouveau client : première production à lancer');
   const relation = Math.min(100, avis * 25 + (c.topAngle ? 40 : 0));
   let paiement = c.actif ? 100 : 0;
   if (!c.actif) raisons.push('Forfait terminé');
   let score = Math.round(usage * 0.35 + activite * 0.25 + emails * 0.15 + relation * 0.15 + paiement * 0.10);
   if (c.actif && c.joursRestants <= 5 && jDemande > 14) { score = Math.min(score, 35); raisons.unshift('Fin de forfait proche sans activité'); }
   if (c.actif && pct >= 0.75) raisons.unshift('Prêt pour une offre supérieure');
-  return { score, couleur: score >= 70 ? 'vert' : score >= 40 ? 'orange' : 'rouge', raisons: raisons.slice(0, 3) };
+  return { score, couleur: nouveau ? 'bleu' : score >= 70 ? 'vert' : score >= 40 ? 'orange' : 'rouge', nouveau, raisons: raisons.slice(0, 3) };
 }
 
 // ── LE PASSAGE QUOTIDIEN : appelé par /cron/email-sequence. Au plus un email par client et par jour.

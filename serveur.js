@@ -6011,8 +6011,25 @@ if (req.method === 'POST' && req.url === '/webhook/chariow') {
       const phone = customer?.phone || customer?.telephone || customer?.whatsapp
         || customer?.phone_number || customer?.tel || null;
       if (!phone) console.warn('[Pulse] ⚠️ Aucun champ téléphone reconnu dans customer — vérifier le payload complet loggé ci-dessus pour trouver le bon nom de champ.');
-      const planInfo = PLAN_MAP[productId];
-      if (!planInfo) { console.warn('[Pulse] Produit inconnu:', productId); return; }
+      const planCatalogue = PLAN_MAP[productId];
+      if (!planCatalogue) { console.warn('[Pulse] Produit inconnu:', productId); return; }
+      // montant-reel-v1 (24 nov. 2026) : un client a payé 140 000 FCFA (prix d'avant la hausse) ; la transaction, la facture, l'email de confirmation,
+      // le « Dépensé » du CRM et la garantie de prix d'entrée prenaient le prix FIXE du catalogue (250 000). Le montant vient désormais de la vente
+      // elle-même (Pulse Chariow) ; le prix du catalogue ne sert que si la vente n'en porte aucun lisible.
+      const montantVente = (() => {
+        const lire = (v) => { if (v == null) return null; if (typeof v === 'object') return lire(v.value ?? v.amount ?? v.total ?? null); const n = Number(String(v).replace(/[^\d.,-]/g, '').replace(/[.,](?=\d{3}(\D|$))/g, '').replace(',', '.')); return Number.isFinite(n) ? n : null; };
+        const devise = (o) => String((o && (o.currency || o.devise || (o.amount && o.amount.currency) || (o.price && o.price.currency))) || '').toUpperCase();
+        const chemins = [['sale', 'amount'], ['sale', 'total'], ['sale', 'total_amount'], ['sale', 'amount_total'], ['sale', 'paid_amount'], ['sale', 'amount_paid'], ['sale', 'final_amount'], ['sale', 'price'], ['sale', 'payment', 'amount'], ['sale', 'transaction', 'amount'], ['amount'], ['total']];
+        for (const ch of chemins) {
+          let o = pulse, parent = null; for (const k of ch) { parent = o; o = o && o[k]; }
+          const n = lire(o), dv = devise(o && typeof o === 'object' ? o : parent);
+          if (n && n >= 1000 && n <= 20000000 && (!dv || /XOF|FCFA|CFA|XAF/.test(dv))) return { n: Math.round(n), champ: ch.join('.') };
+        }
+        return null;
+      })();
+      const planInfo = montantVente ? Object.assign({}, planCatalogue, { price_fcfa: montantVente.n, prix_catalogue_fcfa: planCatalogue.price_fcfa }) : planCatalogue;
+      if (montantVente) { if (montantVente.n !== planCatalogue.price_fcfa) console.log(`[Pulse] Montant réellement payé : ${montantVente.n} FCFA (champ ${montantVente.champ}) — prix du catalogue ${planCatalogue.price_fcfa} FCFA.`); }
+      else console.warn('[Pulse] ⚠️ Aucun montant lisible dans la vente : prix du catalogue utilisé (' + planCatalogue.price_fcfa + ' FCFA). Voir le payload complet ci-dessus pour le nom du champ.');
       // Si on a le user_id → activer directement
       if (userId) {
         console.log(`[Pulse] user_id trouvé directement dans custom_fields: ${userId}`);
