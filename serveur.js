@@ -9551,7 +9551,9 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
         const briefsPourVersion = await loadBriefs(id);
         const briefTrouve = briefsPourVersion.find(b => b.id === id);
         const generationVersion = briefTrouve?.generation_version || 1;
-        const { imageUrl, thumbUrl } = await uploadCreativeImage(imgB64, mime || 'image/png', `${id}_g${generationVersion}_${index}`, thumbB64);
+        // regen-image-v1 (24 nov. 2026) : « ↻ Régénérer » une seule image, dans la même génération, réécrivait le même nom → même URL, gardée 1 an par le
+        // navigateur : la nouvelle image était bien produite et rangée, mais l'écran (et le client) voyait toujours l'ancienne. Chaque envoi a désormais son nom.
+        const { imageUrl, thumbUrl } = await uploadCreativeImage(imgB64, mime || 'image/png', `${id}_g${generationVersion}_${index}_${Date.now().toString(36)}`, thumbB64);
         res.writeHead(200, {'Content-Type':'application/json'});
         res.end(JSON.stringify({ ok: true, url: imageUrl, thumbUrl }));
       } catch(e) {
