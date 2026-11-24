@@ -65,16 +65,35 @@ const memo = new Map()   // « id|genre » → { n, t }
 const deja = (id, genre) => memo.get(id + '|' + genre) || { n: 0, t: 0 }
 const note = (id, genre) => { const x = deja(id, genre); memo.set(id + '|' + genre, { n: x.n + 1, t: Date.now() }) }
 const RAPPELS_ENVOI_MAX = 3
+// file-attente-v1 (24 nov. 2026) — fondateur : « il faut un système de queue pour bien gérer chacune de ces demandes ». Un client (Afrimall) a déposé
+// 4 commandes presque en même temps : sans file, 3 ouvriers seraient partis à la même minute (appels Google en rafale, budget du mois lu par 3 lots
+// à la fois). Désormais les productions automatiques passent UNE PAR UNE, la plus ancienne demande d'abord.
+//   · une production « occupe » la file de son lancement jusqu'à son rapport (prête, incomplète, échec), ou au plus AUTO_FILE_LIMITE_H heures
+//     (défaut 8) si l'ouvrier ne donne plus de nouvelles : la file ne reste jamais bloquée ;
+//   · la promesse client passe avant la file : une commande qui a déjà attendu la moitié du temps entre la fin de l'attente et l'heure d'envoi
+//     part quoi qu'il arrive ;
+//   · dès qu'une production se termine, la suivante est lancée dans la minute (sans attendre le passage des 15 min).
+// Variables Render : AUTO_FILE_MAX (productions simultanées, défaut 1), AUTO_FILE_LIMITE_H (défaut 8).
+const FILE_MAX = () => Math.max(1, Number(process.env.AUTO_FILE_MAX) || 1)
+const FILE_LIMITE_H = () => Math.max(1, Number(process.env.AUTO_FILE_LIMITE_H) || 8)
+function occupeLaFile(b, now) {
+  const a = b.auto || {}
+  if (!a.lancee_le || a.prete_le || a.etat === 'echec') return false
+  if (b.status !== 'pending' && b.status !== 'in_production') return false
+  return now - new Date(a.lancee_le).getTime() < H(FILE_LIMITE_H())
+}
 async function cron(deps) {
   if (passageEnCours) { console.log('[Auto-prod] passage déjà en cours, celui-ci est ignoré'); return { ignore: true } }
   passageEnCours = true
   try { return await cron0(deps) } finally { passageEnCours = false }
 }
 async function cron0(deps) {
-  const bilan = { lancees: 0, rappels: 0, envoyees: 0, alertes: 0 }
-  const briefs = await deps.loadBriefs()
+  const bilan = { lancees: 0, rappels: 0, envoyees: 0, alertes: 0, en_file: 0 }
   const now = Date.now()
-  for (const b of (briefs || [])) {
+  const briefs = (await deps.loadBriefs() || []).slice().sort((x, y) => new Date(x.created_at).getTime() - new Date(y.created_at).getTime())   // file-attente-v1 : la plus ancienne demande d'abord
+  let enCours = briefs.filter((b) => occupeLaFile(b, now)).length
+  let rang = 0
+  for (const b of briefs) {
     try {
       if (b.status !== 'pending' && b.status !== 'in_production') continue
       const age = now - new Date(b.created_at).getTime()
@@ -85,11 +104,23 @@ async function cron0(deps) {
 
       // 1. Fin de l'attente : la production démarre (ou, sans ouvrier, le fondateur est prévenu comme avant)
       if (b.status === 'pending' && age >= H(a.attente_h) && !a.lancee_le && !a.alerte_attente && !deja(b.id, 'attente').n) {
+        if (prodActive()) {
+          // file-attente-v1 : une autre production tourne → cette commande attend son tour (sauf si l'heure d'envoi promise approche)
+          const urgente = age >= H(a.attente_h + (a.envoi_h - a.attente_h) / 2)
+          if (enCours >= FILE_MAX() && !urgente) {
+            rang++; bilan.en_file++
+            if (a.en_file !== rang) await majAuto(b.id, deps, (x) => { x.en_file = rang; x.en_file_depuis = x.en_file_depuis || new Date().toISOString() })
+            console.log(`[Auto-prod] file d'attente : ${nomDe(b)} n° ${rang} (${enCours} production(s) en cours)`)
+            continue
+          }
+          if (enCours >= FILE_MAX()) console.log(`[Auto-prod] ${nomDe(b)} passe devant la file : l'heure d'envoi promise approche`)
+        }
         note(b.id, 'attente')
         if (prodActive()) {
           try {
             const o = await lancerOuvrier(b, deps)
-            await majAuto(b.id, deps, (x) => { x.lancee_le = new Date().toISOString(); x.execution = o.execution; x.jeton = o.jeton; x.etat = 'lancee' })
+            enCours++
+            await majAuto(b.id, deps, (x) => { x.lancee_le = new Date().toISOString(); x.execution = o.execution; x.jeton = o.jeton; x.etat = 'lancee'; delete x.en_file })
             bilan.lancees++; console.log('🏭 AUTO-PROD lancée : ' + b.id + ' → ' + o.execution)
           } catch (e) {
             await majAuto(b.id, deps, (x) => { x.alerte_attente = true; x.erreur = String(e.message).slice(0, 200) })
@@ -136,7 +167,7 @@ async function cron0(deps) {
       }
     } catch (e) { console.error('[Auto-prod] commande ' + (b && b.id) + ' :', e.message) }
   }
-  console.log(`[Auto-prod] ${bilan.lancees} lancée(s), ${bilan.rappels} rappel(s), ${bilan.envoyees} envoyée(s), ${bilan.alertes} alerte(s)`)
+  console.log(`[Auto-prod] ${bilan.lancees} lancée(s), ${bilan.en_file} en file d'attente, ${bilan.rappels} rappel(s), ${bilan.envoyees} envoyée(s), ${bilan.alertes} alerte(s)`)
   return bilan
 }
 
@@ -184,6 +215,8 @@ async function routes(req, res, deps) {
           `<p><strong>${nomDe(cmd)}</strong> — ${txt}.</p><p>${b.etat === 'prete' ? 'Tout est rangé dans la carte de la commande. Rien n\'est parti chez le client : vérifie, régénère ce que tu veux, puis envoie.' : (r && r.videos_a_revoir ? 'Rien n\'est parti chez le client. ' + r.videos_a_revoir + ' vidéo(s) jugée(s) non livrable(s) : ouvre la commande, regarde-la et corrige les plans fautifs avec « 🩹 Corriger des plans » (quelques dollars) ou « ↻ Refaire ». ' : '') + 'Si des livrables manquent, « Reprendre » ne refait que ce qui manque.'}</p><p>Envoi prévu au client : <strong>${heure(envoi)}</strong>${envoiAuto() ? ' (envoi automatique allumé)' : ' (c\'est toi qui envoies)'}.</p>${dossier ? '<p><a href="' + dossier.url + '">Télécharger le dossier complet de la production</a></p>' : ''}${lien(id)}`)
         if (deps.ADMIN_USER_ID && deps.notifyUserBoth) deps.notifyUserBoth(deps.ADMIN_USER_ID, { title: b.etat === 'prete' ? '✅ Production prête à vérifier' : '🟠 Lot incomplet', body: `${nomDe(cmd)} — ${txt}`, url: '/factory/production', type: 'info' }).catch(() => {})
       }
+      // file-attente-v1 : la production a rendu son rapport → la suivante de la file part tout de suite (un seul passage à la fois, voir cron)
+      if (parJeton && (b.etat === 'prete' || b.etat === 'incomplete' || b.etat === 'echec')) setTimeout(() => { cron(deps).catch((e) => console.error('[Auto-prod] file :', e.message)) }, 20000)
       if (parJeton && b.etat === 'echec') await deps.notifierAdmin(`❌ Production automatique en échec — ${nomDe(cmd)}`, `<p>${String(b.erreur || 'erreur inconnue').slice(0, 300)}</p><p><strong>Lance ou reprends la production à la main dans Factory.</strong></p>${lien(id)}`)
       return rep(res, 200, { ok: true }), true
     }
@@ -195,7 +228,7 @@ async function routes(req, res, deps) {
       if (!cmd) return rep(res, 404, { error: 'commande introuvable' }), true
       const o = await lancerOuvrier(cmd, deps)
       const c = calendrier(await delaiPour(cmd, deps))
-      await majAuto(cmd.id, deps, (x) => { if (!x.delai_h) Object.assign(x, c); x.lancee_le = new Date().toISOString(); x.execution = o.execution; x.jeton = o.jeton; x.etat = 'lancee'; delete x.prete_le; delete x.complet; delete x.alerte_retard })
+      await majAuto(cmd.id, deps, (x) => { if (!x.delai_h) Object.assign(x, c); x.lancee_le = new Date().toISOString(); x.execution = o.execution; x.jeton = o.jeton; x.etat = 'lancee'; delete x.prete_le; delete x.complet; delete x.alerte_retard; delete x.en_file })
       return rep(res, 200, { ok: true, execution: o.execution }), true
     }
     // Réservé au fondateur : tous les dossiers complets conservés + réglages affichés dans Factory
