@@ -1687,7 +1687,9 @@ async function crmAdminOk(req) {
 // ── finance-phase1-v1 — pilotage financier automatique, en DOLLARS (bloc inséré dans serveur.js) ──
 // Sources : api_usage_log (Vertex + prospecteur), couts_externes (ScrapeCreators, Vision, SMS, moteur vidéo), transactions (ventes Chariow),
 // finance_couts_fixes (abonnements, au prorata des jours), finance_depenses (ponctuelles). Tables créées par finance_phase1.sql ; tant qu'une table manque, le serveur le dit et continue.
-const FIN_DEFAUTS = { prix_credit_scrapecreators_usd: 0.00188, prix_vision_web_usd: 0.0035, prix_sms_usd: 0.04, commission_chariow_pct: 15 };
+// taux-wave-v1 (24 nov. 2026) : coeff_wave = ce que Wave ajoute au taux du marché quand Amvr paie en dollars (651 FCFA sur Wave / 598,34 au marché le 24 nov. = 1,088).
+// Le taux utilisé partout = taux du marché EN DIRECT (même source que la page de vente) × ce coefficient fixe.
+const FIN_DEFAUTS = { prix_credit_scrapecreators_usd: 0.00188, prix_vision_web_usd: 0.0035, prix_sms_usd: 0.04, commission_chariow_pct: 15, coeff_wave: 1.088 };
 const _finEnTetes = (extra) => Object.assign({ apikey: SUPABASE_SERVICE_KEY, Authorization: 'Bearer ' + SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' }, extra || {});
 const _finRest = (chemin) => SUPABASE_URL_INT + '/rest/v1/' + chemin;
 const _finAvertis = {};
@@ -1725,14 +1727,18 @@ async function _finParams(force) {
 let _finTauxCache = { t: 0, v: 0 };
 async function _finTaux(params) {
   const force = Number(params && params.valeurs && params.valeurs.taux_xof_par_usd);
-  if (force > 0) return { xof_par_usd: force, source: 'saisi' };
-  if (_finTauxCache.v && Date.now() - _finTauxCache.t < 6 * 3600 * 1000) return { xof_par_usd: _finTauxCache.v, source: 'marché' };
+  if (force > 0) return { xof_par_usd: force, source: 'saisi', marche: null, coeff_wave: null };
+  // taux-wave-v1 : taux du marché en direct (relu toutes les heures) × coefficient Wave fixe
+  let k = Number(params && params.valeurs && params.valeurs.coeff_wave);
+  if (!(k >= 1 && k <= 1.5)) k = FIN_DEFAUTS.coeff_wave;
+  const avecWave = (v, source) => ({ xof_par_usd: Math.round(v * k * 100) / 100, source: source + ' × Wave ' + k, marche: Math.round(v * 100) / 100, coeff_wave: k });
+  if (_finTauxCache.v && Date.now() - _finTauxCache.t < 3600 * 1000) return avecWave(_finTauxCache.v, 'marché');
   try {
     const r = await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json', { signal: AbortSignal.timeout(6000) });
     const d = await r.json(); const v = d && d.usd && d.usd.xof;
-    if (v > 300 && v < 1200) { _finTauxCache = { t: Date.now(), v }; return { xof_par_usd: v, source: 'marché' }; }
+    if (v > 300 && v < 1200) { _finTauxCache = { t: Date.now(), v }; return avecWave(v, 'marché'); }
   } catch (_) { /* repli ci-dessous */ }
-  return { xof_par_usd: _finTauxCache.v || 600, source: _finTauxCache.v ? 'marché (ancien)' : 'repli 600' };
+  return avecWave(_finTauxCache.v || 600, _finTauxCache.v ? 'marché (ancien)' : 'repli 600');
 }
 
 // ── Enregistrement automatique d'un coût hors Vertex. Jamais bloquant : une erreur ici ne casse jamais la génération en cours. ──
@@ -1868,7 +1874,7 @@ async function calculerFinance(du, au, avecTendance) {
   const depenses = variable + fixesTotal + ponctuel, contribution = netF / T - variable, profit = netF / T - depenses;
   const marge = (v) => (netF > 0 ? Math.round(v / (netF / T) * 1000) / 10 : null);
   const out = {
-    periode: { du, au, jours: nbJours }, devise: 'USD', taux: { xof_par_usd: Math.round(T * 100) / 100, source: taux.source },
+    periode: { du, au, jours: nbJours }, devise: 'USD', taux: { xof_par_usd: Math.round(T * 100) / 100, source: taux.source, marche: taux.marche, coeff_wave: taux.coeff_wave },
     revenu,
     variable: { total_usd: _finR(variable), par_origine: FIN_ORIGINES.map(o => ({ origine: o, usd: _finR(parOrigine[o]) })), par_nature: Object.keys(parNature).map(k => ({ nature: k, usd: _finR(parNature[k]) })).sort((a, b) => b.usd - a.usd),
       par_type: Object.keys(parType).map(k => ({ type: k, usd: _finR(parType[k]) })).sort((a, b) => b.usd - a.usd).slice(0, 14), types_a_classer: Object.keys(autreTypes).map(k => ({ type: k, usd: _finR(autreTypes[k]) })).sort((a, b) => b.usd - a.usd).slice(0, 10),
@@ -3930,12 +3936,14 @@ ${pageText}`;
   //   POST /finance/depense    {id?, date, nom, categorie, montant, devise, taux_xof_par_usd?, note} | {id, supprimer:true}
   //   POST /finance/parametre  {cle, valeur}  (valeur vide = retour à la valeur par défaut)
   //   POST /finance/cout-externe {fournisseur, origine, unites, cout_usd, detail, ref}  (pour les scripts du PC et le moteur vidéo)
-  if (['/finance/resume', '/finance/productions', '/finance/cout-fixe', '/finance/depense', '/finance/parametre', '/finance/cout-externe'].includes((req.url || '').split('?')[0])) {
+  if (['/finance/resume', '/finance/productions', '/finance/cout-fixe', '/finance/depense', '/finance/parametre', '/finance/cout-externe', '/finance/taux'].includes((req.url || '').split('?')[0])) {
     (async () => {
       const J = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
       try {
         if (!(await crmAdminOk(req))) return J(403, { error: "réservé à l'administrateur" });
         const chemin = (req.url || '').split('?')[0], q = new URL(req.url, 'http://x').searchParams;
+        // taux-wave-v1 : le taux unique du CRM (marché en direct × Wave), lu par toutes les pages des statistiques
+        if (req.method === 'GET' && chemin === '/finance/taux') return J(200, await _finTaux(await _finParams()));
         // finance-v2 : coût de chaque production, moyenne par lot et par offre, marge par client, dépenses par usage
         if (req.method === 'GET' && chemin === '/finance/productions') {
           const auj = new Date().toISOString().slice(0, 10);
