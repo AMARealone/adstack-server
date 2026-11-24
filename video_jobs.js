@@ -207,6 +207,25 @@ async function handle(req, res, deps) {
       if (b.niveau && /^(Problem|Solution|Product|Most) Aware$/.test(b.niveau)) env.push({ name: 'NIVEAU', value: b.niveau })
       if (b.arret === 'plan') env.push({ name: 'ARRET', value: 'plan' })   // texte-dabord-v1 : la machine s'arrête après le texte et le plan, avant toute image et tout clip
       if (b.neuf) env.push({ name: 'REPRISE_NEUVE', value: '1' })           // texte-dabord-v1 : réécrire le texte = repartir de zéro (aucune réponse déjà payée n'est relue, un nouveau dossier de reprise est écrit)
+      // budget-client-v1 (24 nov. 2026) : chaque vidéo d'une commande reçoit son budget, tiré du budget du mois du client (117 $ pour un PERF+).
+      // Une vidéo déjà commencée (texte d'abord, arrêt, reprise) garde le budget de sa première passe : sinon le moteur referait d'autres choix
+      // et repaierait ce qui est déjà payé. Les tests de l'agent vidéo gardent le budget de la machine.
+      let budgetNote = ''
+      if (!b.test) {
+        let bud = null
+        if (!b.neuf) {
+          try {
+            const cmdSafe = cmd.replace(/[^\w\-]/g, '').slice(0, 40)
+            const rm = await fetch(`${PUB()}/ct-video/reprises/${cmdSafe}_s${slot}__manifest.json?t=${Date.now()}`)
+            if (rm.ok) { const m = await rm.json(); if (m && m.etat !== 'livree' && Number(m.budget_usd) > 0) bud = { production: Number(m.budget_usd), erreurs: Number(m.budget_erreurs) || 1.5, raison: 'budget de la première passe de cette vidéo' } }
+          } catch (_) { }
+        }
+        if (!bud) bud = await require('./budget_revisions').budgetVideo(cmd).catch(() => null)
+        if (bud && bud.production > 0) {
+          env.push({ name: 'BUDGET_USD', value: String(bud.production) }, { name: 'BUDGET_ERREURS', value: String(bud.erreurs) }, { name: 'CAISSE_RESERVE_A', value: '0.8' })
+          budgetNote = ' · budget ' + (bud.production + bud.erreurs).toFixed(2) + ' $ (' + bud.raison + ')'
+        }
+      }
       let synUrl = ''
       if (b.test) {
         env.push({ name: 'TEST', value: '1' })
@@ -226,8 +245,8 @@ async function handle(req, res, deps) {
       const nom = (((r.d.metadata || {}).name) || '').split('/').pop() || ''
       recents.set(cle, { t: Date.now(), execution: nom })
       if (b.test) await majIndex((l) => [{ execution: nom, commande_id: cmd, ct_id: ct, ct_nom: String(b.ct_nom || '').slice(0, 160), libelle: String(b.libelle || '').slice(0, 300), angle: String(b.angle || '').slice(0, 300), niveau: String(b.niveau || ''), synthese_url: synUrl, t: Date.now(), etat: 'en_cours', etape: 'La machine démarre', pct: 1 }, ...l.filter((x) => x.execution !== nom)])
-      console.log('🎬 VIDEO-JOB lancé' + (b.test ? ' (TEST agent vidéo)' : '') + ' : commande ' + cmd + ' slot ' + slot + ' CT ' + ct + ' → ' + nom)
-      return rep(res, 200, { execution: nom }), true
+      console.log('🎬 VIDEO-JOB lancé' + (b.test ? ' (TEST agent vidéo)' : '') + ' : commande ' + cmd + ' slot ' + slot + ' CT ' + ct + ' → ' + nom + budgetNote)
+      return rep(res, 200, { execution: nom, budget: budgetNote ? budgetNote.replace(/^ · /, '') : null }), true
     }
     // ── analyse-ct-v1 : analyse automatique d'un CT vidéo à l'import (même machine que le moteur, MODE=analyse_ct, rien n'est produit) ──
     if (req.method === 'POST' && url === '/video-jobs/analyse-ct') {
@@ -291,6 +310,8 @@ async function handle(req, res, deps) {
       if (m.consignes) env.push({ name: 'CONSIGNES', value: String(m.consignes).slice(0, 7000) })
       if (m.synthese_url && /^https:\/\//.test(m.synthese_url)) env.push({ name: 'SYNTHESE_URL', value: m.synthese_url })
       if (m.test) env.push({ name: 'TEST', value: '1' })
+      // budget-client-v1 : la correction rejoue la vidéo avec LE MÊME budget qu'à sa production (sinon le moteur ferait d'autres choix et repaierait tout)
+      if (Number(m.budget_usd) > 0) env.push({ name: 'BUDGET_USD', value: String(m.budget_usd) }, { name: 'BUDGET_ERREURS', value: String(Number(m.budget_erreurs) || 1.5) }, { name: 'CAISSE_RESERVE_A', value: '0.8' })
       const max = parseFloat(b.max_usd); if (max >= 1 && max <= 15) env.push({ name: 'CORRECTION_MAX_USD', value: String(max) })
       const r = await api(deps, 'POST', base(deps) + ':run', { overrides: { containerOverrides: [{ env }], taskCount: 1 } })
       if (!r.ok) return rep(res, 502, { error: 'Cloud Run a refusé le lancement : ' + ((r.d.error && r.d.error.message) || r.status), http: r.status }), true

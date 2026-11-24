@@ -5292,6 +5292,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
   if (await require('./video_jobs')(req, res, { getToken, callGeminiPro, MODELES, SA, vertexRequestGlobalAvecReessai, preparerImageProduitPourCreative, aspectsDisponibles, LIBELLE_ASPECT, noterCoutTest: (cmd, ex, usd) => { try { if (usd > 0) _finExtPoster([{ fournisseur: 'moteur_video', origine: 'factory', unites: 1, cout_usd: Math.round(usd * 1e6) / 1e6, detail: 'test agent vidéo (non facturé au client) · commande ' + String(cmd).slice(0, 8), ref: 'test-video:' + cmd + ':' + ex }], true, null); } catch (_) {} } })) return;
   // auto-prod-v1 : production automatique (ouvrier cloud), dossiers complets conservés — un module absent ne bloque jamais le serveur
   if ((req.url || '').startsWith('/ct-candidats')) { try { if (await require('./candidats_ct').routes(req, res, { SB: SUPABASE_URL_INT, entetes: () => ({ apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }), presign: require('./r2_video').presign, adminOk: crmAdminOk })) return; } catch (e) { console.error('[CT candidats] module indisponible :', e.message); res.writeHead(503, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'file des candidates indisponible' })); return; } }
+  if ((req.url || '').startsWith('/budget/') || (req.url || '').startsWith('/revisions/')) { try { if (await require('./budget_revisions').routes(req, res)) return; } catch (e) { console.error('[Budget/Rectifications] module indisponible :', e.message); res.writeHead(503, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'budget et rectifications indisponibles' })); return; } }   // budget-client-v1 + rectifications-v1
   if ((req.url || '').startsWith('/auto/')) { try { if (await require('./auto_prod').routes(req, res, depsAutoProd())) return; } catch (e) { console.error('[Auto-prod] module indisponible :', e.message); res.writeHead(503, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'production automatique indisponible' })); return; } }
   // ── /name-ct-video — Nom, méta-description et balises d'un CT VIDÉO (texte), par Gemini ──
   if (req.method === 'POST' && req.url === '/name-ct-video') {
@@ -6083,6 +6084,7 @@ if (req.method === 'GET' && req.url.startsWith('/cron/check-pending')) {
   // auto-prod-v1 : le calendrier par offre (12 h / 36 h en 48 h, 6 h / 18 h en 24 h) remplace les deux anciens rappels fixes (12 h et 18 h).
   let autoOk = false;
   try { await require('./auto_prod').cron(depsAutoProd()); autoOk = true; } catch (e) { console.error('[Auto-prod] cron :', e.message); }
+  try { await require('./budget_revisions').cron(); } catch (e) { console.error('[Rectifications] cron :', e.message); }   // rectifications-v1 : rappel 6 h avant l'échéance de 24 h
   try {
     const briefs = autoOk ? [] : await loadBriefs();   // anciens rappels : seulement en secours si le module est absent
     const seuil = Date.now() - 12 * 60 * 60 * 1000;
@@ -11082,6 +11084,7 @@ async function loadBriefs(idUnique) {
 }
 
 let _colsAutoOk = null;   // alertes-sobres-v1 : null = pas encore su, true = colonnes auto/dossiers présentes, false = absentes
+let _colsRevOk = null;    // rectifications-v1 : idem pour la colonne « revisions »
 async function saveBriefs(briefs) {
   invaliderListeCommandes();
   try {
@@ -11091,6 +11094,8 @@ async function saveBriefs(briefs) {
       // « C'est l'heure d'envoyer » toutes les 10 à 30 minutes. Ils sont écrits quand la commande les porte ; si la table n'a pas encore ces colonnes,
       // la sauvegarde est refaite sans eux (rien d'autre n'est perdu) et le journal le dit.
       const extra = (_colsAutoOk === false) ? {} : Object.assign({}, b.auto !== undefined ? { auto: b.auto } : {}, b.dossiers !== undefined ? { dossiers: b.dossiers } : {});
+      // rectifications-v1 (24 nov. 2026) : les rectifications demandées par le client vivent dans la colonne « revisions » ; si elle manque, seule elle est retirée
+      if (_colsRevOk !== false && b.revisions !== undefined) extra.revisions = b.revisions;
       const corps = (x) => JSON.stringify(Object.assign({
           id: b.id, created_at: b.created_at, status: b.status, client: b.client,
           product: b.product, quantity: b.quantity, history: b.history, photo_nobg: b.photo_nobg,
@@ -11118,6 +11123,10 @@ async function saveBriefs(briefs) {
         body: corps(x)
       });
       let r = await envoyer(extra);
+      if (!r.ok && extra.revisions !== undefined) {
+        const t0 = await r.clone().text().catch(() => '');
+        if (/revisions/i.test(t0) && /PGRST204|42703|column/i.test(t0)) { if (_colsRevOk !== false) console.error('[Commandes] colonne « revisions » absente de la table commandes : ajoute-la dans Supabase (alter table commandes add column if not exists revisions jsonb). Sauvegarde refaite sans elle.'); _colsRevOk = false; delete extra.revisions; r = await envoyer(extra); }
+      } else if (r.ok && extra.revisions !== undefined) _colsRevOk = true;
       if (!r.ok && Object.keys(extra).length) {
         const t = await r.text();
         if (/auto|dossiers|PGRST204|42703|column/i.test(t)) { if (_colsAutoOk !== false) console.error('[Commandes] colonnes « auto » / « dossiers » absentes de la table commandes : ajoute-les dans Supabase (alter table commandes add column if not exists auto jsonb, add column if not exists dossiers jsonb). Sauvegarde refaite sans elles.'); _colsAutoOk = false; r = await envoyer({}); }
@@ -12158,6 +12167,8 @@ function depsAutoProd() {
   return { SB: SUPABASE_URL_INT, ANON: SUPABASE_ANON_KEY_INT, entetes: () => ({ apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }),
     OFFERS, PORT, SA, getToken, loadBriefs, saveBriefs, notifierAdmin, notifyUserBoth, adminOk: crmAdminOk, ADMIN_EMAIL, ADMIN_USER_ID: process.env.ADMIN_USER_ID || '' };
 }
+// budget-client-v1 + rectifications-v1 : le module reçoit les mêmes outils que la production automatique, plus le modèle de texte
+try { require('./budget_revisions').brancher(() => Object.assign(depsAutoProd(), { callGeminiPro, MODELES })); } catch (e) { console.error('[Budget/Rectifications] module absent :', e.message); }
 // tarif-protege-v1 (19 nov. 2026) — LE PRIX D'ENTRÉE D'UN CLIENT EST GARANTI 2 MOIS. Décision du fondateur : les prix montent régulièrement,
 // mais un client ne découvre jamais une hausse du jour au lendemain. Son 1er et son 2e mois sont au prix auquel il est entré ; à partir du
 // 3e mois, le prix en vigueur s'applique, et AdBoard le lui annonce dès maintenant avec la date. Calculé depuis ses paiements réels.
