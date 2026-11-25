@@ -265,7 +265,9 @@ async function routes(req, res) {
       const cmd = String(u.searchParams.get('commande_id') || '')
       const l = cmd ? [await chargerBrief(cmd)].filter(Boolean) : await d.loadBriefs()
       const out = []
-      l.forEach((b) => (Array.isArray(b.revisions) ? b.revisions : []).forEach((r) => { if (cmd || !['livree', 'refusee'].includes(r.etat)) out.push({ ...r, commande_id: b.id, produit: nomDe(b) }) }))
+      // rectifications-v3 : chaque demande porte la vidéo visée (celle que le client a vue), son angle et son CT — visibles même si la production n'est pas chargée
+      const video9 = (b, r) => { const c = ((b.deliverables || {}).creatives || [])[r.index] || {}, j = c.job || {}, ang = Number(c.angleIdx); return { video_url: c.videoUrl || c.url || null, poster: c.poster || j.poster || null, ct_nom: j.ctNom || c.ct || null, ct_video_url: j.ctVideoUrl || null, angle: isFinite(ang) ? ang + 1 : (r.slot || null), angle_titre: isFinite(ang) && Array.isArray((b.deliverables || {}).angles) ? String((b.deliverables.angles[ang] || '')).slice(0, 120) : null, niveau: c.niveau || null } }
+      l.forEach((b) => (Array.isArray(b.revisions) ? b.revisions : []).forEach((r) => { if (cmd || !['livree', 'refusee'].includes(r.etat)) out.push({ ...r, commande_id: b.id, produit: nomDe(b), ...video9(b, r) }) }))
       out.sort((a, b2) => a.echeance - b2.echeance)
       return rep(res, 200, { revisions: out, plafond_usd: REVISION_MAX_USD() }), true
     }
