@@ -9,7 +9,7 @@ const PROJET = () => process.env.VIDEO_PROJECT || ''
 const REGION = () => process.env.VIDEO_REGION || 'us-central1'
 const JOB = () => process.env.VIDEO_JOB || 'video-adstack'
 const PUB = () => (process.env.R2_PUBLIC_BASE || 'https://images.adstackofficial.com').replace(/\/$/, '')
-const lire = (req, max = 400000) => new Promise((ok, ko) => { let b = ''; req.on('data', (d) => { b += d; if (b.length > max) { req.destroy(); ko(new Error('corps trop gros')) } }); req.on('end', () => ok(b)); req.on('error', ko) })
+const lire = (req, max = 400000) => new Promise((ok, ko) => { let b = ''; req.setEncoding('utf8'); req.on('data', (d) => { b += d; if (b.length > max) { req.destroy(); ko(new Error('corps trop gros')) } }); req.on('end', () => ok(b)); req.on('error', ko) })
 const rep = (res, code, o) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)) }
 const recents = new Map()            // anti double-clic : même vidéo relancée en moins de 10 minutes
 const verifs = new Map()             // dernier contrôle de l'exécution Cloud Run (au plus toutes les 30 s)
@@ -42,6 +42,20 @@ async function r2Put(key, buf, type) {
   const url = require('./r2_video').presign({ method: 'PUT', host: new URL(R2_ENDPOINT).host, path: `/${bucket}/${key}`, accessKey: R2_ACCESS_KEY_ID, secret: R2_SECRET_ACCESS_KEY, region: 'auto', amzDate, expires: 900 }).url
   const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': type }, body: buf })
   if (!r.ok) throw new Error('R2 HTTP ' + r.status)
+}
+// ct-rotation-v1 (25 nov. 2026, audit Afrimall : le même CT « Bait-and-Switch » — la femme qui répond à un commentaire — choisi pour deux produits
+// différents le même jour, et revu à la 4e commande ; ≈ 50 % de redondance entre commandes). Le choix ne voyait que la commande en cours.
+// Chaque lancement de vidéo est noté ici (CT, commande, date) ; le choix voit l'usage de CHAQUE CT sur toutes les commandes et écarte ceux qui viennent de servir.
+const USAGE_KEY = 'ct-video/usage.json'
+let usageCache = null, usageChaine = Promise.resolve()
+async function lireUsage() {
+  try { const r = await fetch(PUB() + '/' + USAGE_KEY + '?t=' + Date.now()); if (r.ok) { const j = await r.json(); if (Array.isArray(j)) { usageCache = j; return j } } } catch (_) { }
+  return usageCache || []
+}
+function noterUsage(e) {
+  usageChaine = usageChaine.then(async () => { const l = await lireUsage(); const n = [e, ...l.filter((x) => !(x.commande === e.commande && x.slot === e.slot))].slice(0, 400); usageCache = n; await r2Put(USAGE_KEY, Buffer.from(JSON.stringify(n)), 'application/json') })
+    .catch((er) => console.log('Usage des CT vidéo non noté : ' + er.message))
+  return usageChaine
 }
 let idxCache = null
 async function lireIndex() {
@@ -135,6 +149,7 @@ RÈGLES
 3. Niveau de conscience : respecte-le s'il est imposé pour l'angle ; sinon vise la meilleure adéquation avec la synthèse de marché (persona, douleur, preuve, objection principale).
 4. Durée : préfère des CT dont la durée tient dans le budget de production (≈ 30 à 50 secondes). Un CT très long ne se choisit que s'il est nettement meilleur pour l'angle.
 5. Cherche le potentiel de conversion : hook fort pour CET angle, chute qui déclenche l'achat, preuve visible.
+6. Rotation (ct-rotation-v1) : à pertinence proche, choisis le CT le moins servi (« servi N fois en 14 j ») ; la niche d'un CT n'est jamais un filtre, son mécanisme compte.
 RÉPONSE : uniquement un objet JSON, sans texte autour :
 {"choix":[{"id":"<id exact du CT>","angle":"<titre exact de l'angle servi>","raison":"<2 phrases : pourquoi ce CT pour cet angle, en quoi il diffère des autres>"}]}`
 
@@ -155,6 +170,7 @@ RÈGLES
 8. FORCE DE L'OFFRE (offre-forte-v1) — AVANT tout choix, juge l'offre du client. Lis la ligne « FORCE DE L'OFFRE » de S0 si la synthèse l'a ; vérifie-la quand même contre les offres des concurrents et alternatives (S4) et le brief. Une offre IRRÉSISTIBLE est une pile que le marché ne propose pas déjà : plusieurs unités offertes (1 acheté = 1 offert, 2 achetés = 2 offerts…), un pack qui donne avec le produit principal ses compléments, des bonus qui ont une vraie valeur pour la cible (guide, accessoire, suivi), le tout clairement plus généreux que ce que font les concurrents. Est ORDINAIRE ce que tout le monde fait déjà : paiement à la livraison, livraison gratuite, « satisfait ou remboursé », une réduction en pourcentage seule (−20 %, −30 %, −50 %), même cumulés ; en paiement à la livraison ces promesses ne sont plus crédibles. AUCUNE : pas d'offre.
    → La VIDÉO ne porte Most Aware QUE si l'offre est IRRÉSISTIBLE : une vidéo Most Aware met l'offre en avant pendant tout son temps, une offre vue et revue y devient le message et le tue. Offre ordinaire ou absente : la vidéo porte Problem, Solution ou Product Aware (Most Aware reste sur une image du parcours B, où l'offre est un détail de l'appel à l'action).
 9. ZÉRO REDONDANCE DE DISPOSITIF (zero-redondance-v2, impérative dès 2 vidéos) : le dispositif d'un CT, c'est QUI porte la vidéo et COMMENT — une personne qui parle face caméra ; une voix off sur des plans ; plusieurs personnes qui se parlent ; une animation ; une démonstration sans parole. Deux vidéos d'un même lot n'ont JAMAIS le même dispositif tant que la galerie offre un CT compatible d'un autre dispositif : deux personnes qui parlent face caméra, même dans deux lieux et avec deux textes différents, sont la même vidéo aux yeux de celui qui fait défiler. Quand un CT porte une « FORME MESURÉE » (relevée sur sa vidéo source par le moteur), elle fait foi sur sa description ; sinon tu lis son dispositif dans sa description et tu ne supposes rien de plus favorable. Pour chaque choix, écris « famille » : face_camera | voix_off | dialogue | animation | demonstration_muette | autre. Si la galerie ne permet pas deux dispositifs différents, dis-le dans « raison ».
+10. ROTATION ET VARIÉTÉ ENTRE COMMANDES (ct-rotation-v1, impérative) : la galerie sert TOUS les clients. Chaque CT porte « servi N fois en 14 j sur toutes les commandes » : à pertinence proche, choisis le moins servi. La NICHE d'un CT n'est jamais un filtre : un CT tourné pour un autre rayon (beauté, cuisine, animaux, tech…) est souvent le meilleur choix quand son MÉCANISME (accroche, preuve, démonstration, récit, chute) sert l'angle et que le geste de notre produit s'y transpose. Ne reprends pas un CT parce qu'il « marche avec les produits bien-être » : cherche dans toute la galerie le mécanisme qui sert CET angle.
 RÉPONSE : uniquement un objet JSON, sans texte autour :
 {"force_offre":"irresistible"|"ordinaire"|"aucune","force_offre_raison":"<1 phrase : l'offre, et en quoi elle dépasse ou non ce que fait le marché>","choix":[{"angle":"<titre exact de l'angle>","parcours":"A"|"B","niveau_video":"Problem Aware|Solution Aware|Product Aware|Most Aware","id":"<id exact du CT>","famille":"face_camera|voix_off|dialogue|animation|demonstration_muette|autre","raison":"<2 phrases : pourquoi ce parcours et ce CT pour cet angle>","direction":{"casting":"…","lieux":"…","tenue":"…","lumiere":"…","cadrage":"…"}}]}`
 
@@ -181,6 +197,7 @@ async function handle(req, res, deps) {
       const cmd = String(b.commande_id || ''), ct = String(b.ct_id || ''), slot = String(parseInt(b.slot, 10) || 1)
       if (!/^[A-Za-z0-9\-]{8,60}$/.test(cmd)) return rep(res, 400, { error: 'commande_id invalide' }), true
       if (!/^[A-Za-z0-9_\-]{1,60}$/.test(ct)) return rep(res, 400, { error: 'ct_id invalide' }), true
+      noterUsage({ ct, commande: cmd, slot, t: Date.now() })   // ct-rotation-v1
       const cle = cmd + '|' + slot, deja = recents.get(cle)
       if (deja && Date.now() - deja.t < 600000 && !b.forcer) return rep(res, 200, { execution: deja.execution, deja_lance: true }), true
       // une-seule-machine-v1 (20 nov. 2026) : « Refaire » remplace la vidéo en cours. Avant de lancer, toute machine encore en marche pour la même
@@ -385,8 +402,21 @@ async function handle(req, res, deps) {
       const b = JSON.parse((await lire(req, 3000000)) || '{}')
       const n = Math.max(1, Math.min(4, parseInt(b.n, 10) || 2))
       const exclus = new Set((b.exclure || []).map(String))
-      const cts = (Array.isArray(b.cts) ? b.cts : []).filter((c) => c && c.id && !exclus.has(String(c.id)))
+      let cts = (Array.isArray(b.cts) ? b.cts : []).filter((c) => c && c.id && !exclus.has(String(c.id)))
       if (cts.length < 1) return rep(res, 400, { error: 'Galerie CT vidéo vide' }), true
+      // ct-rotation-v1 : usage de chaque CT sur TOUTES les commandes. Écartés tant qu'il reste assez de choix : les CT des 6 derniers lancements
+      // des autres commandes et ceux déjà servis 3 fois en 14 jours. Le reste porte son compteur, et l'agent préfère les moins servis.
+      try {
+        const U = await lireUsage(), now = Date.now(), cmdB = String(b.commande_id || '')
+        const autres = U.filter((x) => x && x.commande !== cmdB), recents6 = new Set(autres.slice(0, 6).map((x) => String(x.ct)))
+        const n14 = new Map(); U.filter((x) => x && now - Number(x.t) < 14 * 86400000).forEach((x) => n14.set(String(x.ct), (n14.get(String(x.ct)) || 0) + 1))
+        cts.forEach((c) => { c._n14 = n14.get(String(c.id)) || 0; c._recent = recents6.has(String(c.id)) })
+        const minimum = Math.max(3 * n, 6)
+        const filtre = (f) => cts.filter(f)
+        let gardes = filtre((c) => !c._recent && c._n14 < 3)
+        if (gardes.length < minimum) gardes = filtre((c) => !c._recent)
+        if (gardes.length >= minimum && gardes.length < cts.length) { console.log('🎞 SELECT-CT-VIDEO — rotation : ' + (cts.length - gardes.length) + ' CT écartés (servis récemment à d\'autres commandes), ' + gardes.length + ' proposés'); cts = gardes }
+      } catch (eU) { console.log('Rotation des CT vidéo indisponible : ' + eU.message) }
       const angles = (Array.isArray(b.angles) ? b.angles : []).map((a) => (typeof a === 'string' ? a : (a && (a.titre || a.title || a.nom)) || '')).filter(Boolean)
       const parts = []
       parts.push({ type: 'text', text: 'PRODUIT ET BRIEF :\n' + String(b.brief || '').slice(0, 6000) })
@@ -397,7 +427,7 @@ async function handle(req, res, deps) {
       // forme-mesuree-v1 : ce que le moteur a relevé sur la vidéo source de chaque CT déjà produit (qui porte la vidéo, comment) : un fait, pas une description
       const FAM = { une_personne_face_camera: 'face_camera', voix_off_sur_plans: 'voix_off', mini_plans_voix_off_ou_chanson: 'voix_off', film_decoupe_plusieurs_personnes: 'dialogue' }
       await Promise.all(cts.map(async (c) => { try { const ac = new AbortController(), tm = setTimeout(() => ac.abort(), 2500); const r = await fetch(PUB() + '/ct-video/formes/' + encodeURIComponent(c.id) + '.json', { signal: ac.signal }); clearTimeout(tm); if (r.ok) { const j = await r.json(); if (j && j.fabrication) c._forme = { famille: j.anime ? 'animation' : (FAM[j.fabrication] || 'autre'), detail: String(j.fabrication).replace(/_/g, ' ') + (j.anime ? ', animé' : '') } } } catch (_) { } }))
-      const ligneCT = (c, i) => (i + 1) + '. id=' + c.id + ' | ' + (c.name || '') + ' | durée ' + (c.duree_s || '?') + ' s | niche ' + f(c.niche) + ' | conscience ' + f(c.awareness) + ' | style ' + f(c.styleTags) + ' | blocs ' + f(c.blocs) + (c._forme ? ' | FORME MESURÉE : ' + c._forme.famille + ' (' + c._forme.detail + ')' : '') + '\n   ' + [c.meta, c.hook && ('HOOK : ' + c.hook), c.chute && ('CHUTE : ' + c.chute), c.produit_compatible && ('PRODUITS OK : ' + f(c.produit_compatible)), c.angles_fit && ('ANGLES : ' + f(c.angles_fit)), c.lieux_interdits && ('LIEUX INTERDITS : ' + f(c.lieux_interdits)), c.epic && ('EPIC : ' + f(c.epic))].filter(Boolean).join(' · ').slice(0, 900)
+      const ligneCT = (c, i) => (i + 1) + '. id=' + c.id + ' | ' + (c.name || '') + ' | durée ' + (c.duree_s || '?') + ' s | niche ' + f(c.niche) + ' | conscience ' + f(c.awareness) + ' | style ' + f(c.styleTags) + ' | blocs ' + f(c.blocs) + ' | servi ' + (c._n14 || 0) + ' fois en 14 j sur toutes les commandes' + (c._forme ? ' | FORME MESURÉE : ' + c._forme.famille + ' (' + c._forme.detail + ')' : '') + '\n   ' + [c.meta, c.hook && ('HOOK : ' + c.hook), c.chute && ('CHUTE : ' + c.chute), c.produit_compatible && ('PRODUITS OK : ' + f(c.produit_compatible)), c.angles_fit && ('ANGLES : ' + f(c.angles_fit)), c.lieux_interdits && ('LIEUX INTERDITS : ' + f(c.lieux_interdits)), c.epic && ('EPIC : ' + f(c.epic))].filter(Boolean).join(' · ').slice(0, 900)
       parts.push({ type: 'text', text: '━━━ GALERIE DE CT VIDÉO : ' + cts.length + ' ━━━\n' + cts.map(ligneCT).join('\n') })
       const plan = b.mode === 'plan'
       const raw = await deps.callGeminiPro((plan ? SYSTEME_PLAN : SYSTEME_SELECTION).replace('{{N}}', String(n)), parts, 12000, { modele: deps.MODELES.creative, temperature: 0.3, thinkingBudget: 12288, logLabel: 'Choix CT vidéo', timeoutMs: 150000, typeAppel: 'selection_ct_video' })

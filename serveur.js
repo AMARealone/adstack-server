@@ -413,7 +413,7 @@ function getToken() {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
     }, res => {
       let d = '';
-      res.on('data', c => d += c);
+      (res.setEncoding('utf8'), res.on('data', c => d += c));
       res.on('end', () => {
         try { const j = JSON.parse(d); j.access_token ? resolve(j.access_token) : reject(new Error(j.error_description || d)); }
         catch(e) { reject(e); }
@@ -462,7 +462,7 @@ function vertexRequestGlobal(token, model, body, timeoutMs = 120000, typeAppel =
       timeout: timeoutMs
     }, res => {
       let d = '';
-      res.on('data', c => d += c);
+      (res.setEncoding('utf8'), res.on('data', c => d += c));
       res.on('end', () => {
         try {
           const parsed = JSON.parse(d);
@@ -602,7 +602,7 @@ function vertexRequestRegional(token, model, body, timeoutMs = 90000, typeAppel 
       timeout: timeoutMs
     }, res => {
       let d = '';
-      res.on('data', c => d += c);
+      (res.setEncoding('utf8'), res.on('data', c => d += c));
       res.on('end', () => {
         try {
           const parsed = JSON.parse(d);
@@ -2642,7 +2642,7 @@ async function avisEspace(me, ownerDemande) {
 function avisCorps(req) {
   return new Promise((ok, ko) => {
     let s = '', n = 0;
-    req.on('data', (c) => { n += c.length; if (n > AVIS.maxCorps) { ko(_avisErr(413, 'message trop long')); req.destroy(); return; } s += c; });
+    req.setEncoding('utf8'); req.on('data', (c) => { n += c.length; if (n > AVIS.maxCorps) { ko(_avisErr(413, 'message trop long')); req.destroy(); return; } s += c; });
     req.on('end', () => { try { ok(JSON.parse(s || '{}')); } catch (_) { ko(_avisErr(400, 'format invalide')); } });
     req.on('error', () => ko(_avisErr(400, 'lecture impossible')));
   });
@@ -2897,7 +2897,7 @@ const server = http.createServer(async (req, res) => {
   // ── POST /save-mindmap — save personalized mindmap HTML (+ OG preview image/meta), return permanent URL ──
   if (req.method === 'POST' && req.url === '/save-mindmap') {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const { html, productName, marque, ogTitle, score } = JSON.parse(body);
@@ -2957,7 +2957,7 @@ const server = http.createServer(async (req, res) => {
                 headers: { ...sbHeaders, 'Content-Type': 'image/png', 'Content-Length': png.length, 'x-upsert': 'true' }
               }, resp => {
                 let d = '';
-                resp.on('data', c => d += c);
+                (resp.setEncoding('utf8'), resp.on('data', c => d += c));
                 resp.on('end', () => resolve({ status: resp.statusCode, body: d }));
               });
               r.on('error', reject); r.write(png); r.end();
@@ -3051,7 +3051,7 @@ const server = http.createServer(async (req, res) => {
               headers: { ...sbHeaders, 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': htmlBuffer.length, 'x-upsert': 'true' }
             }, resp => {
               let d = '';
-              resp.on('data', c => d += c);
+              (resp.setEncoding('utf8'), resp.on('data', c => d += c));
               resp.on('end', () => resolve({ status: resp.statusCode, body: d }));
             });
             r.on('error', reject); r.write(htmlBuffer); r.end();
@@ -3185,7 +3185,7 @@ const server = http.createServer(async (req, res) => {
     };
     const r = https.request(options, pRes => {
       let body = '';
-      pRes.on('data', c => body += c);
+      (pRes.setEncoding('utf8'), pRes.on('data', c => body += c));
       pRes.on('end', () => {
         console.log(`[Prospector Relay] Réponse ${pRes.statusCode} : ${body.slice(0, 150)}`);
         res.writeHead(pRes.statusCode || 200, {
@@ -3227,7 +3227,7 @@ const server = http.createServer(async (req, res) => {
   // Generate endpoint
   if (req.method === 'POST' && req.url === '/generate') {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const reqBody = JSON.parse(body);
@@ -3264,7 +3264,7 @@ const server = http.createServer(async (req, res) => {
   // ── Text Generation endpoint (Prompt Engine) ──
   if (req.method === 'POST' && req.url === '/generate-text') {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const reqBody = JSON.parse(body);
@@ -3310,7 +3310,7 @@ const server = http.createServer(async (req, res) => {
   // n'est pas explicitement présent, on renvoie null pour ce champ plutôt que de deviner.
   if (req.method === 'POST' && req.url === '/fetch-product-info') {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const { url } = JSON.parse(body);
@@ -3523,7 +3523,7 @@ ${pageText}`;
   // ── URL Fetcher endpoint (Synthesis Tool) ─────
   if (req.method === 'POST' && req.url === '/fetch-url') {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const { url } = JSON.parse(body);
@@ -3545,7 +3545,7 @@ ${pageText}`;
   // ── Synthesis endpoint (Gemini + Google Search grounding) ──
   if (req.method === 'POST' && req.url === '/synthesize') {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const reqBody = JSON.parse(body);
@@ -3687,7 +3687,7 @@ ${pageText}`;
   // Les champs de la fiche sont construits ICI à partir de valeurs validées — jamais copiés tels quels depuis la page.
   if (req.method === 'POST' && req.url === '/reserver-appel') {
     let body = '';
-    req.on('data', c => { body += c; if (body.length > 20000) req.destroy(); });
+    req.setEncoding('utf8'); req.on('data', c => { body += c; if (body.length > 20000) req.destroy(); });
     req.on('end', async () => {
       const rep = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
       try {
@@ -3746,7 +3746,7 @@ ${pageText}`;
   if (req.method === 'POST' && req.url === '/prospector/ads-j10') {
     if (!(await crmAdminOk(req))) { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'unauthorized' })); return; }
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const { id, valeur } = JSON.parse(body);
@@ -3764,7 +3764,7 @@ ${pageText}`;
 
   if (req.method === 'POST' && req.url === '/prospector/save-lead') {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const payload = JSON.parse(body);
@@ -3813,7 +3813,7 @@ ${pageText}`;
   // ── Marquer une démo comme livrée + écrire le lien dans les notes du prospect ──
   if (req.method === 'POST' && req.url === '/crm/sync-demo-delivered') {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const { prospect_id, demo_id, lien_demo, produit } = JSON.parse(body);
@@ -3870,7 +3870,7 @@ ${pageText}`;
   // ── Copywriter : Claude Sonnet 4.6 text-only (sans image, sans grounding) ──
   if (req.method === 'POST' && req.url === '/copywriter') {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const reqBody = JSON.parse(body);
@@ -3911,7 +3911,7 @@ ${pageText}`;
   // reprise-production-v1 — retrouve l'hypothèse déjà payée d'un lot (page de Factory perdue). Ne calcule JAMAIS rien : rend le résultat gardé, attend un calcul en cours, ou répond « absente ».
   if (req.method === 'POST' && req.url === '/analyste-reprise') {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       const rep = (st, o) => { try { res.writeHead(st, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); } catch (_) {} };
       try {
@@ -4020,7 +4020,7 @@ ${pageText}`;
 
   if (req.method === 'POST' && req.url === '/analyste-synthese') {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       const _cleDedup = crypto.createHash('sha256').update(body).digest('hex');
       // reprise-production-v1 — lot (commande + lancement) : hypothèse déjà calculée ou en cours → la même réponse, aucun coût en plus
@@ -4544,7 +4544,7 @@ Cible : 1500-3000 mots de DATA BRUTE. Pas de synthèse, pas d'interprétation �
   // ── Image Generation (Gemini 3 Pro Image · global endpoint) ──
   if (req.method === 'POST' && req.url === '/generate-image-gemini') {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const reqBody = JSON.parse(body);
@@ -4663,7 +4663,7 @@ HARD LOCKS :
   //   - Extraction de l'angle choisi depuis la sortie Sonnet pour reporting
   if (req.method === 'POST' && req.url === '/creative-prod') {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const reqBody = JSON.parse(body);
@@ -4919,7 +4919,7 @@ HARD LOCKS :
   // ── /select-ct-agent — l'agent Creative Image choisit lui-même UN CT parmi TOUTE la galerie (interface de test) ──
   if (req.method === 'POST' && req.url === '/select-ct-agent') {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const b = JSON.parse(body);
@@ -4958,7 +4958,7 @@ HARD LOCKS :
 
   if (req.method === 'POST' && req.url === '/select-cts') {
     let body = '';
-    req.on('data', chunk => body += chunk);
+    (req.setEncoding('utf8'), req.on('data', chunk => body += chunk));
     req.on('end', async () => {
       try {
         const { synthesis, ctList, count, mode, excludeIds, assets } = JSON.parse(body);
@@ -5173,7 +5173,7 @@ Format exact (copie exactement ce style) : ["ct_xxx", "ct_yyy", "ct_zzz"]`;
   // ── /name-ct — Nommage automatique CT par Gemini Vision ──
   if (req.method === 'POST' && req.url === '/name-ct') {
     let body = '';
-    req.on('data', chunk => body += chunk);
+    (req.setEncoding('utf8'), req.on('data', chunk => body += chunk));
     req.on('end', async () => {
       try {
         const { b64, mime } = JSON.parse(body);
@@ -5305,7 +5305,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
   // ── /name-ct-video — Nom, méta-description et balises d'un CT VIDÉO (texte), par Gemini ──
   if (req.method === 'POST' && req.url === '/name-ct-video') {
     let body = '';
-    req.on('data', chunk => body += chunk);
+    (req.setEncoding('utf8'), req.on('data', chunk => body += chunk));
     req.on('end', async () => {
       try {
         const { texte } = JSON.parse(body);
@@ -5350,7 +5350,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
   // ── /gen-messages : génère les messages relance via Gemini 2.5 Pro ──────────
   if (req.method === 'POST' && req.url === '/gen-messages') {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const { prompt } = JSON.parse(body);
@@ -5378,7 +5378,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
   // appelé par la Factory une fois le persona connu (nom/âge/rôle/ville/journée type) ──
   if (req.method === 'POST' && req.url === '/generate-persona-portrait') {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const { persona } = JSON.parse(body);
@@ -5404,7 +5404,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
   // ── /fill-demo-msg : remplit le template WA depuis les données de la mindmap ────────────
   if (req.method === 'POST' && req.url === '/fill-demo-msg') {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const { lien_demo, pays_code, tpl } = JSON.parse(body);
@@ -5533,7 +5533,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
 // POST /push-subscribe — enregistre une souscription push pour un utilisateur OU un visiteur anonyme
   if (req.method === 'POST' && req.url === '/push-subscribe') {
     let body = '';
-    req.on('data', d => body += d);
+    (req.setEncoding('utf8'), req.on('data', d => body += d));
     req.on('end', async () => {
       try {
         const { user_id, anon_id, subscription } = JSON.parse(body);
@@ -5577,7 +5577,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
 // POST /push-merge-anon — relie une souscription anonyme au vrai compte, une fois connecté
   if (req.method === 'POST' && req.url === '/push-merge-anon') {
     let body = '';
-    req.on('data', d => body += d);
+    (req.setEncoding('utf8'), req.on('data', d => body += d));
     req.on('end', async () => {
       try {
         const { anon_id, user_id } = JSON.parse(body);
@@ -5606,7 +5606,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
 // POST /push-test — envoie une notification de test à l'utilisateur qui clique "Tester"
   if (req.method === 'POST' && req.url === '/push-test') {
     let body = '';
-    req.on('data', d => body += d);
+    (req.setEncoding('utf8'), req.on('data', d => body += d));
     req.on('end', async () => {
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true }));
@@ -5626,7 +5626,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
 // POST /track-event — tracking léger pour déclencheurs contextuels (ex: vu la page Tarifs)
   if (req.method === 'POST' && req.url === '/track-event') {
     let body = '';
-    req.on('data', d => body += d);
+    (req.setEncoding('utf8'), req.on('data', d => body += d));
     req.on('end', async () => {
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true }));
@@ -5651,7 +5651,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
 // en complément du pixel navigateur (twq), pour ne pas dépendre des bloqueurs de pub / ITP.
   if (req.method === 'POST' && req.url === '/x-conversion') {
     let body = '';
-    req.on('data', d => body += d);
+    (req.setEncoding('utf8'), req.on('data', d => body += d));
     req.on('end', async () => {
       res.writeHead(200, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ ok: true }));
@@ -5691,7 +5691,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
   if (req.method === 'POST' && req.url === '/webhook/brief') {
 
     let body = '';
-    req.on('data', d => body += d);
+    (req.setEncoding('utf8'), req.on('data', d => body += d));
     req.on('end', async () => {
       try {
         const data = JSON.parse(body);
@@ -5948,7 +5948,7 @@ Choisis "autre" seulement si aucune des 20 catégories précédentes ne convient
 // POST /create-checkout — crée une session Chariow et retourne l'URL
 if (req.method === 'POST' && req.url === '/create-checkout') {
   let body = '';
-  req.on('data', d => body += d);
+  (req.setEncoding('utf8'), req.on('data', d => body += d));
   req.on('end', async () => {
     try {
       let { product_id, email, user_id, plan } = JSON.parse(body);
@@ -5997,7 +5997,7 @@ if (req.method === 'POST' && req.url === '/create-checkout') {
 // POST /webhook/chariow — reçoit les Pulses Chariow (vente confirmée)
 if (req.method === 'POST' && req.url === '/webhook/chariow') {
   let body = '';
-  req.on('data', d => body += d);
+  (req.setEncoding('utf8'), req.on('data', d => body += d));
   req.on('end', async () => {
     res.writeHead(200, {'Content-Type':'application/json'});
     res.end(JSON.stringify({ ok: true }));
@@ -6582,7 +6582,7 @@ if (req.method === 'GET' && req.url.startsWith('/emails/lettres-stop')) {
 // POST /send-welcome-email — envoie l'email de bienvenue (appelé côté client à la 1ère connexion)
 if (req.method === 'POST' && req.url === '/send-welcome-email') {
   let body = '';
-  req.on('data', d => body += d);
+  (req.setEncoding('utf8'), req.on('data', d => body += d));
   req.on('end', () => {
     res.writeHead(200, {'Content-Type':'application/json'});
     res.end(JSON.stringify({ ok: true }));
@@ -6613,7 +6613,7 @@ if (req.method === 'GET' && req.url.startsWith('/check-subscription/')) {
 // POST /chat — Ava AI Assistant
 if (req.method === 'POST' && req.url === '/chat') {
   let body = '';
-  req.on('data', d => body += d);
+  (req.setEncoding('utf8'), req.on('data', d => body += d));
   req.on('end', async () => {
     try {
       const { message, history=[], context={}, session_id } = JSON.parse(body);
@@ -6943,7 +6943,7 @@ if (req.method === 'GET' && req.url.startsWith('/chat/history/')) {
 // d'AdBoard et des offres — toutes deux sourcées sur OFFERS, jamais un prix recopié à la main.
 if (req.method === 'POST' && req.url === '/chat-vente') {
   let body = '';
-  req.on('data', d => body += d);
+  (req.setEncoding('utf8'), req.on('data', d => body += d));
   req.on('end', async () => {
     try {
       const { message, history = [], context = {}, session_id } = JSON.parse(body);
@@ -7181,7 +7181,7 @@ if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/cancel$/)) {
 if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/delete$/)) {
   const id = req.url.split('/')[2];
   let body = '';
-  req.on('data', c => body += c);
+  (req.setEncoding('utf8'), req.on('data', c => body += c));
   req.on('end', async () => {
     let source = null;
     try { source = JSON.parse(body || '{}').source || null; } catch(e) {}
@@ -7301,7 +7301,7 @@ if (req.method === 'GET' && req.url.startsWith('/lot/budget')) {
 // POST /lot/plan { taille, angles:[{id,nom}], galerieCT:[{id,format,concept,axes,maturite}], historique, ctGagnants, cible, hypotheseExiste, anglesGagnants }
 if (req.method === 'POST' && req.url === '/lot/plan') {
   if (!modulesLotOk(res)) return;
-  let body = ''; req.on('data', c => body += c);
+  let body = ''; (req.setEncoding('utf8'), req.on('data', c => body += c));
   req.on('end', () => {
     try {
       const r = PLANIF.planifierLot(JSON.parse(body));
@@ -7314,7 +7314,7 @@ if (req.method === 'POST' && req.url === '/lot/plan') {
 // POST /lot/diagnostic { synthese } → maturité, angles (facette + 3 raisons) et besoin de migration, SANS appel IA.
 if (req.method === 'POST' && req.url === '/lot/diagnostic') {
   if (!modulesLotOk(res)) return;
-  let body = ''; req.on('data', c => body += c);
+  let body = ''; (req.setEncoding('utf8'), req.on('data', c => body += c));
   req.on('end', () => {
     try {
       const { synthese } = JSON.parse(body);
@@ -7328,7 +7328,7 @@ if (req.method === 'POST' && req.url === '/lot/diagnostic') {
 // l'historique et les CT gagnants. MODE PLAN SEULEMENT : aucun appel IA, aucun coût, rien n'est produit.
 if (req.method === 'POST' && req.url === '/lot/plan-auto') {
   if (!modulesLotOk(res)) return;
-  let body = ''; req.on('data', c => body += c);
+  let body = ''; (req.setEncoding('utf8'), req.on('data', c => body += c));
   req.on('end', async () => {
     try {
       const { productId, taille = 6 } = JSON.parse(body);
@@ -7353,7 +7353,7 @@ if (req.method === 'POST' && req.url === '/lot/plan-auto') {
 }
 // POST /tag-ct-lot { format, name, meta, awareness, styleTags, niche, texte?, imageB64?, mime? } → balises de maturité et axes de diversité d'UN CT (Gemini, quelques centimes).
 if (req.method === 'POST' && req.url === '/tag-ct-lot') {
-  let body = ''; req.on('data', c => body += c);
+  let body = ''; (req.setEncoding('utf8'), req.on('data', c => body += c));
   req.on('end', async () => {
     try {
       const b = JSON.parse(body);
@@ -7556,7 +7556,7 @@ if (req.method === 'GET' && req.url.match(/^\/products\/[^/]+\/renewal-context(\
 // POST /products/:id/delete-creatives — suppression de créatives depuis la Galerie AdBoard
 if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/delete-creatives$/)) {
   let body = '';
-  req.on('data', c => body += c);
+  (req.setEncoding('utf8'), req.on('data', c => body += c));
   req.on('end', async () => {
     try {
       const productId = req.url.split('/')[2];
@@ -7612,7 +7612,7 @@ if ((req.url || '').split('?')[0].startsWith('/learning/') && ['/learning/client
       if (req.method === 'GET' && chemin === '/learning/clients') return J(200, await apprListeClients());
       if (req.method === 'GET' && chemin === '/learning/client') { if (!q.get('user_id')) return J(400, { error: 'user_id requis' }); return J(200, await apprVueClient(q.get('user_id'), parseInt(q.get('nb_angles') || '4', 10))); }
       if (req.method === 'POST' && chemin === '/learning/retour') {
-        let body = ''; await new Promise(ok => { req.on('data', c => body += c); req.on('end', ok); });
+        let body = ''; await new Promise(ok => { (req.setEncoding('utf8'), req.on('data', c => body += c)); req.on('end', ok); });
         return J(200, await apprRecevoirRetour(JSON.parse(body || '{}')));
       }
       return J(405, { error: 'méthode non permise' });
@@ -7649,7 +7649,7 @@ if (['/avis', '/avis/retirer'].includes((req.url || '').split('?')[0])) {
 // depuis la Galerie AdBoard (v5.70 : plus de délai de 7 jours ; chiffres facultatifs).
 if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/mark-top-performer$/)) {
   let body = '';
-  req.on('data', c => body += c);
+  (req.setEncoding('utf8'), req.on('data', c => body += c));
   req.on('end', async () => {
     try {
       const productId = req.url.split('/')[2];
@@ -7691,7 +7691,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/mark-top-perform
 // stats vide ou invalide = on efface les chiffres (la créative retombe au classement manuel).
 if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/top-performer-stats$/)) {
   let body = '';
-  req.on('data', c => body += c);
+  (req.setEncoding('utf8'), req.on('data', c => body += c));
   req.on('end', async () => {
     try {
       const productId = req.url.split('/')[2];
@@ -7731,7 +7731,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/top-performer-st
 // robuste : un seul état à écrire, pas de logique d'insertion/décalage à répliquer serveur.
 if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/reorder-top-performers$/)) {
   let body = '';
-  req.on('data', c => body += c);
+  (req.setEncoding('utf8'), req.on('data', c => body += c));
   req.on('end', async () => {
     try {
       const productId = req.url.split('/')[2];
@@ -7860,7 +7860,7 @@ if (req.method === 'GET' && req.url === '/crm/clients') {
 const ADMIN_EMAIL_IMPERSONATE = 'thefirstquality01@gmail.com';
 if (req.method === 'POST' && req.url === '/admin/impersonate') {
   let body = '';
-  req.on('data', c => body += c);
+  (req.setEncoding('utf8'), req.on('data', c => body += c));
   req.on('end', async () => {
     try {
       const adminToken = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
@@ -7918,7 +7918,7 @@ if (req.method === 'POST' && req.url === '/admin/impersonate') {
 // ou qui n'était pas concerné par une migration — sûr à appeler à chaque connexion.
 if (req.method === 'POST' && req.url === '/reconcile-account') {
   let body = '';
-  req.on('data', c => body += c);
+  (req.setEncoding('utf8'), req.on('data', c => body += c));
   req.on('end', async () => {
     try {
       const { email, userId } = JSON.parse(body);
@@ -8010,7 +8010,7 @@ if (req.method === 'POST' && req.url === '/reconcile-account') {
 // ── Annulation d'une demande : le propriétaire, ou le membre qui a lui-même fait cette demande (jamais celle d'un autre) ──
 if (req.method === 'POST' && req.url.split('?')[0] === '/briefs/cancel') {
   let body = '';
-  req.on('data', c => body += c);
+  (req.setEncoding('utf8'), req.on('data', c => body += c));
   req.on('end', async () => {
     const J = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
     try {
@@ -8067,7 +8067,7 @@ if (req.method === 'GET' && req.url.split('?')[0] === '/billing/history') {
 
 if (req.url.split('?')[0].startsWith('/team/')) {
   let body = '';
-  req.on('data', c => body += c);
+  (req.setEncoding('utf8'), req.on('data', c => body += c));
   req.on('end', async () => {
     const J = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
     try {
@@ -8186,7 +8186,7 @@ if (req.url.split('?')[0].startsWith('/team/')) {
 
 if (req.method === 'POST' && req.url === '/briefs/create') {
   let body = '';
-  req.on('data', c => body += c);
+  (req.setEncoding('utf8'), req.on('data', c => body += c));
   req.on('end', async () => {
     try {
       const parsedBody = JSON.parse(body);
@@ -8332,7 +8332,7 @@ if (req.url.split('?')[0].startsWith('/production/') && ['/production/compte-pro
   const H10 = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' };
   const out10 = (c, o) => { res.writeHead(c, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
   const norm10 = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  const lireCorps10 = () => new Promise((ok) => { let b = ''; req.on('data', (c) => b += c); req.on('end', () => ok(b)); });
+  const lireCorps10 = () => new Promise((ok) => { let b = ''; (req.setEncoding('utf8'), req.on('data', (c) => b += c)); req.on('end', () => ok(b)); });
   const route10 = req.url.split('?')[0];
   const q10 = new URL(req.url, 'http://x').searchParams;
   globalThis.__portraits10 = globalThis.__portraits10 || {};
@@ -8450,7 +8450,7 @@ if (req.url.split('?')[0].startsWith('/production/') && ['/production/compte-pro
 
 if (req.method === 'POST' && req.url === '/manual-deliver') {
   let body = '';
-  req.on('data', c => body += c);
+  (req.setEncoding('utf8'), req.on('data', c => body += c));
   req.on('end', async () => {
     try {
       const { userId, productId, newProductName, deliverables, ticketId, remplacer } = JSON.parse(body); // v10c-remplacer
@@ -8537,7 +8537,7 @@ const ACTION_NOTIFS = {
 };
 if (req.method === 'POST' && req.url === '/notify-action') {
   let body = '';
-  req.on('data', d => body += d);
+  (req.setEncoding('utf8'), req.on('data', d => body += d));
   req.on('end', async () => {
     try {
       const { user_id, action, name } = JSON.parse(body);
@@ -8605,7 +8605,7 @@ function normalizePhone(phone, defaultCountryCode = '221') { // 221 = Sénégal
 // POST /send-prospect-sms — envoie un SMS de prospection (intro/j3/j10/j21), raccourcit le lien, appelle Africa's Talking
 if (req.method === 'POST' && req.url === '/send-prospect-sms') {
   let body = '';
-  req.on('data', d => body += d);
+  (req.setEncoding('utf8'), req.on('data', d => body += d));
   req.on('end', async () => {
     try {
       const { phone, template, marque, produit, dest_url, country_code } = JSON.parse(body);
@@ -8882,7 +8882,7 @@ function verifierSignatureSvix(payloadBrut, svixId, svixTimestamp, svixSignature
 
 if (req.method === 'POST' && req.url === '/webhook/resend') {
   let body = '';
-  req.on('data', c => body += c);
+  (req.setEncoding('utf8'), req.on('data', c => body += c));
   req.on('end', async () => {
     try {
       const valide = verifierSignatureSvix(
@@ -8927,7 +8927,7 @@ if (req.method === 'POST' && req.url === '/webhook/resend') {
 // d'enregistrer, jamais de re-dédupliquer côté serveur (pas de session fiable à ce niveau).
 if (req.method === 'POST' && req.url === '/track-funnel-event') {
   let body = '';
-  req.on('data', c => body += c);
+  (req.setEncoding('utf8'), req.on('data', c => body += c));
   req.on('end', async () => {
     try {
       const { type, prospect_id, campagne, source, user_id } = JSON.parse(body || '{}');
@@ -8962,7 +8962,7 @@ if (req.method === 'POST' && req.url === '/track-funnel-event') {
 // et les relances J+10/J+21 qui ont besoin d'une miniature différente du lien direct)
 if (req.method === 'POST' && req.url === '/shorten') {
   let body = '';
-  req.on('data', d => body += d);
+  (req.setEncoding('utf8'), req.on('data', d => body += d));
   req.on('end', async () => {
     try {
       const { url, thumbnail, campagne } = JSON.parse(body);
@@ -9110,7 +9110,7 @@ if (req.method === 'GET' && req.url.startsWith('/s/')) {
 // POST /save-comment — commentaire libre depuis AdBoard, stocké comme les autres formulaires
 if (req.method === 'POST' && req.url === '/save-comment') {
   let body = '';
-  req.on('data', d => body += d);
+  (req.setEncoding('utf8'), req.on('data', d => body += d));
   req.on('end', async () => {
     try {
       const { user_id, email, texte } = JSON.parse(body);
@@ -9152,7 +9152,7 @@ if (req.method === 'POST' && req.url === '/save-comment') {
 // POST /save-form-response — reçoit les réponses du formulaire pré-achat ou post-achat
 if (req.method === 'POST' && req.url === '/save-form-response') {
   let body = '';
-  req.on('data', d => body += d);
+  (req.setEncoding('utf8'), req.on('data', d => body += d));
   req.on('end', async () => {
     try {
       const { user_id, email, source, answers } = JSON.parse(body);
@@ -9380,7 +9380,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
   // est prête sans attendre tout le batch, plutôt que de tout renvoyer.
   if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/send-one-creative$/)) {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const id = req.url.split('/')[2];
@@ -9455,7 +9455,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
   // sans toucher aux créatives ni aux autres ad copies. Même principe que send-one-creative.
   if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/send-one-copy$/)) {
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const id = req.url.split('/')[2];
@@ -9513,7 +9513,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
   if (req.method === 'POST' && req.url.match(/^\/demo-sessions\/[^/]+\/save$/)) {
     const id = req.url.split('/')[2];
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const { state, status, finalUrl } = JSON.parse(body);
@@ -9561,7 +9561,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
   if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/upload-creative-now$/)) {
     const id = req.url.split('/')[2];
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const { imgB64, mime, index, thumbB64 } = JSON.parse(body);
@@ -9603,7 +9603,7 @@ if (req.method === 'POST' && req.url.match(/^\/products\/[^/]+\/dedupe-creatives
   if (req.method === 'POST' && req.url.match(/^\/commandes\/[^/]+\/save-deliverables$/)) {
     const id = req.url.split('/')[2];
     let body = '';
-    req.on('data', c => body += c);
+    (req.setEncoding('utf8'), req.on('data', c => body += c));
     req.on('end', async () => {
       try {
         const deliverables = JSON.parse(body);
@@ -10073,7 +10073,7 @@ function httpsGetJson(targetUrl) {
   return new Promise((resolve, reject) => {
     https.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, res => {
       let d = '';
-      res.on('data', c => d += c);
+      (res.setEncoding('utf8'), res.on('data', c => d += c));
       res.on('end', () => {
         try { resolve(JSON.parse(d)); } catch(e) { reject(new Error('JSON invalide: ' + d.slice(0,200))); }
       });
@@ -10105,7 +10105,7 @@ function fetchRawHtml(targetUrl, depth) {
         return;
       }
       let data = '';
-      res.on('data', c => { data += c; if (data.length > 1_500_000) res.destroy(); });
+      res.setEncoding('utf8'); res.on('data', c => { data += c; if (data.length > 1_500_000) res.destroy(); });
       res.on('end', () => resolve(data));
       res.on('error', reject);
     });

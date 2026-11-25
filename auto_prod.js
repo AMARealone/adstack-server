@@ -14,7 +14,7 @@ const SECRET = () => process.env.AUTO_PROD_SECRET || ''
 const prodActive = () => !!SECRET() && process.env.AUTO_PROD !== '0'
 const envoiAuto = () => process.env.AUTO_ENVOI === '1'
 const FACTORY = 'https://www.adstackofficial.com/factory'
-const lire = (req, max = 200000) => new Promise((ok, ko) => { let b = ''; req.on('data', (d) => { b += d; if (b.length > max) { req.destroy(); ko(new Error('corps trop gros')) } }); req.on('end', () => ok(b)); req.on('error', ko) })
+const lire = (req, max = 200000) => new Promise((ok, ko) => { let b = ''; req.setEncoding('utf8'); req.on('data', (d) => { b += d; if (b.length > max) { req.destroy(); ko(new Error('corps trop gros')) } }); req.on('end', () => ok(b)); req.on('error', ko) })
 const rep = (res, code, o) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)) }
 const egal = (a, b) => { const x = Buffer.from(String(a || '')), y = Buffer.from(String(b || '')); return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y) }
 const nomDe = (b) => String((b.product && b.product.nom) || b.produit || 'produit').slice(0, 80)

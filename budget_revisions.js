@@ -23,7 +23,7 @@ const FACTORY = 'https://www.adstackofficial.com/factory/production?cmd='
 let D = null
 const brancher = (f) => { D = f }
 const deps = () => { if (!D) throw new Error('module budget non branché'); return typeof D === 'function' ? D() : D }
-const lire = (req, max = 60000) => new Promise((ok, ko) => { let b = ''; req.on('data', (d) => { b += d; if (b.length > max) { req.destroy(); ko(new Error('corps trop gros')) } }); req.on('end', () => ok(b)); req.on('error', ko) })
+const lire = (req, max = 60000) => new Promise((ok, ko) => { let b = ''; req.setEncoding('utf8'); req.on('data', (d) => { b += d; if (b.length > max) { req.destroy(); ko(new Error('corps trop gros')) } }); req.on('end', () => ok(b)); req.on('error', ko) })
 const rep = (res, code, o) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)) }
 const r2 = (n) => Math.round(n * 100) / 100
 const nomDe = (b) => String((b && b.product && b.product.nom) || 'produit').slice(0, 80)
@@ -161,7 +161,7 @@ async function preparer(b, r, plans) {
 L'outil de correction refait l'IMAGE et le MOUVEMENT de plans entiers (geste, position et aspect du produit, objet, décor, expression, cadrage, personnage), en gardant la même réplique, la même voix, la même musique, les mêmes sous-titres et le même montage. Il ne sait pas changer les mots dits, la voix, la musique, les sous-titres, la durée, l'ordre des plans, ni ajouter un plan.
 Lis la demande du client au plus près de ce qu'il veut voir changer, retrouve les plans concernés, et écris pour chacun une consigne précise et visuelle (ce que le plan doit montrer, dans le décor et avec le produit de la vidéo). Si une partie de la demande sort de ce que l'outil sait faire, nomme-la.
 Réponds uniquement en JSON : {"plans":[{"bloc":numéro,"consigne":"…"}],"faisable":"oui"|"partiel"|"non","hors_correcteur":["…"],"explication":"une ou deux phrases pour le fondateur"}`
-  const txt = await d.callGeminiPro(sys, [{ type: 'text', text: `PRODUIT : ${nomDe(b)}\n\nPLANS DE LA VIDÉO :\n${desc || '(plans inconnus)'}\n\nDEMANDE DU CLIENT :\n${r.texte}` }], 3000,
+  const txt = await d.callGeminiPro(sys, [{ type: 'text', text: `PRODUIT : ${nomDe(b)}\n\nPLANS DE LA VIDÉO :\n${desc || '(plans inconnus)'}\n\nDEMANDE DU CLIENT :\n${r.texte}` }], 6000,
     { modele: (d.MODELES && d.MODELES.raisonnement) || undefined, temperature: 0.2, thinkingBudget: 2048, logLabel: 'Rectification', typeAppel: 'revision_video' })
   const m = /\{[\s\S]*\}/.exec(String(txt || ''))
   if (!m) throw new Error('réponse illisible')

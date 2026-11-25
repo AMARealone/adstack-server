@@ -6,7 +6,7 @@ module.exports = async function creativeV10(req, res, deps) {
   if (!callGeminiPro || !vertexRequestGlobalAvecReessai || !preparerImageProduitPourCreative) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'serveur.js : dépendances v10 non branchées (ligne video_jobs)' })); return true }
   if (req.method === 'POST' && req.url === '/creative-prod-v10') {
     let body = '';
-    req.on('data', c => body += c);
+    req.setEncoding('utf8'); req.on('data', c => body += c);
     req.on('end', async () => {
       try {
         const reqBody = JSON.parse(body);
@@ -285,7 +285,7 @@ HARD LOCKS :
   // correction automatique côté Factory (dans la limite du budget). Réponse : JSON strict.
   if (req.method === 'POST' && req.url === '/creative-qa') {
     let body = '';
-    req.on('data', c => { body += c; if (body.length > 25e6) req.destroy(); });
+    req.setEncoding('utf8'); req.on('data', c => { body += c; if (body.length > 25e6) req.destroy(); });
     req.on('end', async () => {
       try {
         const b = JSON.parse(body || '{}');
@@ -325,7 +325,8 @@ ${b.ctBase64 ? `9. impact (qa-vs-ct-v1) : compare A à IMAGE D comme le spectate
 ` : ''}DÉFAUTS MINEURS (n'empêchent pas la livraison) : nuance de couleur, légère différence de position, style typographique.
 Réponds UNIQUEMENT par un objet JSON strict :
 {"verdict":"ok"|"corriger","score":0-10,"defauts":[{"type":"produit|texte|preuve|marque|rendu|structure|verite${b.meta ? '|meta' : ''}${b.ctBase64 ? '|impact' : ''}","gravite":"bloquant|mineur","detail":"phrase courte et précise, en français"}],"consignes_correction":"instructions précises pour corriger les défauts bloquants (ce qu'il faut écrire, retirer, montrer), vide si ok","resume":"une phrase"${b.ctBase64 ? ',"ecart_ct":"ce qui rend A plus faible ou plus forte que D, en une phrase"' : ''}${b.meta ? ',"mention":"ok|absente|illisible — une petite mention légale (responsabilité de la marque, résultats variables…) est-elle écrite LISIBLEMENT dans IMAGE A, même en très petit ?"' : ''}}`;
-        const raw = await callGeminiPro(SYS, parts, 3000, { modele: MODELES.creative, temperature: 0.1, thinkingBudget: 4096, logLabel: 'Contrôle qualité image', timeoutMs: 120000, typeAppel: 'controle_qualite_image' });
+        // qa-place-v1 (25 nov. 2026) — Afrimall a4f98cfe : « réponse vide » au 3e contrôle. maxOutputTokens COMPREND la réflexion : 3000 pour 4096 de réflexion, la réponse n'avait plus de place.
+        const raw = await callGeminiPro(SYS, parts, 9000, { modele: MODELES.creative, temperature: 0.1, thinkingBudget: 4096, logLabel: 'Contrôle qualité image', timeoutMs: 120000, typeAppel: 'controle_qualite_image' });
         const t = String(raw || ''), i = t.indexOf('{'), j = t.lastIndexOf('}');
         let d = null; try { d = JSON.parse(t.slice(i, j + 1)); } catch (_) { }
         if (!d) throw new Error('réponse du contrôle illisible');
