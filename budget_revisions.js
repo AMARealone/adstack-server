@@ -153,16 +153,22 @@ async function chargerBrief(cmd) {
 async function sauver(b) { await deps().saveBriefs([b]) }
 
 // ── la demande du client est traduite en plans à refaire, avec un avis de faisabilité ──
-async function preparer(b, r, plans) {
+async function preparer(b, r, plans, images, imagesCT) {
   const d = deps()
   if (!d.callGeminiPro) throw new Error('modèle de texte indisponible sur le serveur')
   const desc = (plans || []).map((p) => `Plan ${p.bloc}${p.t0 != null ? ` (${Number(p.t0).toFixed(1)}–${Number(p.t1).toFixed(1)} s)` : ''} : ${p.dit ? 'réplique « ' + String(p.dit).slice(0, 300) + ' »' : 'sans parole'}${p.image ? ' — image : ' + String(p.image).slice(0, 300) : ''}`).join('\n')
   const sys = `Tu prépares la rectification d'une vidéo publicitaire déjà livrée à un client d'AdStack. La vidéo est découpée en plans numérotés.
 L'outil de correction refait l'IMAGE et le MOUVEMENT de plans entiers (geste, position et aspect du produit, objet, décor, expression, cadrage, personnage), en gardant la même réplique, la même voix, la même musique, les mêmes sous-titres et le même montage. Il ne sait pas changer les mots dits, la voix, la musique, les sous-titres, la durée, l'ordre des plans, ni ajouter un plan.
 Lis la demande du client au plus près de ce qu'il veut voir changer, retrouve les plans concernés, et écris pour chacun une consigne précise et visuelle (ce que le plan doit montrer, dans le décor et avec le produit de la vidéo). Si une partie de la demande sort de ce que l'outil sait faire, nomme-la.
-Réponds uniquement en JSON : {"plans":[{"bloc":numéro,"consigne":"…"}],"faisable":"oui"|"partiel"|"non","hors_correcteur":["…"],"explication":"une ou deux phrases pour le fondateur"}`
-  const txt = await d.callGeminiPro(sys, [{ type: 'text', text: `PRODUIT : ${nomDe(b)}\n\nPLANS DE LA VIDÉO :\n${desc || '(plans inconnus)'}\n\nDEMANDE DU CLIENT :\n${r.texte}` }], 6000,
-    { modele: (d.MODELES && d.MODELES.raisonnement) || undefined, temperature: 0.2, thinkingBudget: 2048, logLabel: 'Rectification', typeAppel: 'revision_video' })
+AVANT DE TOUCHER UN PLAN (rectifications-v2) : regarde les IMAGES DE LA VIDÉO LIVRÉE (une au milieu de chaque plan, avec son instant) et celles du CT D'ORIGINE quand elles sont fournies. Comprends la vidéo entière : son histoire, son rythme, ce que fait chaque plan dans la progression, le médium et le style du CT. Ta correction est chirurgicale : elle change ce que le client demande et rien d'autre, garde le personnage, le décor, la lumière, le cadrage, le geste et l'énergie du plan quand la demande ne les vise pas, et reste fidèle au CT d'origine. Si refaire un plan casserait la continuité avec ses voisins, dis-le dans l'explication et propose le plus petit ensemble de plans qui garde la vidéo cohérente. Si la demande est trop large pour une correction de plans (autre histoire, autre CT, tout le casting), écris faisable "non" et conseille de refaire la vidéo de zéro.
+Réponds uniquement en JSON : {"plans":[{"bloc":numéro,"consigne":"…"}],"faisable":"oui"|"partiel"|"non","hors_correcteur":["…"],"retouches_montage":["changement qui relève du montage seul : élément à retirer, plan à raccourcir, sous-titre à corriger"],"conseil":"corriger"|"refaire","explication":"une ou deux phrases pour le fondateur"}`
+  const blocs9 = [{ type: 'text', text: `PRODUIT : ${nomDe(b)}\n\nPLANS DE LA VIDÉO :\n${desc || '(plans inconnus)'}\n\nDEMANDE DU CLIENT :\n${r.texte}` }]
+  const img9 = (Array.isArray(images) ? images : []).filter((x) => x && typeof x.data === 'string' && x.data.length < 400000).slice(0, 14)
+  const ct9 = (Array.isArray(imagesCT) ? imagesCT : []).filter((x) => x && typeof x.data === 'string' && x.data.length < 300000).slice(0, 8)
+  if (img9.length) { blocs9.push({ type: 'text', text: 'IMAGES DE LA VIDÉO LIVRÉE (dans l\'ordre) :' }); img9.forEach((x) => { blocs9.push({ type: 'text', text: 'à ' + x.t + ' s :' }); blocs9.push({ type: 'image', source: { media_type: 'image/jpeg', data: x.data } }) }) }
+  if (ct9.length) { blocs9.push({ type: 'text', text: 'IMAGES DU CT D\'ORIGINE (dans l\'ordre) :' }); ct9.forEach((x) => blocs9.push({ type: 'image', source: { media_type: 'image/jpeg', data: x.data } })) }
+  const txt = await d.callGeminiPro(sys, blocs9, 9000,
+    { modele: (d.MODELES && d.MODELES.raisonnement) || undefined, temperature: 0.2, thinkingBudget: 4096, timeoutMs: 150000, logLabel: 'Rectification', typeAppel: 'revision_video' })
   const m = /\{[\s\S]*\}/.exec(String(txt || ''))
   if (!m) throw new Error('réponse illisible')
   const j = JSON.parse(m[0])
@@ -171,6 +177,9 @@ Réponds uniquement en JSON : {"plans":[{"bloc":numéro,"consigne":"…"}],"fais
   j.faisable = ['oui', 'partiel', 'non'].includes(j.faisable) ? j.faisable : (j.plans.length ? 'partiel' : 'non')
   j.hors_correcteur = (Array.isArray(j.hors_correcteur) ? j.hors_correcteur : []).map((x) => String(x).slice(0, 300)).slice(0, 6)
   j.explication = String(j.explication || '').slice(0, 600)
+  j.retouches_montage = (Array.isArray(j.retouches_montage) ? j.retouches_montage : []).map((x) => String(x).slice(0, 300)).slice(0, 6)
+  j.conseil = j.conseil === 'refaire' ? 'refaire' : 'corriger'
+  j.images_vues = img9.length + ct9.length
   return j
 }
 
@@ -260,13 +269,13 @@ async function routes(req, res) {
       out.sort((a, b2) => a.echeance - b2.echeance)
       return rep(res, 200, { revisions: out, plafond_usd: REVISION_MAX_USD() }), true
     }
-    const x = JSON.parse((await lire(req, 200000)) || '{}')
+    const x = JSON.parse((await lire(req, url === '/revisions/preparer' ? 6000000 : 200000)) || '{}')   // rectifications-v2 : la préparation reçoit des images de la vidéo
     const b = await chargerBrief(String(x.commande_id || ''))
     if (!b) return rep(res, 404, { error: 'commande introuvable' }), true
     const r = (Array.isArray(b.revisions) ? b.revisions : []).find((y) => y && y.id === String(x.id || ''))
     if (!r) return rep(res, 404, { error: 'rectification introuvable' }), true
     if (req.method === 'POST' && url === '/revisions/preparer') {
-      r.preparation = { ...(await preparer(b, r, x.plans)), t: Date.now() }
+      r.preparation = { ...(await preparer(b, r, x.plans, x.images, x.images_ct)), t: Date.now() }
       if (r.etat === 'nouvelle') r.etat = 'preparee'
       await sauver(b)
       return rep(res, 200, { revision: r }), true
