@@ -271,16 +271,19 @@ async function handle(req, res, deps) {
       const ct = String(b.ct_id || ''), video = String(b.video_url || '')
       if (!/^vct_[A-Za-z0-9_\-]{4,60}$/.test(ct)) return rep(res, 400, { error: 'ct_id invalide' }), true
       if (!/^https:\/\/[^\s"']{8,600}$/.test(video)) return rep(res, 400, { error: 'video_url invalide' }), true
-      const cle = 'analyse|' + ct, deja = recents.get(cle)
+      const seule = b.lecture_seule === true   // analyse-ct-v3 : CT déjà rangé → seulement la lecture du moteur (fiches réutilisées par chaque production)
+      const cle = 'analyse|' + ct + (seule ? '|lecture' : ''), deja = recents.get(cle)
       if (deja && Date.now() - deja.t < 600000 && !b.forcer) return rep(res, 200, { execution: deja.execution, deja_lance: true }), true
       const env = [{ name: 'MODE', value: 'analyse_ct' }, { name: 'CT_ID', value: ct }, { name: 'VIDEO_URL', value: video }, { name: 'COMMANDE_ID', value: 'analyse-' + ct.slice(4, 30) }]
       if (b.nom) env.push({ name: 'NOM', value: String(b.nom).slice(0, 120) })
+      if (seule) env.push({ name: 'LECTURE_MOTEUR_SEULE', value: '1' })
+      if (/^https:\/\/[a-z0-9.-]+\.supabase\.co\/storage\/v1\/object\/public\/[^\s"']{4,300}$/.test(String(b.meta_url || ''))) env.push({ name: 'META_URL', value: String(b.meta_url) })
       const r = await api(deps, 'POST', base(deps) + ':run', { overrides: { containerOverrides: [{ env }], taskCount: 1 } })
       if (!r.ok) return rep(res, 502, { error: 'Cloud Run a refusé le lancement : ' + ((r.d.error && r.d.error.message) || r.status), http: r.status }), true
       const nom = (((r.d.metadata || {}).name) || '').split('/').pop() || ''
       recents.set(cle, { t: Date.now(), execution: nom })
-      console.log('🔎 ANALYSE CT lancée : ' + ct + ' → ' + nom)
-      return rep(res, 200, { execution: nom, etat_url: PUB() + '/ct-video/analyses-import/' + ct + '.json' }), true
+      console.log('🔎 ANALYSE CT lancée' + (seule ? ' (lecture du moteur seule)' : '') + ' : ' + ct + ' → ' + nom)
+      return rep(res, 200, { execution: nom, etat_url: PUB() + '/ct-video/analyses-import/' + ct + (seule ? '_lecture' : '') + '.json' }), true
     }
     // ── arrêt réel d'une vidéo (bouton Annuler de Factory) ──
     if (req.method === 'POST' && url === '/video-jobs/cancel') {

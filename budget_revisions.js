@@ -184,9 +184,16 @@ Réponds uniquement en JSON : {"plans":[{"bloc":numéro,"consigne":"…"}],"fais
 }
 
 // ── la vidéo corrigée remplace celle du client dans AdBoard ──
-async function livrerDansAdboard(b, r) {
+// remplacement-fichier-v1 (25 nov.) : le fondateur peut livrer un fichier vidéo qu'il a corrigé lui-même (envoyé sur NOTRE stockage Cloudflare) à la place de la production.
+const notreAdresse = (u) => { try { const x = new URL(String(u)); const base = new URL(process.env.R2_PUBLIC_BASE || 'https://images.adstackofficial.com'); return x.protocol === 'https:' && x.host === base.host && /^\/ct-video\/rectifications\/[A-Za-z0-9_.\-]+$/.test(x.pathname) } catch (_) { return false } }
+async function livrerDansAdboard(b, r, fichier, affiche) {
   const d = deps()
-  const c = ((b.deliverables || {}).creatives || [])[r.index]
+  let c = ((b.deliverables || {}).creatives || [])[r.index]
+  if (fichier) {
+    if (!notreAdresse(fichier)) throw new Error('adresse du fichier refusée (elle doit venir de l\'envoi Factory)')
+    if (!c) throw new Error('vidéo introuvable dans la commande')
+    c = b.deliverables.creatives[r.index] = { ...c, videoAvantFichier: c.videoUrl || null, videoUrl: String(fichier), ...(affiche && notreAdresse(affiche) ? { thumbUrl: String(affiche) } : {}), fichier_remplace_le: new Date().toISOString() }
+  }
   if (!c || !c.videoUrl) throw new Error('la vidéo corrigée n\'est pas encore dans la commande (attendez la fin de la correction)')
   const pid = b.product && b.product.id
   if (!pid) throw new Error('commande sans produit AdBoard')
@@ -291,8 +298,8 @@ async function routes(req, res) {
       return rep(res, 200, { revision: r }), true
     }
     if (req.method === 'POST' && url === '/revisions/livrer') {
-      await livrerDansAdboard(b, r)
-      r.etat = 'livree'; r.livree_t = Date.now()
+      await livrerDansAdboard(b, r, x.video_url || null, x.poster_url || null)
+      r.etat = 'livree'; r.livree_t = Date.now(); if (x.video_url) r.fichier_livre = String(x.video_url)
       await sauver(b)
       console.log('🩹 Rectification livrée : commande ' + b.id + ' vidéo ' + r.index + (r.livree_t > r.echeance ? ' (EN RETARD)' : ''))
       return rep(res, 200, { revision: r }), true
