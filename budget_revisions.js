@@ -49,17 +49,40 @@ async function periodeClient(uid) {
 }
 
 // ── ce qu'une commande a coûté (coûts relevés par Factory et par le moteur vidéo) ──
-function coutCommande(b) {
+// budget-client-v2 (26 nov. 2026) : « Refaire de zéro » remplace le job de la carte (Factory : job: null) ; le coût de la tentative abandonnée disparaissait
+// du budget du client (Skinvia : 6,81 $ puis 7,63 $ comptés une seule fois). Le registre des coûts (couts_externes, une ligne par exécution vidéo,
+// ref « video:<commande>:<exécution> ») garde CHAQUE tentative payée : le budget du client lit ce registre, plus les jobs pas encore enregistrés.
+function coutCommande(b, registre) {
   const d = (b && b.deliverables) || {}
   const hors = Number((d.couts || {}).hors_video) || 0
-  let videos = 0, nbVideos = 0
+  let videos = 0, nbVideos = 0, abandonnees = 0, nbAbandonnees = 0
+  const vus = new Set()
   ;(d.creatives || []).forEach((c) => {
     const j = c && c.job; if (!j) return
     const u = Number(j.cout_usd) || 0   // coût total de la vidéo, tentatives et corrections comprises (le moteur relit ce qui est déjà payé sans le recompter)
+    if (j.execution) vus.add(String(j.execution))
     videos += u
     if (c.videoUrl || j.etat === 'termine') nbVideos++
   })
-  return { hors_video: r2(hors), videos: r2(videos), total: r2(hors + videos), nb_videos: nbVideos }
+  ;(registre || []).forEach((l) => {   // tentatives payées qui ne sont plus sur une carte (vidéo refaite, autre CT)
+    const ex = String(l.ref || '').split(':').slice(2).join(':')
+    if (!ex || vus.has(ex)) return
+    const u = Number(l.cout_usd) || 0; if (!(u > 0)) return
+    vus.add(ex); abandonnees += u; nbAbandonnees++
+  })
+  return { hors_video: r2(hors), videos: r2(videos + abandonnees), videos_refaites_usd: r2(abandonnees), tentatives_abandonnees: nbAbandonnees, total: r2(hors + videos + abandonnees), nb_videos: nbVideos }
+}
+// lignes du registre des coûts vidéo des commandes données (une requête ; vide si le registre est indisponible : on retombe sur les jobs)
+async function registreVideos(ids) {
+  const out = new Map(); if (!ids || !ids.length) return out
+  try {
+    const d = deps()
+    const ou = ids.slice(0, 80).map((id) => 'ref.like.' + encodeURIComponent('video:' + id + ':*')).join(',')
+    const r = await fetch(`${d.SB}/rest/v1/couts_externes?fournisseur=eq.moteur_video&select=ref,cout_usd&or=(${ou})`, { headers: d.entetes() })
+    if (!r.ok) return out
+    ;((await r.json()) || []).forEach((l) => { const id = String(l.ref || '').split(':')[1]; if (!id) return; if (!out.has(id)) out.set(id, []); out.get(id).push(l) })
+  } catch (_) { }
+  return out
 }
 
 // ── état du budget du mois d'un client ──
@@ -68,8 +91,9 @@ async function etatBudget(uid, { briefs } = {}) {
   if (!per) return null
   const liste = (briefs || await deps().loadBriefs()).filter((b) => b && b.client && b.client.user_id === uid && new Date(b.created_at).getTime() >= per.debut)
   let depense = 0, faites = 0, revAttente = 0
+  const reg = await registreVideos(liste.map((b) => b.id))
   const commandes = liste.map((b) => {
-    const c = coutCommande(b); depense += c.total; faites += c.nb_videos
+    const c = coutCommande(b, reg.get(b.id)); depense += c.total; faites += c.nb_videos
     revAttente += (Array.isArray(b.revisions) ? b.revisions : []).filter((r) => r && !['livree', 'refusee'].includes(r.etat)).length
     return { id: b.id, produit: nomDe(b), date: b.created_at, ...c }
   })
@@ -229,7 +253,7 @@ async function routes(req, res) {
       const e = await etatBudget(b.client.user_id)
       if (!e) return rep(res, 200, { sans_abonnement: true }), true
       alerter(b, e)
-      return rep(res, 200, { ...e, commande: coutCommande(b) }), true
+      return rep(res, 200, { ...e, commande: coutCommande(b, (await registreVideos([b.id])).get(b.id)) }), true
     }
     // ── AdBoard : demander une rectification (une par vidéo) ──
     if (req.method === 'POST' && url === '/revisions/demander') {
