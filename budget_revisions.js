@@ -85,15 +85,65 @@ async function registreVideos(ids) {
   return out
 }
 
+// budget-client-v3 (26 nov. 2026) — « tous les centimes dépensés pour un client, une bonne fois pour toutes ». Le « hors vidéo » venait d'une ESTIMATION
+// de Factory (analyse, ad copies, images, corrections) ; or chaque appel IA du serveur fait pendant une commande est déjà rangé sur elle
+// (api_usage_log.commande_id, en-tête X-Commande de Factory, ouvrier de la production automatique compris), comme chaque coût externe
+// (couts_externes.commande_id : ScrapeCreators, recherche de photo…). Le budget lit ce registre réel ; l'estimation de Factory ne sert plus
+// que de plancher pour une commande que le registre ne connaît pas (commande antérieure au rangement par commande).
+async function lireTout(chemin) {
+  const d = deps(), lignes = []
+  for (let off = 0; off < 50000; off += 1000) {
+    const r = await fetch(`${d.SB}/rest/v1/${chemin}&limit=1000&offset=${off}`, { headers: d.entetes() })
+    if (!r.ok) throw new Error('registre ' + r.status)
+    const j = (await r.json()) || []; lignes.push(...j)
+    if (j.length < 1000) break
+  }
+  return lignes
+}
+const posteDe = (type) => { const t = String(type || ''); if (/^analyste|^trends_|^lecture_document|^lecture_capture|^apparence_cible/.test(t)) return 'analyse'; if (/^copywriter/.test(t)) return 'copies'; if (/revision/.test(t)) return 'rectifications'; if (/video/i.test(t)) return 'video'; if (/^creative_|^selection_ct|^aspects|^photo|^generation_image|^assemblage_|^verification_|^analyse_photo|^background_removal/.test(t)) return 'images'; return 'autre' }
+async function registreHorsVideo(ids) {
+  const out = new Map(); if (!ids || !ids.length) return { out, ok: false }
+  try {
+    const liste = ids.slice(0, 80).map(encodeURIComponent).join(',')
+    const api = await lireTout(`api_usage_log?select=commande_id,cout_usd,source,type_appel&commande_id=in.(${liste})`)
+    const ext = await lireTout(`couts_externes?select=commande_id,cout_usd,fournisseur,ref&commande_id=in.(${liste})&fournisseur=neq.moteur_video`)
+    const ligne = (id) => { if (!out.has(id)) out.set(id, { total: 0, postes: {} }); return out.get(id) }
+    api.forEach((l) => {
+      if (String(l.source || '') === 'agent_test' || /_test$/.test(String(l.type_appel || ''))) return   // un test d'agent n'est pas une dépense du client
+      const u = Number(l.cout_usd) || 0; if (!(u > 0) || !l.commande_id) return
+      const x = ligne(l.commande_id), k = posteDe(l.type_appel); x.total += u; x.postes[k] = (x.postes[k] || 0) + u
+    })
+    ext.forEach((l) => { const u = Number(l.cout_usd) || 0; if (!(u > 0) || !l.commande_id) return; const x = ligne(l.commande_id), k = l.fournisseur === 'scrapecreators' ? 'analyse' : 'autre'; x.total += u; x.postes[k] = (x.postes[k] || 0) + u })
+    return { out, ok: true }
+  } catch (e) { console.log('[Budget] registre hors vidéo illisible (' + e.message + ') : estimation de Factory utilisée'); return { out, ok: false } }
+}
+async function coutsReels(liste) {
+  const ids = liste.map((b) => b.id)
+  const [vid, hv] = await Promise.all([registreVideos(ids), registreHorsVideo(ids)])
+  const m = new Map()
+  liste.forEach((b) => {
+    const c = coutCommande(b, vid.get(b.id))
+    const r = hv.out.get(b.id)
+    if (hv.ok && r && r.total > 0) {
+      c.hors_video_estime = c.hors_video
+      c.hors_video = r2(r.total); c.source_hors_video = 'registre'
+      c.postes = Object.fromEntries(Object.entries(r.postes).map(([k, v]) => [k, r2(v)]))
+      c.total = r2(c.hors_video + c.videos)
+    } else c.source_hors_video = 'estimation'
+    m.set(b.id, c)
+  })
+  return m
+}
+
 // ── état du budget du mois d'un client ──
 async function etatBudget(uid, { briefs } = {}) {
   const per = await periodeClient(uid)
   if (!per) return null
   const liste = (briefs || await deps().loadBriefs()).filter((b) => b && b.client && b.client.user_id === uid && new Date(b.created_at).getTime() >= per.debut)
   let depense = 0, faites = 0, revAttente = 0
-  const reg = await registreVideos(liste.map((b) => b.id))
+  const reels = await coutsReels(liste)
   const commandes = liste.map((b) => {
-    const c = coutCommande(b, reg.get(b.id)); depense += c.total; faites += c.nb_videos
+    const c = reels.get(b.id); depense += c.total; faites += c.nb_videos
     revAttente += (Array.isArray(b.revisions) ? b.revisions : []).filter((r) => r && !['livree', 'refusee'].includes(r.etat)).length
     return { id: b.id, produit: nomDe(b), date: b.created_at, ...c }
   })
@@ -191,8 +241,10 @@ Réponds uniquement en JSON : {"plans":[{"bloc":numéro,"consigne":"…"}],"fais
   const ct9 = (Array.isArray(imagesCT) ? imagesCT : []).filter((x) => x && typeof x.data === 'string' && x.data.length < 300000).slice(0, 8)
   if (img9.length) { blocs9.push({ type: 'text', text: 'IMAGES DE LA VIDÉO LIVRÉE (dans l\'ordre) :' }); img9.forEach((x) => { blocs9.push({ type: 'text', text: 'à ' + x.t + ' s :' }); blocs9.push({ type: 'image', source: { media_type: 'image/jpeg', data: x.data } }) }) }
   if (ct9.length) { blocs9.push({ type: 'text', text: 'IMAGES DU CT D\'ORIGINE (dans l\'ordre) :' }); ct9.forEach((x) => blocs9.push({ type: 'image', source: { media_type: 'image/jpeg', data: x.data } })) }
-  const txt = await d.callGeminiPro(sys, blocs9, 9000,
+  const appel9 = () => d.callGeminiPro(sys, blocs9, 9000,
     { modele: (d.MODELES && d.MODELES.raisonnement) || undefined, temperature: 0.2, thinkingBudget: 4096, timeoutMs: 150000, logLabel: 'Rectification', typeAppel: 'revision_video' })
+  // budget-client-v3 : cette dépense compte dans le budget du client — Factory envoie l'en-tête X-Commande avec la demande, le serveur range donc l'appel sur la commande
+  const txt = d.avecCommande ? await d.avecCommande(b.id, appel9) : await appel9()
   const m = /\{[\s\S]*\}/.exec(String(txt || ''))
   if (!m) throw new Error('réponse illisible')
   const j = JSON.parse(m[0])
@@ -253,7 +305,7 @@ async function routes(req, res) {
       const e = await etatBudget(b.client.user_id)
       if (!e) return rep(res, 200, { sans_abonnement: true }), true
       alerter(b, e)
-      return rep(res, 200, { ...e, commande: coutCommande(b, (await registreVideos([b.id])).get(b.id)) }), true
+      return rep(res, 200, { ...e, commande: (await coutsReels([b])).get(b.id) }), true
     }
     // ── AdBoard : demander une rectification (une par vidéo) ──
     if (req.method === 'POST' && url === '/revisions/demander') {
@@ -350,4 +402,4 @@ async function cron() {
   } catch (e) { console.log('[Rectifications] rappel : ' + e.message) }
 }
 
-module.exports = { brancher, routes, cron, budgetVideo, etatBudget, coutCommande, periodeClient, lireIdCreative, REVISION_MAX_USD }
+module.exports = { brancher, routes, cron, budgetVideo, etatBudget, coutCommande, coutsReels, periodeClient, lireIdCreative, REVISION_MAX_USD }
