@@ -9,13 +9,13 @@
 //
 // Variables Render : RECALL_API_KEY (obligatoire), ELEVENLABS_API_KEY (obligatoire),
 //   ELEVENLABS_VOICE_ID (voix de Khalil ; sinon une voix par défaut), RECALL_REGION (défaut eu-central-1),
-//   KHALIL_SORTIE (screenshare | camera, défaut screenshare), KHALIL_LLM (défaut gemini-2.5-flash).
+//   KHALIL_SORTIE (screenshare | camera, défaut screenshare), KHALIL_LLM et KHALIL_TTS (pour forcer un modèle ; sinon le meilleur disponible est choisi).
 // Aucune clé n'est jamais envoyée à la page : elle reçoit seulement un lien de conversation signé, valable pour un appel.
 
 const crypto = require('crypto');
 const { SCRIPT, PREMIER_MESSAGE } = require('./khalil_script');
 
-const VERSION = 'khalil-v1.1';
+const VERSION = 'khalil-v2';
 const SITE = 'https://www.adstackofficial.com';
 const NOM_AGENT = 'Khalil · AdStack (appels de vente)';
 const NOM_BOT = "Khalil · AdStack";
@@ -23,6 +23,11 @@ const VOIX_DEFAUT = 'pNInz6obpgDQGcFmaJgB';   // voix masculine de la bibliothè
 const SESSIONS = new Map();                    // session → { ctx, bot_id, cree, journal[] }
 const DUREE_SESSION_MS = 6 * 3600 * 1000;
 let AGENT_ID = null;
+let REGLAGE = { llm: null, tts: null };   // ce qui a été accepté par ElevenLabs à la dernière installation
+// khalil-v2 — cerveau : le raisonnement d'abord (ElevenLabs recommande Claude Sonnet pour le raisonnement complexe), puis des replis si le compte ne l'a pas.
+const CERVEAUX = ['claude-sonnet-5-5', 'claude-sonnet-5', 'claude-sonnet-4-6', 'claude-sonnet-4-5', 'gemini-2.5-flash'];
+// voix : Eleven v4 Turbo est fait pour les agents en direct (clones plus fidèles, intonation plus stable) ; replis si indisponible.
+const VOIX_MODELES = ['eleven_v4_turbo', 'eleven_v3_conversational', 'eleven_turbo_v2_5', 'eleven_flash_v2_5'];
 let OFFRES_CACHE = { t: 0, v: null };
 
 const recallBase = () => `https://${process.env.RECALL_REGION || 'eu-central-1'}.recall.ai/api/v1`;
@@ -77,7 +82,8 @@ async function eleven(chemin, methode, corps) {
   return j || {};
 }
 
-function configAgent() {
+function configAgent(llm, tts) {
+  llm = llm || process.env.KHALIL_LLM || CERVEAUX[0]; tts = tts || process.env.KHALIL_TTS || VOIX_MODELES[0];
   const outil = (name, description, proprietes, requis) => ({
     type: 'client', name, description, expects_response: true, response_timeout_secs: 10,
     parameters: { type: 'object', properties: proprietes || {}, required: requis || [] },
@@ -91,8 +97,8 @@ function configAgent() {
         language: 'fr',
         prompt: {
           prompt: SCRIPT,
-          llm: process.env.KHALIL_LLM || 'gemini-2.5-flash',
-          temperature: 0.4,
+          llm,
+          temperature: 0.6,
           tools: [
             outil('montrer_accueil', "Affiche l'écran d'accueil de l'appel sur l'écran partagé."),
             outil('montrer_page_produit', "Affiche la page produit du prospect sur l'écran partagé.",
@@ -107,7 +113,10 @@ function configAgent() {
           ],
         },
       },
-      tts: { model_id: 'eleven_flash_v2_5', voice_id: process.env.ELEVENLABS_VOICE_ID || VOIX_DEFAUT },
+      // stabilité moyenne-haute : la voix garde le même timbre et le même volume d'une phrase à l'autre ; similarité haute : elle reste celle du clone
+      tts: { model_id: tts, voice_id: process.env.ELEVENLABS_VOICE_ID || VOIX_DEFAUT, stability: 0.6, similarity_boost: 0.85, text_normalisation_type: 'elevenlabs' },
+      // « patient » : Khalil laisse le prospect finir ses phrases et ses silences de réflexion avant de reprendre
+      turn: { turn_eagerness: 'patient', turn_timeout: 10 },
       conversation: { max_duration_seconds: 3600 },
     },
     platform_settings: { auth: { enable_auth: true } },
@@ -116,17 +125,33 @@ function configAgent() {
 
 // Crée l'agent s'il n'existe pas, sinon le met à jour avec le script de ce fichier (le script vit dans le code, versionné).
 async function installerAgent() {
-  const cfg = configAgent();
   let id = AGENT_ID;
   if (!id) {
     const l = await eleven(`/v1/convai/agents?search=${encodeURIComponent('Khalil')}&page_size=30`, 'GET');
     const trouve = (l.agents || []).find((a) => a.name === NOM_AGENT);
     if (trouve) id = trouve.agent_id;
   }
-  if (id) { await eleven(`/v1/convai/agents/${id}`, 'PATCH', cfg); }
-  else { id = (await eleven('/v1/convai/agents/create', 'POST', cfg)).agent_id; }
-  AGENT_ID = id;
-  return id;
+  // On essaie le meilleur cerveau et la meilleure voix ; si ElevenLabs refuse un modèle (pas disponible sur ce compte), on passe au suivant.
+  const uniq = (t) => t.filter((x, i) => x && t.indexOf(x) === i);
+  const cerveaux = uniq([process.env.KHALIL_LLM, ...CERVEAUX]), voix = uniq([process.env.KHALIL_TTS, ...VOIX_MODELES]);
+  let derniere = null;
+  for (const llm of cerveaux) {
+    for (const tts of voix) {
+      try {
+        const cfg = configAgent(llm, tts);
+        if (id) await eleven(`/v1/convai/agents/${id}`, 'PATCH', cfg);
+        else id = (await eleven('/v1/convai/agents/create', 'POST', cfg)).agent_id;
+        AGENT_ID = id; REGLAGE = { llm, tts };
+        console.log(`[Khalil] agent ${id} installé : cerveau ${llm}, voix ${tts}`);
+        return id;
+      } catch (e) {
+        derniere = e;
+        if (!/HTTP 4(00|22)/.test(e.message)) throw e;   // autre chose qu'un réglage refusé (clé, réseau) : inutile d'insister
+        console.log(`[Khalil] réglage refusé (${llm} + ${tts}) : ${e.message.slice(0, 160)}`);
+      }
+    }
+  }
+  throw derniere || new Error('aucun réglage accepté par ElevenLabs');
 }
 async function agentPret() { return AGENT_ID || installerAgent(); }
 
@@ -162,7 +187,7 @@ async function routes(req, res, deps = {}) {
   try {
     if (p === '/khalil/etat' && req.method === 'GET') {
       return repondre(res, 200, { version: VERSION, recall: !!cleRecall(), elevenlabs: !!cleEleven(), voix_choisie: !!process.env.ELEVENLABS_VOICE_ID,
-        region: process.env.RECALL_REGION || 'eu-central-1', sortie: process.env.KHALIL_SORTIE || 'screenshare', agent: AGENT_ID, appels_en_memoire: SESSIONS.size }), true;
+        region: process.env.RECALL_REGION || 'eu-central-1', sortie: process.env.KHALIL_SORTIE || 'screenshare', agent: AGENT_ID, cerveau: REGLAGE.llm, voix_modele: REGLAGE.tts, appels_en_memoire: SESSIONS.size }), true;
     }
 
     if (p === '/khalil/agent' && req.method === 'POST') {
@@ -170,7 +195,7 @@ async function routes(req, res, deps = {}) {
       if (!cleEleven()) return repondre(res, 400, { error: 'ELEVENLABS_API_KEY manquante dans Render' }), true;
       AGENT_ID = null;
       const id = await installerAgent();
-      return repondre(res, 200, { ok: true, agent_id: id }), true;
+      return repondre(res, 200, { ok: true, agent_id: id, cerveau: REGLAGE.llm, voix_modele: REGLAGE.tts }), true;
     }
 
     if (p === '/khalil/lancer' && req.method === 'POST') {
@@ -207,6 +232,27 @@ async function routes(req, res, deps = {}) {
       SESSIONS.get(s).bot_id = bot.id;
       noter(s, `bot Recall ${bot.id} envoyé dans le Meet (${sortie})`);
       return repondre(res, 200, { ok: true, session: s, bot_id: bot.id, page }), true;
+    }
+
+    // ── khalil-v2 : transcriptions des appels et des tests (pour qu'Amar relise et corrige Khalil) ──
+    if (p === '/khalil/conversations' && req.method === 'GET') {
+      if (!(await adminOk())) return repondre(res, 401, { error: 'admin requis' }), true;
+      const id = await agentPret();
+      const l = await eleven(`/v1/convai/conversations?agent_id=${encodeURIComponent(id)}&page_size=15`, 'GET');
+      return repondre(res, 200, { conversations: (l.conversations || []).map((c) => ({ id: c.conversation_id, debut: c.start_time_unix_secs ? c.start_time_unix_secs * 1000 : null, duree_s: c.call_duration_secs || 0, messages: c.message_count || 0, statut: c.status || '', resume: c.transcript_summary || c.call_summary_title || '' })) }), true;
+    }
+    if (p === '/khalil/conversation' && req.method === 'GET') {
+      if (!(await adminOk())) return repondre(res, 401, { error: 'admin requis' }), true;
+      const cid = String(url.searchParams.get('id') || '');
+      if (!/^[\w-]{6,80}$/.test(cid)) return repondre(res, 400, { error: 'identifiant invalide' }), true;
+      const c = await eleven(`/v1/convai/conversations/${cid}`, 'GET');
+      const mmss = (t) => `${String(Math.floor((t || 0) / 60)).padStart(2, '0')}:${String(Math.floor((t || 0) % 60)).padStart(2, '0')}`;
+      const lignes = (c.transcript || []).map((m) => {
+        const outils = (m.tool_calls || []).map((o) => `[${o.tool_name}${o.params_as_json ? ' ' + o.params_as_json : ''}]`).join(' ');
+        const txt = [m.message || '', outils].filter(Boolean).join(' ');
+        return txt ? `${mmss(m.time_in_call_secs)} ${m.role === 'agent' ? 'Khalil' : 'Prospect'} : ${txt}` : null;
+      }).filter(Boolean);
+      return repondre(res, 200, { id: cid, duree_s: (c.metadata && c.metadata.call_duration_secs) || 0, resume: (c.analysis && c.analysis.transcript_summary) || '', texte: lignes.join('\n') }), true;
     }
 
     // ── appelé par la page khalil.html (lien signé, pas de compte admin) ──
