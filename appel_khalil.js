@@ -15,7 +15,7 @@
 const crypto = require('crypto');
 const { SCRIPT, PREMIER_MESSAGE } = require('./khalil_script');
 
-const VERSION = 'khalil-v1';
+const VERSION = 'khalil-v1.1';
 const SITE = 'https://www.adstackofficial.com';
 const NOM_AGENT = 'Khalil · AdStack (appels de vente)';
 const NOM_BOT = "Khalil · AdStack";
@@ -187,7 +187,7 @@ async function routes(req, res, deps = {}) {
       const ctx = {
         prenom: String(b.prenom || '').trim().slice(0, 40), marque: String(b.marque || '').trim().slice(0, 80),
         produit: String(b.produit || '').trim().slice(0, 120), page_produit: String(b.page_produit || '').trim().slice(0, 500),
-        pays: String(b.pays || '').trim().slice(0, 60), contexte: String(b.contexte || '').trim().slice(0, 1500), deck,
+        pays: String(b.pays || '').trim().slice(0, 60), contexte: String(b.contexte || '').trim().slice(0, 3500), deck,
         offre_nom: of.principale.nom, offre_prix: milliers(of.principale.prix),
         offre_reduite_nom: of.reduite.nom, offre_reduite_prix: milliers(of.reduite.prix), offre_reduite_rythme: of.reduite.rythme,
       };

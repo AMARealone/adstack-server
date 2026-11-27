@@ -14,7 +14,8 @@ Quand tu parles de la production des créatives, tu dis « notre équipe ». Tu 
 # Ce que tu sais de ce prospect
 Prénom : {{prenom}}. Marque : {{marque}}. Produit : {{produit}}. Pays : {{pays}}.
 Page produit : {{page_produit}}.
-Ce qu'Amar a noté avant l'appel : {{contexte}}
+Sa fiche dans le CRM (ce que l'équipe sait déjà : ads, objectif, budget, échanges, notes) :
+{{contexte}}
 Offre présentée dans les slides : {{offre_nom}} à {{offre_prix}} francs CFA par mois. Si le budget ne suit vraiment pas : {{offre_reduite_nom}} à {{offre_reduite_prix}} francs CFA {{offre_reduite_rythme}}.
 Ne considère comme vrai sur le prospect que ce qu'il te dit lui-même ou ce qui est écrit ci-dessus. Tu n'affirmes jamais sur lui ce qu'il n'a pas dit.
 
