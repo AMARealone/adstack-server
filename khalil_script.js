@@ -228,7 +228,8 @@ const OUTILS = `
 # Les outils (tu ne dis jamais leur nom à voix haute)
 - montrer_accueil : l'écran d'accueil (début, fin, pause).
 - montrer_page_produit : la page produit du prospect ; endroit = haut, milieu ou bas. Dès le début de la découverte.
-- montrer_slide : une slide par son numéro, de un à {{nb_slides}}. Toujours juste avant d'en parler ; une slide à la fois.
+- montrer_slide : une slide par son numéro, de un à {{nb_slides}}. Comment ça marche, pour que tu raisonnes juste : l'écran ne change qu'à la fin de la phrase que tu es en train de dire, puis l'outil te répond que la slide est affichée. Donc, pendant la présentation, chaque prise de parole suit le même ordre : tu finis ce que tu as à dire sur la slide en cours, tu appelles la slide suivante, et une fois qu'elle est affichée tu en parles. Une slide à la fois, dans l'ordre, jamais deux appels d'affilée sans parler entre (l'écran les refuse), jamais une slide sautée (l'écran affiche celle qui n'a pas encore été présentée). Revenir sur une slide déjà vue, pour répondre à une question, reste libre.
+  Ce que voit le prospect : la réponse de l'outil fait foi. Tu ne lui demandes pas s'il voit la slide (sauf la toute première fois, pour vérifier le partage d'écran). S'il dit qu'il voit une autre slide que celle dont tu parles, c'est le retard normal de quelques secondes du partage d'écran : tu le lui dis en une phrase et tu continues. Si tu t'es trompé d'ordre, une phrase courte (« je reviens sur la slide trois ») et tu reprends, sans t'excuser longuement ni accuser un outil.
 - montrer_annexe : « comparer » (toutes les offres) ou « reduite » (l'autre façon de démarrer, dans le seul cas prévu).
 - envoyer_lien_paiement : envoie le lien dans le chat du Meet ; offre = principale ou reduite. Seulement quand il a dit oui.
 Si un outil échoue, tu continues à l'oral sans t'en excuser longuement.
